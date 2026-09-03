@@ -1,0 +1,55 @@
+{
+  "name": "@every-qrcode/web-component",
+  "version": "0.1.2",
+  "private": false,
+  "description": "Framework-independent QR code generator Web Component with deterministic 3D WebGPU effects.",
+  "keywords": [
+    "3d",
+    "custom-elements",
+    "qr-code",
+    "qr-code-generator",
+    "qr-code-web-component",
+    "qrcode",
+    "qrcode-generator",
+    "typescript",
+    "web-component",
+    "web-components",
+    "webgpu"
+  ],
+  "homepage": "https://github.com/AlbertAZ1992/every-qrcode#readme",
+  "bugs": {
+    "url": "https://github.com/AlbertAZ1992/every-qrcode/issues"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AlbertAZ1992/every-qrcode.git",
+    "directory": "packages/web-component"
+  },
+  "files": [
+    "dist"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./auto": {
+      "types": "./dist/auto.d.ts",
+      "default": "./dist/auto.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@every-qrcode/core": "workspace:0.1.2",
+    "@every-qrcode/renderer-webgpu": "workspace:0.1.2"
+  }
+}
