@@ -77,6 +77,38 @@ fn signalColor() -> vec3f {
   return mix(uniforms.themeSecondary.rgb, uniforms.themeFourth.rgb, 0.82);
 }
 
+fn circuitQrSubstrate() -> vec3f {
+  return mix(uniforms.themeFifth.rgb, vec3f(0.96, 0.95, 0.91), 0.28);
+}
+
+fn circuitQrInk() -> vec3f {
+  let paletteInk = mix(uniforms.themePrimary.rgb, uniforms.themeThird.rgb, 0.10);
+  return mix(paletteInk, vec3f(0.018, 0.026, 0.024), 0.48);
+}
+
+fn circuitFinderInk(role: u32) -> vec3f {
+  let base = circuitQrInk();
+  let plated = mix(base, goldPad(), 0.10);
+  return select(plated, base * 0.72, role == 2u);
+}
+
+fn finderRole(column: f32, row: f32) -> u32 {
+  let farOrigin = uniforms.gridSize - 7.0;
+  var local = vec2f(-1.0);
+  if (column < 7.0 && row < 7.0) {
+    local = vec2f(column, row);
+  } else if (column >= farOrigin && row < 7.0) {
+    local = vec2f(column - farOrigin, row);
+  } else if (column < 7.0 && row >= farOrigin) {
+    local = vec2f(column, row - farOrigin);
+  }
+  if (local.x < 0.0) { return 0u; }
+  let ring = min(min(local.x, local.y), min(6.0 - local.x, 6.0 - local.y));
+  if (ring < 0.5) { return 1u; }
+  if (ring > 1.5) { return 2u; }
+  return 0u;
+}
+
 fn stage(start: f32, end: f32) -> f32 {
   return smoothstep(start, end, uniforms.progress);
 }
@@ -231,7 +263,8 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let scan = stage(0.86, 1.0);
   if (input.layer == 0u) {
     let baseLighting = studioLight(input.normal, 0.45);
-    let baseColor = mix(vec3f(0.08, 0.09, 0.10), vec3f(0.92), scan) * baseLighting;
+    let scanBase = mix(circuitQrSubstrate(), pcbBase(), 0.08);
+    let baseColor = mix(vec3f(0.08, 0.09, 0.10), scanBase, scan) * baseLighting;
     return vec4f(acesToneMap(baseColor), 1.0);
   }
 
@@ -300,8 +333,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
 
   let lighting = studioLight(input.normal, grain.a * 0.7);
   let litColor = worldColor * lighting;
-  let paper = vec3f(0.965, 0.955, 0.925);
-  let finalColor = mix(litColor, paper, scan);
+  let finalColor = mix(litColor, circuitQrSubstrate(), scan);
   return vec4f(acesToneMap(finalColor), 1.0);
 }
 `;
@@ -420,8 +452,10 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let pulsePhase = fract((input.along - time * (speed * 1.35)) / pulseCycle);
   let pulseHead = pow(max(1.0 - pulsePhase * 2.2, 0.0), 3.0) * 0.65;
 
+  let activeRoute = floor(time / 2.5) % 10.0;
+  let isTargetRoute = step(0.9, 1.0 - abs(input.routeId - activeRoute));
   let burstSeed = floor((time * 0.8 + input.routeId * 1.7) / 2.0);
-  let burstActive = step(0.45, fract(sin(burstSeed * 91.3 + input.routeId * 17.1) * 43758.5));
+  let burstActive = max(step(0.45, fract(sin(burstSeed * 91.3 + input.routeId * 17.1) * 43758.5)), isTargetRoute);
   let combinedPackets = (packetHead + pulseHead * burstActive);
 
   let transverse = 1.0 - abs(input.uv.y - 0.5) * 2.0;
@@ -733,6 +767,7 @@ struct Output {
   @location(1) uv: vec2f,
   @location(2) @interpolate(flat) visible: u32,
   @location(3) @interpolate(flat) neighborMask: u32,
+  @location(4) @interpolate(flat) finderRole: u32,
 }
 
 @vertex
@@ -751,6 +786,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   output.normal = geometry[1];
   output.uv = uv;
   output.neighborMask = u32(position.w);
+  output.finderRole = finderRole(position.x, position.y);
   output.visible = select(0u, 1u, activeModule && reveal > 0.002);
   if (output.visible == 0u) { output.position = vec4f(2.0, 2.0, 2.0, 1.0); }
   return output;
@@ -760,15 +796,21 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
 fn fragmentMain(input: Output) -> @location(0) vec4f {
   if (input.visible == 0u) { discard; }
 
-  if (abs(input.normal.y) > 0.5 && qrModuleMask(input.uv, input.neighborMask) < 0.5) {
+  let lock = stage(0.88, 1.0);
+  let organicMask = qrModuleMask(input.uv, input.neighborMask);
+  let moduleMask = select(organicMask, 1.0, input.finderRole > 0u && lock > 0.7);
+  if (abs(input.normal.y) > 0.5 && moduleMask < 0.5) {
     discard;
   }
 
-  let lock = stage(0.88, 1.0);
   let goldContact = goldPad() * 1.35 * studioLight(input.normal, 0.22);
-  let worldInk = vec3f(0.045, 0.048, 0.046) * studioLight(input.normal, 0.82);
-  let moduleColor = mix(goldContact, worldInk, smoothstep(0.75, 0.95, uniforms.progress));
-  let finalColor = mix(moduleColor, vec3f(0.012), lock);
+  let roleInk = select(circuitQrInk(), circuitFinderInk(input.finderRole), input.finderRole > 0u);
+  let edgeDistance = min(min(input.uv.x, 1.0 - input.uv.x), min(input.uv.y, 1.0 - input.uv.y));
+  let platedInset = 1.0 - smoothstep(0.045, 0.13, edgeDistance);
+  let contactInk = mix(roleInk, goldPad(), platedInset * 0.075);
+  let scanMaterial = select(contactInk * 0.82, contactInk, input.normal.y > 0.5);
+  let moduleColor = mix(goldContact, scanMaterial, smoothstep(0.75, 0.95, uniforms.progress));
+  let finalColor = mix(moduleColor, scanMaterial, lock);
   return vec4f(acesToneMap(finalColor), 1.0);
 }
 `;

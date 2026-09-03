@@ -111,52 +111,52 @@ export const WORLD_PALETTES: Readonly<Record<SeedForm, readonly WorldPalettePres
   ],
   colony: [
     {
-      id: "lunar-regolith",
-      name: "Lunar Regolith",
+      id: "crimson-histology",
+      name: "Crimson Histology",
       palette: [
-        [0.2, 0.22, 0.25], // Deep basalt
-        [0.88, 0.72, 0.28], // Gold thermal foil
-        [0.45, 0.48, 0.52], // Titanium frame
-        [0.25, 0.75, 0.95], // Airlock cyan beacon
-        [0.92, 0.94, 0.96], // Pressurized white composite
+        [0.24, 0.03, 0.08], // Deep burgundy cell ink
+        [0.86, 0.22, 0.32], // Coral membrane stain
+        [0.56, 0.08, 0.18], // Dense tissue rose
+        [0.46, 0.2, 0.7], // Violet reagent
+        [0.98, 0.95, 0.88], // Warm ivory culture medium
       ],
-      swatches: ["#333840", "#e0b847", "#40bfe6"],
+      swatches: ["#3d0814", "#db3852", "#7533b3"],
     },
     {
-      id: "martian-dust",
-      name: "Mars Outpost",
+      id: "violet-stain",
+      name: "Violet Stain",
       palette: [
-        [0.32, 0.12, 0.08], // Martian rust
-        [0.85, 0.35, 0.15], // Iron oxide soil
-        [0.95, 0.68, 0.28], // Habitat solar array
-        [0.65, 0.22, 0.15], // Canyon shadow
-        [0.98, 0.92, 0.88], // Terraforming dome
+        [0.13, 0.03, 0.2], // Dark nuclear violet
+        [0.74, 0.24, 0.48], // Magenta membrane stain
+        [0.38, 0.12, 0.5], // Purple tissue body
+        [0.9, 0.36, 0.5], // Eosin reagent accent
+        [0.97, 0.95, 0.91], // Pale glass-slide medium
       ],
-      swatches: ["#521f14", "#d95926", "#f2ad47"],
+      swatches: ["#210833", "#bd3d7a", "#e65c80"],
     },
     {
-      id: "titan-ice",
-      name: "Titan Methane",
+      id: "eosin-rose",
+      name: "Eosin Rose",
       palette: [
-        [0.08, 0.18, 0.28], // Liquid hydrocarbon
-        [0.25, 0.72, 0.85], // Cryo ice
-        [0.15, 0.45, 0.65], // Subsurface ocean
-        [0.75, 0.92, 0.98], // Nitrogen frost
-        [0.92, 0.97, 0.98], // Pale haze
+        [0.26, 0.04, 0.12], // Dark carmine nuclei
+        [0.92, 0.36, 0.48], // Eosin membrane pink
+        [0.62, 0.14, 0.3], // Cultured tissue crimson
+        [0.5, 0.26, 0.72], // Hematoxylin accent
+        [0.99, 0.95, 0.92], // Blushed ivory medium
       ],
-      swatches: ["#142e47", "#40b8d9", "#bfeaf8"],
+      swatches: ["#420a1f", "#eb5c7a", "#8042b8"],
     },
     {
-      id: "deep-space-citadel",
-      name: "Deep Space Station",
+      id: "cultured-plum",
+      name: "Cultured Plum",
       palette: [
-        [0.06, 0.07, 0.1], // Space void
-        [0.75, 0.78, 0.85], // Ceramic shielding
-        [0.95, 0.82, 0.18], // Radiator gold
-        [0.88, 0.25, 0.22], // Warning beacon
-        [0.95, 0.96, 0.98], // Station hull
+        [0.16, 0.025, 0.1], // Plum-black cell ink
+        [0.78, 0.18, 0.4], // Raspberry membrane
+        [0.44, 0.08, 0.3], // Mature tissue plum
+        [0.36, 0.34, 0.76], // Cool reagent violet
+        [0.96, 0.95, 0.9], // Sterile cream medium
       ],
-      swatches: ["#0f121a", "#bfb847", "#e04038"],
+      swatches: ["#29061a", "#c72e66", "#5c57c2"],
     },
   ],
   constellation: [
@@ -211,52 +211,52 @@ export const WORLD_PALETTES: Readonly<Record<SeedForm, readonly WorldPalettePres
   ],
   dungeon: [
     {
-      id: "crypt-slate",
-      name: "Crypt Slate",
+      id: "crypt-granite",
+      name: "Crypt Granite",
       palette: [
-        [0.14, 0.15, 0.18], // Dark basalt masonry
-        [0.98, 0.58, 0.15], // Torch fire amber
-        [0.42, 0.45, 0.48], // Ashlar stone
-        [0.72, 0.18, 0.22], // Crimson dungeon banner
-        [0.92, 0.91, 0.88], // Flagstone floor
+        [0.08, 0.09, 0.11], // Deep granite basalt
+        [0.98, 0.62, 0.15], // Torch fire amber
+        [0.42, 0.45, 0.5], // Ashlar stone
+        [0.75, 0.15, 0.2], // Crimson dungeon banner
+        [0.96, 0.95, 0.92], // Pale limestone flagstone
       ],
-      swatches: ["#24262e", "#fa9426", "#b82e38"],
+      swatches: ["#14171c", "#fa9e26", "#bf2633"],
     },
     {
-      id: "obsidian-magma",
-      name: "Obsidian Magma",
+      id: "obsidian-abyss",
+      name: "Obsidian Abyss",
       palette: [
-        [0.1, 0.08, 0.08], // Obsidian volcanic rock
-        [0.98, 0.28, 0.1], // Molten lava
-        [0.95, 0.65, 0.15], // Fiery ember
-        [0.55, 0.12, 0.1], // Scorched basalt
-        [0.96, 0.92, 0.89], // Ash pavement
+        [0.05, 0.04, 0.06], // Abyssal volcanic obsidian
+        [0.98, 0.38, 0.08], // Molten lava core
+        [0.48, 0.25, 0.22], // Cooled magma rock
+        [0.85, 0.65, 0.18], // Scorched basalt bronze
+        [0.95, 0.94, 0.92], // Ash-white pavement
       ],
-      swatches: ["#1a1414", "#fa471a", "#f2a626"],
+      swatches: ["#0d0a0f", "#fa6114", "#d9a62e"],
     },
     {
-      id: "royal-catacomb",
-      name: "Royal Keep",
+      id: "catacomb-sandstone",
+      name: "Catacomb Sandstone",
       palette: [
-        [0.18, 0.14, 0.22], // Imperial stone
-        [0.85, 0.68, 0.22], // Treasure gold
-        [0.45, 0.2, 0.55], // Velvet drape
-        [0.65, 0.52, 0.18], // Bronze sconce
-        [0.95, 0.93, 0.9], // Polished marble
+        [0.1, 0.08, 0.06], // Ancient catacomb shadow
+        [0.96, 0.72, 0.18], // Torch flame gold
+        [0.55, 0.46, 0.35], // Weathered sandstone
+        [0.72, 0.42, 0.18], // Bronze ironwork
+        [0.97, 0.95, 0.89], // Warm sandstone parchment
       ],
-      swatches: ["#2e2438", "#d9ad38", "#73338c"],
+      swatches: ["#1a140f", "#f5b82e", "#b86b2e"],
     },
     {
-      id: "mossy-dungeon",
-      name: "Forgotten Ruin",
+      id: "bloodstone-keep",
+      name: "Bloodstone Keep",
       palette: [
-        [0.12, 0.18, 0.14], // Overgrown cobblestone
-        [0.32, 0.72, 0.38], // Ancient moss
-        [0.45, 0.52, 0.45], // Weathered stone
-        [0.68, 0.55, 0.32], // Root wood
-        [0.92, 0.94, 0.9], // Lichen tile
+        [0.09, 0.05, 0.07], // Sanguine keep shadow
+        [0.95, 0.75, 0.2], // Imperial gold
+        [0.65, 0.14, 0.2], // Bloodstone crimson
+        [0.45, 0.38, 0.42], // Dungeon iron
+        [0.96, 0.94, 0.95], // Alabaster stone
       ],
-      swatches: ["#1f2e24", "#52b861", "#ad8c52"],
+      swatches: ["#170d12", "#f2bf33", "#a62433"],
     },
   ],
   mycelium: [
@@ -311,52 +311,52 @@ export const WORLD_PALETTES: Readonly<Record<SeedForm, readonly WorldPalettePres
   ],
   origami: [
     {
-      id: "washi-cream",
-      name: "Traditional Washi",
+      id: "washi-indigo",
+      name: "Washi Indigo",
       palette: [
-        [0.18, 0.16, 0.15], // Sumi ink
-        [0.75, 0.2, 0.22], // Vermilion seal
-        [0.45, 0.42, 0.4], // Crease fold shadow
-        [0.85, 0.68, 0.32], // Gold leaf accent
-        [0.96, 0.95, 0.91], // Handmade mulberry paper
+        [0.06, 0.08, 0.2], // Deep vat aizome ink
+        [0.25, 0.48, 0.82], // Japanese indigo blue
+        [0.16, 0.28, 0.52], // Crease fold shadow
+        [0.86, 0.72, 0.32], // Gilded leaf highlight
+        [0.96, 0.97, 0.98], // Bleached hemp washi paper
       ],
-      swatches: ["#2e2926", "#bf3338", "#d9ad52"],
+      swatches: ["#0f1433", "#407ad1", "#dbc352"],
     },
     {
-      id: "sakura-fold",
-      name: "Sakura Origami",
+      id: "mulberry-crimson",
+      name: "Mulberry Crimson",
       palette: [
-        [0.25, 0.1, 0.15], // Cherry wood
-        [0.95, 0.48, 0.65], // Cherry blossom pink
-        [0.85, 0.28, 0.45], // Petal crease
-        [0.98, 0.78, 0.85], // Pale floral highlight
-        [0.98, 0.95, 0.96], // Washi white
+        [0.1, 0.04, 0.07], // Sumi black mulberry ink
+        [0.86, 0.16, 0.22], // Torii vermilion fold
+        [0.48, 0.16, 0.24], // Mulberry crease shadow
+        [0.92, 0.76, 0.28], // Imperial gold crane crest
+        [0.98, 0.95, 0.92], // Handmade mulberry paper
       ],
-      swatches: ["#401a26", "#f27aa6", "#fbc7d9"],
+      swatches: ["#1a0a12", "#db2938", "#ebc247"],
     },
     {
-      id: "indigo-dye",
-      name: "Aizome Indigo",
+      id: "bamboo-sage",
+      name: "Bamboo Sage",
       palette: [
-        [0.08, 0.12, 0.25], // Deep vat indigo
-        [0.25, 0.48, 0.78], // Japanese blue
-        [0.18, 0.32, 0.55], // Fold shadow
-        [0.65, 0.78, 0.92], // Shibori white dye
-        [0.95, 0.96, 0.98], // Bleached hemp paper
+        [0.05, 0.1, 0.07], // Deep pine kurogane ink
+        [0.32, 0.68, 0.36], // Fresh bamboo sage fold
+        [0.18, 0.36, 0.22], // Bamboo crease shadow
+        [0.88, 0.8, 0.4], // Bamboo cane gold crest
+        [0.96, 0.98, 0.93], // Bamboo washi parchment
       ],
-      swatches: ["#141f40", "#407ac7", "#a6c7eb"],
+      swatches: ["#0d1a12", "#52ad5c", "#e0cc66"],
     },
     {
-      id: "imperial-vermilion",
-      name: "Imperial Cranes",
+      id: "gold-leaf-lacquer",
+      name: "Gold Leaf Lacquer",
       palette: [
-        [0.16, 0.08, 0.1], // Lacquer black
-        [0.88, 0.18, 0.15], // Torii vermilion
-        [0.92, 0.75, 0.25], // Imperial gold crest
-        [0.55, 0.15, 0.18], // Silk border
-        [0.98, 0.96, 0.92], // Cream paper
+        [0.07, 0.05, 0.05], // Urushi black lacquer ink
+        [0.9, 0.74, 0.22], // Gilded gold leaf fold
+        [0.32, 0.22, 0.16], // Lacquer crease shadow
+        [0.96, 0.88, 0.62], // Platinum luster crest
+        [0.98, 0.96, 0.92], // Imperial cream vellum
       ],
-      swatches: ["#29141a", "#e02e26", "#ebbf40"],
+      swatches: ["#120d0d", "#e6bd38", "#f5e09e"],
     },
   ],
   reef: [

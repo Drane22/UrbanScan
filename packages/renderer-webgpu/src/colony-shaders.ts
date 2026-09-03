@@ -41,11 +41,17 @@ fn colInk() -> vec3f {
   var ink = select(first, second, secondLuma < firstLuma);
   let inkLuma = min(firstLuma, secondLuma);
   ink = select(ink, fourth, fourthLuma < inkLuma);
-  return mix(ink, vec3f(0.015), 0.15);
+  return mix(ink, vec3f(0.055, 0.012, 0.030), 0.24);
 }
 
 fn colPaper() -> vec3f {
-  return mix(uniforms.themeFifth.rgb, vec3f(0.98), 0.55);
+  return mix(uniforms.themeFifth.rgb, vec3f(0.985, 0.970, 0.930), 0.42);
+}
+
+fn colQrContrast(color: vec3f) -> vec3f {
+  let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
+  let correction = smoothstep(0.72, 0.94, luma) * 0.25;
+  return mix(color, colInk(), correction);
 }
 
 fn colStage(start: f32, end: f32) -> f32 {
@@ -53,9 +59,10 @@ fn colStage(start: f32, end: f32) -> f32 {
 }
 
 fn colProject(localPos: vec3f) -> vec4f {
-  let camera = colStage(0.5, 1.0);
-  let angleY = mix(0.72, 0.0, camera);
-  let angleX = mix(-0.60, -1.570796, camera);
+  // Reversible camera tilt: 0.50 -> 1.00
+  let camera = colStage(0.50, 1.00);
+  let angleY = mix(0.785398, 0.0, camera);
+  let angleX = mix(-0.610865, -1.570796, camera);
   let cy = cos(angleY);
   let sy = sin(angleY);
   let cx = cos(angleX);
@@ -71,7 +78,7 @@ fn colProject(localPos: vec3f) -> vec4f {
   let scale = mix(38.0, 46.4, camera) / uniforms.gridSize * portrait * pulse * uniforms.camera.x;
   let scaleX = scale / max(uniforms.aspectRatio, 1.0);
   let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
-  let yOffset = mix(-0.22, 0.08, camera) + uniforms.cameraBobY;
+  let yOffset = mix(-0.18, 0.08, camera) + uniforms.cameraBobY;
 
   return vec4f(rotX * scaleX + uniforms.cameraBobX, (rotY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
 }
@@ -84,7 +91,7 @@ struct ColonyOutput {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
   @location(1) uv: vec2f,
-  @location(2) local: vec3f,
+  @location(2) worldPos: vec3f,
   @location(3) shade: f32,
   @location(4) seed: f32,
   @location(5) castShadow: f32,
@@ -119,15 +126,15 @@ fn colonyHeightAt(column: i32, row: i32) -> f32 {
 }
 
 fn colonyShadow(height: f32, column: i32, row: i32) -> f32 {
-  let direction = normalize(vec2f(0.55, 0.82));
+  let direction = normalize(vec2f(0.48, 0.78));
   var shadow = 1.0;
   for (var s: i32 = 1; s < 6; s = s + 1) {
     let offset = vec2f(f32(s)) * direction;
     let neighbor = colonyHeightAt(column + i32(round(offset.x)), row + i32(round(offset.y)));
     let occlusion = smoothstep(height + 0.1, height + 0.6, neighbor);
-    shadow *= mix(1.0, 0.74, occlusion * (1.0 - f32(s) * 0.12));
+    shadow *= mix(1.0, 0.72, occlusion * (1.0 - f32(s) * 0.12));
   }
-  return max(shadow, 0.68);
+  return max(shadow, 0.65);
 }
 
 fn colonyValley(height: f32, column: i32, row: i32) -> f32 {
@@ -139,6 +146,14 @@ fn colonyValley(height: f32, column: i32, row: i32) -> f32 {
     }
   }
   return smoothstep(0.02, 0.40, max(0.0, highest - height));
+}
+
+// Shallow culture-medium surface tension across the glass slide.
+fn cultureMediumRelief(gx: f32, gz: f32) -> f32 {
+  let w1 = sin(gx * 0.32 + gz * 0.25) * 0.035;
+  let w2 = cos(gx * 0.68 - gz * 0.54) * 0.022;
+  let w3 = sin(gx * 1.85 + gz * 2.20) * 0.008;
+  return w1 + w2 + w3;
 }
 
 fn colonyBoxGeometry(faceIndex: u32, uv: vec2f, size: vec3f) -> array<vec3f, 2> {
@@ -173,82 +188,106 @@ struct ColonyPiece {
   visible: f32,
 }
 
-fn createColonyPiece(part: u32, modType: u32, modHeight: f32, isDark: bool, seed: f32) -> ColonyPiece {
-  let propStage = 1.0 - colStage(0.0, 0.18);
-  let detailStage = 1.0 - colStage(0.12, 0.35);
-  let heightStage = 1.0 - colStage(0.22, 0.65);
-  let footStage = colStage(0.55, 0.90);
+fn createColonyPiece(
+  part: u32,
+  modType: u32,
+  modHeight: f32,
+  isDark: bool,
+  seed: f32,
+  conn: u32
+) -> ColonyPiece {
+  let activityStage = 1.0 - colStage(0.08, 0.30);
+  let detailStage = 1.0 - colStage(0.24, 0.52);
+  let heightStage = 1.0 - colStage(0.38, 0.78);
+  let fixationStage = colStage(0.56, 0.92);
 
   var piece: ColonyPiece;
   piece.visible = 1.0;
 
-  var footprint = mix(0.70 + seed * 0.20, 1.0, footStage);
-
-  // Much taller structures — colony buildings need to read as 3D at distance
-  // Domes: 1.8x, hab blocks: 2.4x, command towers: 3.5x
-  let heightScale = select(
-    1.8,  // basic dome
-    select(2.4, select(3.5, 2.0, modType == 4u), modType == 5u), // hab block, command, solar
-    modType == 1u
-  );
-  let totalHeight = mix(0.04, max(modHeight * heightScale, 0.18), heightStage);
+  var heightScale = 0.92;
+  if (modType >= 5u) {
+    heightScale = 1.18;
+  } else if (modType == 2u) {
+    heightScale = 1.06;
+  } else if (modType == 3u || modType == 4u) {
+    heightScale = 0.84;
+  }
+  let totalHeight = mix(0.04, max(modHeight * heightScale, 0.12), heightStage);
 
   if (part == 0u) {
-    // Regolith ground pad – thin slab, wider than the structure
-    let baseH = select(0.04, 0.08, isDark);
-    piece.size = vec3f(footprint * 1.0, baseH, footprint * 1.0);
-    piece.offset = vec3f(0.0, 0.0, 0.0);
-    piece.visible = 1.0;
+    let baseH = select(0.035, 0.055, isDark);
+    piece.size = vec3f(1.0, baseH, 1.0);
+    piece.offset = vec3f(0.0);
+    return piece;
+  }
+
+  if (!isDark) {
+    piece.visible = 0.0;
+    piece.size = vec3f(0.0);
+    piece.offset = vec3f(0.0);
     return piece;
   }
 
   if (part == 1u) {
-    // Habitat shell / cylinder / dome base
-    if (!isDark) {
-      piece.visible = 0.0; piece.size = vec3f(0.0); piece.offset = vec3f(0.0);
-      return piece;
+    var bodyW = mix(0.84, 1.0, fixationStage);
+    var bodyD = mix(0.84, 1.0, fixationStage);
+    if (modType >= 5u) {
+      bodyW = mix(0.94, 1.0, fixationStage);
+      bodyD = mix(0.94, 1.0, fixationStage);
     }
-    // Domes are narrower, hab blocks wider, command towers narrow spires
-    let bodyW = select(
-      footprint * 0.75,  // dome: narrower
-      select(footprint * 0.85, footprint * 0.50, modType == 5u), // hab: wider, command: spire
-      modType == 1u
-    );
-    let bodyH = totalHeight * 0.72 * heightStage;
-    piece.size = vec3f(bodyW, bodyH, bodyW);
-    piece.offset = vec3f(0.0, 0.08, 0.0);
+    piece.size = vec3f(bodyW, totalHeight * 0.72 * heightStage, bodyD);
+    piece.offset = vec3f(0.0, 0.055, 0.0);
     piece.visible = heightStage;
     return piece;
   }
 
   if (part == 2u) {
-    // Dome cap / Solar wing / Command spire top
-    if (!isDark) {
-      piece.visible = 0.0; piece.size = vec3f(0.0); piece.offset = vec3f(0.0);
-      return piece;
+    var nucleusW = mix(0.38, 0.82, fixationStage);
+    var nucleusH = 0.20 * detailStage;
+    if (modType >= 5u) {
+      nucleusW = mix(0.56, 0.88, fixationStage);
+      nucleusH = 0.34 * detailStage;
+    } else if (modType == 2u) {
+      nucleusW = mix(0.46, 0.84, fixationStage);
+      nucleusH = 0.24 * detailStage;
     }
-    // Solar panels are VERY wide, domes are medium, command has tall thin finial
-    let capW = select(
-      footprint * 0.60,  // dome: narrow rounded cap
-      select(footprint * 1.40, footprint * 0.35, modType == 5u), // solar: very wide, command: thin
-      modType == 1u
-    );
-    let capH = select(0.28, select(0.18, 0.55, modType == 5u), modType == 2u) * detailStage;
-    piece.size = vec3f(capW, capH, capW);
-    piece.offset = vec3f(0.0, 0.08 + totalHeight * 0.72 * heightStage, 0.0);
+    piece.size = vec3f(nucleusW, nucleusH, nucleusW);
+    piece.offset = vec3f(0.0, 0.055 + totalHeight * 0.72, 0.0);
     piece.visible = detailStage;
     return piece;
   }
 
-  // Part 3: Comm dish mast / Beacon / Antenna
-  if (!isDark || (modType != 3u && modType != 5u)) {
-    piece.visible = 0.0; piece.size = vec3f(0.0); piece.offset = vec3f(0.0);
+  if (modType >= 5u) {
+    let organoidPulse = 0.96 + 0.04 * sin(uniforms.time * 1.2 + seed * 6.28318);
+    piece.size = vec3f(
+      0.30 * activityStage * organoidPulse,
+      0.24 * activityStage,
+      0.30 * activityStage * organoidPulse
+    );
+    piece.offset = vec3f(0.0, 0.055 + totalHeight + 0.16 * detailStage, 0.0);
+    piece.visible = activityStage;
     return piece;
   }
-  let dishBase = 0.08 + totalHeight * heightStage;
-  piece.size = vec3f(0.22 * propStage, 0.75 * propStage, 0.22 * propStage);
-  piece.offset = vec3f((seed - 0.5) * 0.25, dishBase, (fract(seed * 7.7) - 0.5) * 0.25);
-  piece.visible = propStage;
+
+  if (modType == 2u) {
+    let divide = sin(uniforms.time * 0.85 + seed * 6.28318);
+    let divideOffset = (0.18 + divide * 0.025) * activityStage;
+    piece.size = vec3f(0.42 * activityStage, 0.24 * activityStage, 0.34 * activityStage);
+    piece.offset = vec3f(divideOffset, 0.055 + totalHeight * 0.82, 0.0);
+    piece.visible = activityStage;
+    return piece;
+  }
+
+  let vesicleDrift = sin(uniforms.time * 0.72 + seed * 6.28318) * 0.08 * activityStage;
+  var moveX = 0.0;
+  var moveZ = vesicleDrift;
+  if ((conn & 10u) != 0u) {
+    moveX = vesicleDrift;
+    moveZ = 0.0;
+  }
+  piece.size = vec3f(0.18 * activityStage, 0.13 * activityStage, 0.18 * activityStage);
+  piece.offset = vec3f(moveX, 0.055 + totalHeight * 0.82, moveZ);
+  piece.visible = select(0.0, activityStage, modType == 3u || modType == 4u || seed > 0.72);
   return piece;
 }
 
@@ -262,7 +301,6 @@ fn vertexMain(
   let part = instanceIndex % COLONY_PARTS;
   let faceIndex = vertexIndex / 6u;
   let quadIndex = vertexIndex % 6u;
-
   let quad = array<vec2f, 6>(
     vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(0.0, 1.0),
     vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0)
@@ -283,8 +321,8 @@ fn vertexMain(
   let conn = u32(raw.z);
   let seed = raw.w / 1000.0;
   let isDark = blockTypes[cellIndex] != 0u;
+  let piece = createColonyPiece(part, modType, modHeight, isDark, seed, conn);
 
-  let piece = createColonyPiece(part, modType, modHeight, isDark, seed);
   if (piece.visible < 0.01) {
     output.position = vec4f(2.0, 2.0, 2.0, 1.0);
     return output;
@@ -299,33 +337,73 @@ fn vertexMain(
     (posData.y + 0.5) * blockSize - halfGrid
   );
 
-  let worldPos = center + piece.offset * blockSize + geom[0];
-  let normal = normalize(geom[1]);
-
-  // Lunar directional light: strong, harsh, single source (no atmosphere)
-  let sunDir = normalize(vec3f(-0.50, 0.82, -0.28));
-  let diffuse = max(dot(normal, sunDir), 0.0);
-  // Fill from opposite side (reflected regolith)
-  let fillDir = normalize(vec3f(0.40, 0.35, 0.55));
-  let fill = max(dot(normal, fillDir), 0.0) * 0.12;
-  // Very low ambient: space is dark, long crisp shadows
-  var shade = 0.08 + pow(diffuse, 0.60) * 0.92 + fill;
-  if (normal.y > 0.45) { shade = min(1.4, shade * 1.15 + 0.15); }
-  if (abs(normal.y) < 0.12 && normal.x < -0.5) { shade *= 0.60; }
-  if (abs(normal.y) < 0.12 && normal.z > 0.5)  { shade *= 0.72; }
-
-  // Rim light from behind (sun edge on structures)
-  let viewDir = normalize(vec3f(sin(0.72), 0.60, cos(0.72)));
-  let rimLight = pow(1.0 - abs(dot(normal, viewDir)), 4.0) * 0.35;
-
+  var localVert = geom[0];
+  let localNorm = geom[1];
+  let fixationStage = colStage(0.56, 0.92);
+  let activityStage = 1.0 - colStage(0.08, 0.30);
   let pieceH = piece.size.y * blockSize;
-  let heightFrac = clamp(geom[0].y / max(pieceH, 0.001), 0.0, 1.0);
-  let collapsed = colStage(0.22, 0.65);
+  let heightFrac = clamp(localVert.y / max(pieceH, 0.001), 0.0, 1.0);
+
+  if (part == 0u && faceIndex == 0u) {
+    let gx = posData.x + uv.x;
+    let gz = posData.y + uv.y;
+    localVert.y += cultureMediumRelief(gx, gz) * blockSize * (1.0 - fixationStage);
+  } else if (part == 1u) {
+    let livingStage = 1.0 - fixationStage;
+    let halfB = blockSize * 0.5;
+    if ((conn & 1u) != 0u && uv.y < 0.35) {
+      localVert.z = mix(localVert.z, -halfB, 0.68 * livingStage);
+    }
+    if ((conn & 4u) != 0u && uv.y > 0.65) {
+      localVert.z = mix(localVert.z, halfB, 0.68 * livingStage);
+    }
+    if ((conn & 8u) != 0u && uv.x < 0.35) {
+      localVert.x = mix(localVert.x, -halfB, 0.68 * livingStage);
+    }
+    if ((conn & 2u) != 0u && uv.x > 0.65) {
+      localVert.x = mix(localVert.x, halfB, 0.68 * livingStage);
+    }
+
+    let radius = length(uv - 0.5) * 2.0;
+    if (faceIndex == 0u) {
+      let membraneDome = cos(min(radius, 1.0) * 1.570796) * pieceH * 0.30 * livingStage;
+      localVert.y += membraneDome;
+    } else {
+      let membraneBulge = sin(heightFrac * 3.14159265) * 0.16 * livingStage;
+      localVert.x *= 1.0 + membraneBulge;
+      localVert.z *= 1.0 + membraneBulge;
+    }
+
+    if (modType >= 5u) {
+      let foldAngle = atan2(localVert.z, localVert.x);
+      let membraneFold = sin(foldAngle * 6.0 + heightFrac * 5.0 + seed * 3.0) * 0.055 * livingStage;
+      localVert.x *= 1.0 + membraneFold;
+      localVert.z *= 1.0 + membraneFold;
+    }
+  } else if (part == 2u && faceIndex == 0u) {
+    let radius = length(uv - 0.5) * 2.0;
+    localVert.y += cos(min(radius, 1.0) * 1.570796) * pieceH * 0.42 * (1.0 - fixationStage);
+  } else if (part == 3u) {
+    let intracellularPulse = sin(uniforms.time * 1.1 + seed * 6.28318) * 0.035 * activityStage;
+    localVert *= 1.0 + intracellularPulse;
+  }
+
+  let worldPos = center + piece.offset * blockSize + localVert;
+  let normal = normalize(localNorm);
+  let keyDir = normalize(vec3f(-0.38, 0.88, -0.24));
+  let diffuse = max(dot(normal, keyDir), 0.0);
+  let fill = max(dot(normal, normalize(vec3f(0.42, 0.26, 0.48))), 0.0) * 0.18;
+  var shade = 0.24 + pow(diffuse, 0.82) * 0.78 + fill;
+  if (normal.y > 0.45) { shade = min(1.25, shade * 1.08 + 0.10); }
+
+  let viewDir = normalize(vec3f(sin(0.785), 0.61, cos(0.785)));
+  let rimLight = pow(1.0 - abs(dot(normal, viewDir)), 3.5) * 0.24;
+  let collapsed = colStage(0.38, 0.78);
 
   output.position = colProject(worldPos);
   output.normal = normal;
   output.uv = uv;
-  output.local = geom[0] / blockSize;
+  output.worldPos = worldPos;
   output.shade = mix(shade, 1.0, collapsed);
   output.seed = seed;
   output.castShadow = mix(colonyShadow(modHeight, column, row), 1.0, collapsed);
@@ -337,18 +415,25 @@ fn vertexMain(
   output.connections = conn;
   output.faceIndex = faceIndex;
   output.part = part;
-
   return output;
 }
 
-fn colonyQrColor(blockType: u32, noise: f32) -> vec3f {
+fn colonyQrColor(modType: u32, noise: f32) -> vec3f {
   var color = uniforms.themePrimary.rgb;
-  if (blockType == 3u) { color = uniforms.themeSecondary.rgb; }
-  else if (blockType == 4u) { color = mix(uniforms.themeThird.rgb, uniforms.themeFourth.rgb, 0.55); }
-  else if (blockType == 2u || blockType == 5u) { color = uniforms.themeFourth.rgb; }
-  let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
-  let contrast = mix(color, colInk(), smoothstep(0.76, 0.96, luma) * 0.15);
-  return contrast * (0.94 + noise * 0.06);
+  if (modType == 1u) {
+    color = mix(uniforms.themePrimary.rgb, uniforms.themeThird.rgb, 0.12);
+  } else if (modType == 2u) {
+    color = mix(uniforms.themePrimary.rgb, uniforms.themeSecondary.rgb, 0.15);
+  } else if (modType == 3u) {
+    color = mix(uniforms.themePrimary.rgb, uniforms.themeFourth.rgb, 0.12);
+  } else if (modType == 4u) {
+    color = mix(uniforms.themePrimary.rgb, uniforms.themeFourth.rgb, 0.18);
+  } else if (modType == 6u) {
+    color = mix(uniforms.themePrimary.rgb, uniforms.themeThird.rgb, 0.14);
+  } else if (modType == 7u) {
+    color = mix(uniforms.themePrimary.rgb, uniforms.themeSecondary.rgb, 0.12);
+  }
+  return colQrContrast(color) * (0.985 + noise * 0.015);
 }
 
 fn colonyQrMask(uv: vec2f, neighborMask: u32) -> f32 {
@@ -368,7 +453,7 @@ fn colonyQrMask(uv: vec2f, neighborMask: u32) -> f32 {
     mask *= 1.0 - step(radius, distance(uv, vec2f(radius, 1.0 - radius)));
   }
   if (!right && !down && uv.x > 1.0 - radius && uv.y > 1.0 - radius) {
-    mask *= 1.0 - step(radius, distance(uv, vec2f(1.0 - radius)));
+    mask *= 1.0 - step(radius, distance(uv, vec2f(1.0 - radius, 1.0 - radius)));
   }
   return mask;
 }
@@ -376,76 +461,81 @@ fn colonyQrMask(uv: vec2f, neighborMask: u32) -> f32 {
 @fragment
 fn fragmentMain(input: ColonyOutput) -> @location(0) vec4f {
   let progress = uniforms.progress;
-  let inkStage = smoothstep(0.58, 0.96, progress);
+  let fixationInk = smoothstep(0.62, 0.98, progress);
+  let squareLock = smoothstep(0.92, 0.995, progress);
   let isDark = input.blockType != 0u;
   let paper = colPaper();
-  let noise = colonyHash(input.position.xy + vec2f(uniforms.time * 0.13));
+  let primaryTone = uniforms.themePrimary.rgb;
+  let reagentTone = uniforms.themeSecondary.rgb;
+  let stainTone = uniforms.themeThird.rgb;
+  let membraneTone = uniforms.themeFourth.rgb;
 
-  // Lunar regolith surface palette
-  let regolith = mix(vec3f(0.68, 0.65, 0.58), vec3f(0.52, 0.50, 0.46), 0.3);
-  // Hab shell: white thermal paint with slight warmth
-  let habShell = mix(uniforms.themePrimary.rgb, vec3f(0.88, 0.86, 0.82), 0.55);
-  // Solar panels: deep blue-black
-  let solarPanel = mix(uniforms.themeThird.rgb, vec3f(0.08, 0.12, 0.22), 0.5);
-  // Accent: warning orange / mission color
-  let accent = uniforms.themeFourth.rgb;
-  // Beacon light
-  let beaconEmit = mix(uniforms.themeSecondary.rgb, vec3f(1.0, 0.85, 0.4), 0.3);
-
-  var color = regolith;
-
+  var color = paper;
   if (input.part == 0u) {
-    // Regolith ground pad with subtle crater ring and texture
-    let uv = input.uv;
-    let dist = length(uv - 0.5);
-    let craterRim = smoothstep(0.38, 0.42, dist) * smoothstep(0.48, 0.42, dist);
-    let dustPattern = colonyHash(uv * 8.0 + vec2f(input.seed * 3.7));
-    color = mix(regolith, regolith * 0.72, craterRim * 0.5);
-    color = mix(color, regolith * 1.10, step(0.72, dustPattern) * 0.15);
+    let mediumGrain = colonyHash(input.worldPos.xz * 7.0 + vec2f(input.seed * 4.3));
+    let reagentBloom = smoothstep(0.12, 0.48, length(input.uv - 0.5));
+    color = mix(paper, stainTone, 0.055 + mediumGrain * 0.025);
+    color = mix(color, reagentTone, (1.0 - reagentBloom) * 0.035 * (1.0 - fixationInk));
+
+    let halfSlide = uniforms.gridSize * uniforms.blockSize * 0.5;
+    let slideEdge = halfSlide - max(abs(input.worldPos.x), abs(input.worldPos.z));
+    let glassRim = 1.0 - smoothstep(0.0, uniforms.blockSize * 0.72, slideEdge);
+    color = mix(color, mix(paper, membraneTone, 0.16), glassRim * (1.0 - fixationInk));
   } else if (input.part == 1u) {
-    // Hab shell body – white/cream with thermal stripe band
-    color = habShell;
-    let stripeY = fract(input.local.y * 4.0);
-    let stripe = step(0.85, stripeY);
-    color = mix(color, accent * 0.7, stripe * select(0.0, 0.3, input.moduleType == 5u));
-    // Contact shadow at base
-    let contactDark = 1.0 - smoothstep(0.0, 0.28, input.heightFraction) * 0.35;
-    color *= contactDark;
-  } else if (input.part == 2u) {
-    // Solar panels: dark with reflective grid lines
-    if (input.moduleType == 2u) {
-      let gridX = step(0.92, fract(input.uv.x * 8.0));
-      let gridY = step(0.92, fract(input.uv.y * 8.0));
-      let grid = max(gridX, gridY);
-      color = mix(solarPanel, solarPanel * 1.8, grid * 0.4);
+    if (input.moduleType == 5u) {
+      color = mix(primaryTone, reagentTone, 0.20);
+    } else if (input.moduleType == 6u) {
+      color = mix(primaryTone, stainTone, 0.24);
+    } else if (input.moduleType == 7u) {
+      color = mix(primaryTone, membraneTone, 0.20);
+    } else if (input.moduleType == 2u) {
+      color = mix(primaryTone, reagentTone, 0.16);
+    } else if (input.moduleType == 3u) {
+      color = mix(primaryTone, stainTone, 0.18);
+    } else if (input.moduleType == 4u) {
+      color = mix(primaryTone, membraneTone, 0.18);
     } else {
-      // Dome cap: slightly lighter than shell
-      color = mix(habShell, vec3f(0.92, 0.90, 0.88), 0.3);
+      color = mix(primaryTone, membraneTone, 0.10);
+    }
+    let membraneBand = smoothstep(0.76, 0.92, length(input.uv - 0.5) * 2.0);
+    color = mix(color, membraneTone, membraneBand * 0.14);
+  } else if (input.part == 2u) {
+    color = mix(primaryTone, stainTone, 0.34);
+    if (input.moduleType >= 5u) {
+      let chromatin = colonyHash(input.uv * 8.0 + vec2f(input.seed));
+      color = mix(color, reagentTone, step(0.72, chromatin) * 0.18);
     }
   } else {
-    // Comm dish / antenna beacon pulse
-    let pulse = 0.7 + 0.3 * sin(uniforms.time * 5.0 + input.seed * 6.28);
-    color = beaconEmit * pulse * 1.6;
+    if (input.moduleType >= 5u) {
+      color = mix(reagentTone, membraneTone, 0.20);
+    } else if (input.moduleType == 2u) {
+      color = mix(primaryTone, reagentTone, 0.34);
+    } else {
+      color = mix(stainTone, reagentTone, 0.42);
+    }
   }
 
-  // Apply terrain-quality lighting
   var lit = color * input.shade;
   lit *= input.castShadow;
-  lit *= 1.0 - input.valleyOcclusion * 0.28;
+  lit *= 1.0 - input.valleyOcclusion * 0.18;
   lit += color * input.rimLight;
 
-  // Contact darkening at base (ambient occlusion proxy)
-  let groundContact = 1.0 - smoothstep(0.0, 0.18, input.heightFraction) * 0.22 * (1.0 - uniforms.progress);
-  lit *= mix(groundContact, 1.0, uniforms.progress);
-
   let qrNoise = colonyHash(input.uv + vec2f(f32(input.blockType) * 0.37));
-  let mask = colonyQrMask(input.uv, input.connections);
+  let organicMask = colonyQrMask(input.uv, input.connections);
+  let finderLock = select(organicMask, 1.0, input.moduleType >= 5u);
+  let scanMask = mix(finderLock, 1.0, squareLock);
   let isActive = select(0.0, 1.0, isDark);
-  let qrColor = mix(paper, colonyQrColor(input.blockType, qrNoise), isActive * mask);
+  var qrInk = colonyQrColor(input.moduleType, qrNoise);
 
-  var result = mix(lit, qrColor, inkStage);
-  result += (noise - 0.5) * 0.018 * (1.0 - inkStage);
+  // At the scan endpoint, pulse only the center color of dark modules. Geometry and edges stay fixed.
+  let edgeDistance = min(min(input.uv.x, 1.0 - input.uv.x), min(input.uv.y, 1.0 - input.uv.y));
+  let pulseInterior = smoothstep(0.10, 0.28, edgeDistance);
+  let scanPulse = sin(uniforms.time * 0.82 + input.seed * 6.28318) * 0.010;
+  qrInk *= 1.0 + scanPulse * pulseInterior * squareLock;
 
+  let qrColor = mix(paper, qrInk, isActive * scanMask);
+  var result = mix(lit, qrColor, fixationInk);
+  let livingNoise = colonyHash(input.position.xy + vec2f(uniforms.time * 0.12));
+  result += (livingNoise - 0.5) * 0.012 * (1.0 - fixationInk);
   return vec4f(clamp(result, vec3f(0.0), vec3f(1.0)), 1.0);
-}
-`;
+}`;

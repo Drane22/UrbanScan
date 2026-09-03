@@ -41,11 +41,17 @@ fn dungInk() -> vec3f {
   var ink = select(first, second, secondLuma < firstLuma);
   let inkLuma = min(firstLuma, secondLuma);
   ink = select(ink, fourth, fourthLuma < inkLuma);
-  return mix(ink, vec3f(0.015), 0.15);
+  return mix(ink, vec3f(0.012), 0.18);
 }
 
 fn dungPaper() -> vec3f {
-  return mix(uniforms.themeFifth.rgb, vec3f(0.98), 0.55);
+  return mix(uniforms.themeFifth.rgb, vec3f(0.98), 0.58);
+}
+
+fn dungQrContrast(color: vec3f) -> vec3f {
+  let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
+  let correction = smoothstep(0.72, 0.94, luma) * 0.25;
+  return mix(color, dungInk(), correction);
 }
 
 fn dungStage(start: f32, end: f32) -> f32 {
@@ -53,9 +59,9 @@ fn dungStage(start: f32, end: f32) -> f32 {
 }
 
 fn dungProject(localPos: vec3f) -> vec4f {
-  let camera = dungStage(0.5, 1.0);
-  let angleY = mix(0.79, 0.0, camera);
-  let angleX = mix(-0.58, -1.570796, camera);
+  let camera = dungStage(0.50, 1.00);
+  let angleY = mix(0.785398, 0.0, camera);
+  let angleX = mix(-0.610865, -1.570796, camera);
   let cy = cos(angleY);
   let sy = sin(angleY);
   let cx = cos(angleX);
@@ -68,7 +74,7 @@ fn dungProject(localPos: vec3f) -> vec4f {
 
   let portrait = select(1.0, 1.18, uniforms.aspectRatio < 0.8);
   let pulse = 1.0 + sin(camera * 3.14159265) * 0.025;
-  let scale = mix(40.0, 46.4, camera) / uniforms.gridSize * portrait * pulse * uniforms.camera.x;
+  let scale = mix(38.0, 46.4, camera) / uniforms.gridSize * portrait * pulse * uniforms.camera.x;
   let scaleX = scale / max(uniforms.aspectRatio, 1.0);
   let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
   let yOffset = mix(-0.18, 0.08, camera) + uniforms.cameraBobY;
@@ -84,14 +90,18 @@ struct DungeonOutput {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
   @location(1) uv: vec2f,
-  @location(2) local: vec3f,
+  @location(2) worldPos: vec3f,
   @location(3) shade: f32,
   @location(4) seed: f32,
-  @location(5) @interpolate(flat) blockType: u32,
-  @location(6) @interpolate(flat) featureType: u32,
-  @location(7) @interpolate(flat) connections: u32,
-  @location(8) @interpolate(flat) faceIndex: u32,
-  @location(9) @interpolate(flat) part: u32,
+  @location(5) castShadow: f32,
+  @location(6) valleyOcclusion: f32,
+  @location(7) rimLight: f32,
+  @location(8) heightFraction: f32,
+  @location(9) @interpolate(flat) blockType: u32,
+  @location(10) @interpolate(flat) featType: u32,
+  @location(11) @interpolate(flat) connections: u32,
+  @location(12) @interpolate(flat) faceIndex: u32,
+  @location(13) @interpolate(flat) part: u32,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -104,6 +114,37 @@ fn dungeonHash(pos: vec2f) -> f32 {
   let scaled = fract(pos * vec2f(0.1031, 0.103));
   let folded = scaled + dot(scaled, scaled.yx + 19.19);
   return fract((folded.x + folded.y) * folded.x);
+}
+
+fn dungeonHeightAt(column: i32, row: i32) -> f32 {
+  let size = i32(uniforms.gridSize);
+  if (column < 0 || column >= size || row < 0 || row >= size) { return 0.0; }
+  let idx = u32(row * size + column);
+  if (idx >= arrayLength(&dungeonData)) { return 0.0; }
+  return dungeonData[idx].y;
+}
+
+fn dungeonShadow(height: f32, column: i32, row: i32) -> f32 {
+  let direction = normalize(vec2f(0.50, 0.85));
+  var shadow = 1.0;
+  for (var s: i32 = 1; s < 6; s = s + 1) {
+    let offset = vec2f(f32(s)) * direction;
+    let neighbor = dungeonHeightAt(column + i32(round(offset.x)), row + i32(round(offset.y)));
+    let occlusion = smoothstep(height + 0.08, height + 0.55, neighbor);
+    shadow *= mix(1.0, 0.70, occlusion * (1.0 - f32(s) * 0.13));
+  }
+  return max(shadow, 0.62);
+}
+
+fn dungeonValley(height: f32, column: i32, row: i32) -> f32 {
+  var highest = 0.0;
+  for (var dr: i32 = -1; dr <= 1; dr = dr + 1) {
+    for (var dc: i32 = -1; dc <= 1; dc = dc + 1) {
+      if (dc == 0 && dr == 0) { continue; }
+      highest = max(highest, dungeonHeightAt(column + dc, row + dr));
+    }
+  }
+  return smoothstep(0.02, 0.45, max(0.0, highest - height));
 }
 
 fn dungeonBoxGeometry(faceIndex: u32, uv: vec2f, size: vec3f) -> array<vec3f, 2> {
@@ -138,103 +179,120 @@ struct DungeonPiece {
   visible: f32,
 }
 
-fn dungeonHeightAt(column: i32, row: i32) -> f32 {
-  let size = i32(uniforms.gridSize);
-  if (column < 0 || column >= size || row < 0 || row >= size) { return 0.0; }
-  let idx = u32(row * size + column);
-  if (idx >= arrayLength(&dungeonData)) { return 0.0; }
-  return dungeonData[idx].y;
-}
-
-fn dungeonShadow(height: f32, column: i32, row: i32) -> f32 {
-  let direction = normalize(vec2f(0.50, 0.85));
-  var shadow = 1.0;
-  for (var s: i32 = 1; s < 6; s = s + 1) {
-    let offset = vec2f(f32(s)) * direction;
-    let neighbor = dungeonHeightAt(column + i32(round(offset.x)), row + i32(round(offset.y)));
-    let occlusion = smoothstep(height + 0.08, height + 0.55, neighbor);
-    shadow *= mix(1.0, 0.70, occlusion * (1.0 - f32(s) * 0.13));
-  }
-  return max(shadow, 0.62);
-}
-
-fn dungeonValley(height: f32, column: i32, row: i32) -> f32 {
-  var highest = 0.0;
-  for (var dr: i32 = -1; dr <= 1; dr = dr + 1) {
-    for (var dc: i32 = -1; dc <= 1; dc = dc + 1) {
-      if (dc == 0 && dr == 0) { continue; }
-      highest = max(highest, dungeonHeightAt(column + dc, row + dr));
-    }
-  }
-  return smoothstep(0.02, 0.45, max(0.0, highest - height));
-}
-
-fn createDungeonPiece(part: u32, featType: u32, featHeight: f32, isDark: bool, seed: f32) -> DungeonPiece {
-  let propStage = 1.0 - dungStage(0.0, 0.18);
+fn createDungeonPiece(
+  part: u32,
+  featType: u32,
+  featHeight: f32,
+  isDark: bool,
+  seed: f32,
+  conn: u32
+) -> DungeonPiece {
+  let torchStage = 1.0 - dungStage(0.00, 0.18);
   let detailStage = 1.0 - dungStage(0.12, 0.35);
-  let heightStage = 1.0 - dungStage(0.22, 0.65);
+  let elevationStage = 1.0 - dungStage(0.22, 0.65);
   let footStage = dungStage(0.55, 0.90);
 
   var piece: DungeonPiece;
   piece.visible = 1.0;
 
-  var footprint = mix(0.65 + seed * 0.25, 1.0, footStage);
-  // Towers are very tall, walls moderate, rubble short – strong height variation
-  let heightScale = select(
-    1.8,  // wall section
-    select(3.2, select(4.5, 2.2, featType == 3u), featType == 5u), // keep: tallest, ruins: short
-    featType == 1u
-  );
-  let totalHeight = mix(0.05, max(featHeight * heightScale, 0.20), heightStage);
+  var heightScale = 1.6;
+  if (featType == 5u) {
+    heightScale = 2.8; // Boss keep & central tower
+  } else if (featType == 2u) {
+    heightScale = 2.0; // Vaulted Great Hall
+  } else if (featType == 4u) {
+    heightScale = 1.8; // Structural pillar
+  } else if (featType == 3u) {
+    heightScale = 1.6; // Archway corridor
+  } else if (featType == 1u) {
+    heightScale = 1.7; // Thick stone wall
+  }
+
+  let totalHeight = mix(0.04, max(featHeight * heightScale, 0.18), elevationStage);
 
   if (part == 0u) {
-    // Flagstone floor – wide, very thin, creates dungeon floor feel
+    // Part 0: Continuous paved flagstone floor covering full 1.0 module size (zero gaps)
     let baseH = select(0.04, 0.08, isDark);
-    piece.size = vec3f(footprint, baseH, footprint);
+    piece.size = vec3f(1.0, baseH, 1.0);
     piece.offset = vec3f(0.0, 0.0, 0.0);
     piece.visible = 1.0;
     return piece;
   }
 
   if (part == 1u) {
-    // Stone wall / tower body – massive walls, narrow spires
-    if (!isDark) { piece.visible = 0.0; piece.size = vec3f(0.0); piece.offset = vec3f(0.0); return piece; }
-    let bodyW = select(
-      footprint * 0.82,  // wall: thick
-      select(footprint * 0.60, footprint * 0.88, featType == 3u), // tower: narrow spire, ruin: wide chunk
-      featType == 5u
-    );
-    let bodyH = totalHeight * 0.78 * heightStage;
-    piece.size = vec3f(bodyW, bodyH, bodyW);
+    // Part 1: Heavy stone masonry walls and chamber massing
+    if (!isDark) {
+      piece.visible = 0.0; piece.size = vec3f(0.0); piece.offset = vec3f(0.0);
+      return piece;
+    }
+    // Full width so adjacent walls fuse seamlessly
+    var bodyW = mix(0.96, 1.0, footStage);
+    var bodyD = mix(0.96, 1.0, footStage);
+    if (featType == 4u) {
+      // Free-standing column in courtyard/alcove
+      bodyW = mix(0.68, 1.0, footStage);
+      bodyD = mix(0.68, 1.0, footStage);
+    }
+    let bodyH = totalHeight * 0.78 * elevationStage;
+    piece.size = vec3f(bodyW, bodyH, bodyD);
     piece.offset = vec3f(0.0, 0.08, 0.0);
-    piece.visible = heightStage;
+    piece.visible = elevationStage;
     return piece;
   }
 
   if (part == 2u) {
-    // Crenellations / battlements – WIDER than the tower body for overhang effect
-    if (!isDark) { piece.visible = 0.0; piece.size = vec3f(0.0); piece.offset = vec3f(0.0); return piece; }
-    let capW = select(
-      footprint * 0.85,  // wall cap
-      select(footprint * 0.78, footprint * 1.05, featType == 3u), // tower battlements: wider overhang
-      featType == 5u
-    );
-    let capH = select(0.22, select(0.40, 0.15, featType == 3u), featType == 5u) * detailStage;
-    piece.size = vec3f(capW, capH, capW);
-    piece.offset = vec3f(0.0, 0.08 + totalHeight * 0.78 * heightStage, 0.0);
+    // Part 2: Overhanging battlements, crenellations, corbels, and archways
+    if (!isDark) {
+      piece.visible = 0.0; piece.size = vec3f(0.0); piece.offset = vec3f(0.0);
+      return piece;
+    }
+    var capW = mix(1.02, 1.0, footStage);
+    var capD = mix(1.02, 1.0, footStage);
+    var capH = 0.28 * detailStage;
+
+    if (featType == 5u) {
+      // Boss keep: wide overhanging machicolations & battlements
+      capW = mix(1.08, 1.0, footStage);
+      capD = mix(1.08, 1.0, footStage);
+      capH = 0.45 * detailStage;
+    } else if (featType == 4u) {
+      // Flared pillar capital
+      capW = mix(0.85, 1.0, footStage);
+      capD = mix(0.85, 1.0, footStage);
+      capH = 0.32 * detailStage;
+    }
+
+    piece.size = vec3f(capW, capH, capD);
+    piece.offset = vec3f(0.0, 0.08 + totalHeight * 0.78 * elevationStage, 0.0);
     piece.visible = detailStage;
     return piece;
   }
 
-  // Part 3: Torch flame – offset to edge of tower, glowing
-  if (!isDark || (featType != 2u && featType != 5u)) {
+  // Part 3: Wall Torches, Fire Braziers & Altar Flames
+  let hasFlame = featType == 7u || featType == 5u || (featType == 2u && seed > 0.35) || (featType == 3u && seed > 0.45);
+  if (!isDark || !hasFlame) {
     piece.visible = 0.0; piece.size = vec3f(0.0); piece.offset = vec3f(0.0);
     return piece;
   }
-  let torchBase = 0.08 + totalHeight * heightStage * 0.55;
-  piece.size = vec3f(0.18 * propStage, 0.45 * propStage, 0.18 * propStage);
-  piece.offset = vec3f((seed - 0.5) * 0.55, torchBase, (fract(seed * 7.7) - 0.5) * 0.55);
-  piece.visible = propStage;
+
+  let flicker = 0.85 + 0.15 * sin(uniforms.time * 11.0 + seed * 14.0) + 0.08 * sin(uniforms.time * 24.0 + seed * 9.0);
+  let flameBase = 0.08 + totalHeight * 0.78 * elevationStage + 0.18 * detailStage;
+  let emberY = fract(uniforms.time * 0.8 + seed * 5.0) * 0.25 * torchStage;
+  let emberSway = sin(uniforms.time * 4.2 + seed * 8.0) * 0.03 * torchStage;
+
+  var flameW = 0.25 * torchStage * flicker;
+  var flameH = 0.55 * torchStage * flicker;
+  var flameD = 0.25 * torchStage * flicker;
+
+  if (featType == 5u) {
+    flameW = 0.38 * torchStage * flicker;
+    flameH = 0.75 * torchStage * flicker;
+    flameD = 0.38 * torchStage * flicker;
+  }
+
+  piece.size = vec3f(flameW, flameH, flameD);
+  piece.offset = vec3f(emberSway, flameBase + emberY, 0.0);
+  piece.visible = torchStage;
   return piece;
 }
 
@@ -268,7 +326,7 @@ fn vertexMain(
   let seed = raw.w / 1000.0;
   let isDark = blockTypes[cellIndex] != 0u;
 
-  let piece = createDungeonPiece(part, featType, featHeight, isDark, seed);
+  let piece = createDungeonPiece(part, featType, featHeight, isDark, seed, conn);
   if (piece.visible < 0.01) {
     output.position = vec4f(2.0, 2.0, 2.0, 1.0);
     return output;
@@ -283,32 +341,84 @@ fn vertexMain(
     (posData.y + 0.5) * blockSize - halfGrid
   );
 
-  let worldPos = center + piece.offset * blockSize + geom[0];
-  let normal = normalize(geom[1]);
-  // Dungeon: harsh directional light, very low ambient (torch-lit feel)
-  let lightDir = normalize(vec3f(-0.42, 0.84, -0.32));
+  var localVert = geom[0];
+  var localNorm = geom[1];
+
+  let footStage = dungStage(0.55, 0.90);
+  let archFactor = (1.0 - footStage);
+  let halfB = blockSize * 0.5;
+
+  // CONTINUOUS 4-WAY WALL BRIDGING:
+  // Connect adjacent wall modules seamlessly so they form continuous masonry walls
+  if (part == 1u && isDark) {
+    if ((conn & 1u) != 0u && uv.y < 0.35) {
+      localVert.z = mix(localVert.z, -halfB, 0.90 * archFactor);
+    }
+    if ((conn & 4u) != 0u && uv.y > 0.65) {
+      localVert.z = mix(localVert.z, halfB, 0.90 * archFactor);
+    }
+    if ((conn & 8u) != 0u && uv.x < 0.35) {
+      localVert.x = mix(localVert.x, -halfB, 0.90 * archFactor);
+    }
+    if ((conn & 2u) != 0u && uv.x > 0.65) {
+      localVert.x = mix(localVert.x, halfB, 0.90 * archFactor);
+    }
+
+    // Wall batter: stone masonry walls taper slightly inward toward the top
+    let heightT = clamp(localVert.y / (piece.size.y * blockSize), 0.0, 1.0);
+    let batter = (1.0 - heightT * 0.08) * archFactor;
+    localVert.x *= batter;
+    localVert.z *= batter;
+  } else if (part == 2u && isDark) {
+    // Crenellations & Archways bridging across hallway connections
+    if ((conn & 1u) != 0u && uv.y < 0.35) {
+      localVert.z = mix(localVert.z, -halfB, 0.92 * archFactor);
+    }
+    if ((conn & 4u) != 0u && uv.y > 0.65) {
+      localVert.z = mix(localVert.z, halfB, 0.92 * archFactor);
+    }
+    if ((conn & 8u) != 0u && uv.x < 0.35) {
+      localVert.x = mix(localVert.x, -halfB, 0.92 * archFactor);
+    }
+    if ((conn & 2u) != 0u && uv.x > 0.65) {
+      localVert.x = mix(localVert.x, halfB, 0.92 * archFactor);
+    }
+  }
+
+  let worldPos = center + piece.offset * blockSize + localVert;
+  let normal = normalize(localNorm);
+
+  // Directional torch & moon lighting
+  let lightDir = normalize(vec3f(-0.45, 0.82, -0.35));
   let diffuse = max(dot(normal, lightDir), 0.0);
-  let fillDir = normalize(vec3f(0.30, 0.45, 0.60));
-  let fill = max(dot(normal, fillDir), 0.0) * 0.10;
-  // Very low ambient: dungeon is dark
-  var shade = 0.08 + pow(diffuse, 0.55) * 0.92 + fill;
-  if (normal.y > 0.45) { shade = min(1.4, shade * 1.18 + 0.18); }
-  if (abs(normal.y) < 0.12 && normal.x < -0.5) { shade *= 0.55; }
-  if (abs(normal.y) < 0.12 && normal.z > 0.5)  { shade *= 0.68; }
-  // Rim: baked into shade
-  let viewDir = normalize(vec3f(sin(0.79), 0.62, cos(0.79)));
-  shade += pow(1.0 - abs(dot(normal, viewDir)), 4.2) * 0.22;
+  let fillDir = normalize(vec3f(0.35, 0.40, 0.55));
+  let fill = max(dot(normal, fillDir), 0.0) * 0.15;
+
+  var shade = 0.12 + pow(diffuse, 0.65) * 0.88 + fill;
+  if (normal.y > 0.45) { shade = min(1.35, shade * 1.15 + 0.15); }
+  if (abs(normal.y) < 0.12 && normal.x < -0.5) { shade *= 0.58; }
+  if (abs(normal.y) < 0.12 && normal.z > 0.5)  { shade *= 0.70; }
+
+  let viewDir = normalize(vec3f(0.707, 0.60, 0.707));
+  let rim = pow(1.0 - abs(dot(normal, viewDir)), 3.8) * 0.22;
+  shade += rim;
 
   let collapsed = dungStage(0.22, 0.65);
+  let colI = i32(round(posData.x));
+  let rowI = i32(round(posData.y));
 
   output.position = dungProject(worldPos);
   output.normal = normal;
   output.uv = uv;
-  output.local = geom[0] / blockSize;
+  output.worldPos = worldPos;
   output.shade = mix(shade, 1.0, collapsed);
   output.seed = seed;
+  output.castShadow = mix(dungeonShadow(featHeight, colI, rowI), 1.0, collapsed);
+  output.valleyOcclusion = dungeonValley(featHeight, colI, rowI) * (1.0 - collapsed);
+  output.rimLight = rim * (1.0 - collapsed);
+  output.heightFraction = clamp(localVert.y / max(piece.size.y * blockSize, 0.001), 0.0, 1.0);
   output.blockType = blockTypes[cellIndex];
-  output.featureType = featType;
+  output.featType = featType;
   output.connections = conn;
   output.faceIndex = faceIndex;
   output.part = part;
@@ -316,18 +426,21 @@ fn vertexMain(
   return output;
 }
 
-fn dungeonQrColor(blockType: u32, noise: f32) -> vec3f {
+fn dungeonQrColor(blockType: u32, featType: u32, noise: f32) -> vec3f {
   var color = uniforms.themePrimary.rgb;
-  if (blockType == 3u) {
-    color = uniforms.themeSecondary.rgb;
-  } else if (blockType == 4u) {
-    color = mix(uniforms.themeThird.rgb, uniforms.themeFourth.rgb, 0.55);
-  } else if (blockType == 2u || blockType == 5u) {
-    color = uniforms.themeFourth.rgb;
+  if (featType == 5u) {
+    color = uniforms.themePrimary.rgb;
+  } else if (featType == 2u) {
+    color = mix(uniforms.themePrimary.rgb, uniforms.themeFourth.rgb, 0.40);
+  } else if (featType == 3u) {
+    color = mix(uniforms.themePrimary.rgb, uniforms.themeThird.rgb, 0.35);
+  } else if (featType == 7u) {
+    color = mix(uniforms.themeSecondary.rgb, uniforms.themeFourth.rgb, 0.50);
+  } else {
+    color = mix(uniforms.themePrimary.rgb, uniforms.themeThird.rgb, 0.25);
   }
-  let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
-  let contrast = mix(color, dungInk(), smoothstep(0.76, 0.96, luma) * 0.15);
-  return contrast * (0.94 + noise * 0.06);
+  let contrasted = dungQrContrast(color);
+  return contrasted * (0.95 + noise * 0.05);
 }
 
 fn dungeonQrMask(uv: vec2f, neighborMask: u32) -> f32 {
@@ -347,7 +460,7 @@ fn dungeonQrMask(uv: vec2f, neighborMask: u32) -> f32 {
     mask *= 1.0 - step(radius, distance(uv, vec2f(radius, 1.0 - radius)));
   }
   if (!right && !down && uv.x > 1.0 - radius && uv.y > 1.0 - radius) {
-    mask *= 1.0 - step(radius, distance(uv, vec2f(1.0 - radius)));
+    mask *= 1.0 - step(radius, distance(uv, vec2f(1.0 - radius, 1.0 - radius)));
   }
   return mask;
 }
@@ -355,59 +468,95 @@ fn dungeonQrMask(uv: vec2f, neighborMask: u32) -> f32 {
 @fragment
 fn fragmentMain(input: DungeonOutput) -> @location(0) vec4f {
   let progress = uniforms.progress;
-  let inkStage = smoothstep(0.58, 0.96, progress);
+  let inkStage = smoothstep(0.62, 0.98, progress);
   let isDark = input.blockType != 0u;
   let paper = dungPaper();
-  let noise = dungeonHash(input.position.xy + vec2f(uniforms.time * 0.13));
+  let noise = dungeonHash(input.position.xy + vec2f(uniforms.time * 0.10));
 
-  // Derive rich materials directly from theme palette colors!
-  let floorFlagstone = mix(uniforms.themeFifth.rgb * 0.85, vec3f(0.45), 0.35);
-  let masonryWall = uniforms.themePrimary.rgb;
-  let torchFlame = uniforms.themeSecondary.rgb;
-  let ironSconce = uniforms.themeFourth.rgb;
+  let primaryStone = uniforms.themePrimary.rgb;
+  let torchGlow = uniforms.themeSecondary.rgb;
+  let wallAshlar = uniforms.themeThird.rgb;
+  let accentGranite = uniforms.themeFourth.rgb;
+  let floorFlagstone = uniforms.themeFifth.rgb;
 
-  var color = floorFlagstone;
+  var color = wallAshlar;
 
   if (input.part == 0u) {
-    // Flagstone floor with mortar lines
+    // Part 0: Continuous paved flagstone pavement with masonry joints and aged wear
     let uv = input.uv;
-    let mortar = step(0.05, uv.x) * step(uv.x, 0.95) * step(0.05, uv.y) * step(uv.y, 0.95);
-    color = mix(floorFlagstone * 0.65, floorFlagstone, mortar);
+    let seamX = smoothstep(0.03, 0.05, uv.x) * smoothstep(0.97, 0.95, uv.x);
+    let seamY = smoothstep(0.03, 0.05, uv.y) * smoothstep(0.97, 0.95, uv.y);
+    let seam = seamX * seamY;
+    let stoneGrain = dungeonHash(input.worldPos.xz * 12.0 + vec2f(input.seed * 3.7));
+    let baseFloor = mix(wallAshlar, floorFlagstone, 0.45);
+    color = mix(primaryStone * 0.65, baseFloor, seam);
+    color *= (0.88 + stoneGrain * 0.24);
   } else if (input.part == 1u) {
-    // 3D Ashlar stone wall
-    color = masonryWall;
-    if (input.featureType == 5u) {
-      // Fortress keep
-      color = mix(masonryWall, ironSconce, 0.4);
+    // Part 1: Heavy stone masonry walls with running bond ashlar coursing
+    let courseY = fract(input.worldPos.y * 5.0);
+    let mortarLine = smoothstep(0.06, 0.12, courseY) * smoothstep(0.94, 0.88, courseY);
+    let blockShade = mix(0.75, 1.0, mortarLine);
+
+    if (input.featType == 5u) {
+      // Boss keep: massive dark fortified stone with royal bloodstone trim
+      color = mix(primaryStone, accentGranite, 0.35) * blockShade;
+    } else if (input.featType == 2u) {
+      // Vaulted chamber: polished dressed ashlar with torch illumination
+      color = mix(wallAshlar, torchGlow, 0.22) * blockShade;
+    } else if (input.featType == 3u) {
+      // Archway corridor: colonnade stone
+      color = mix(wallAshlar, accentGranite, 0.25) * blockShade;
+    } else if (input.featType == 4u) {
+      // Fluted pillar
+      let flute = sin(input.uv.x * 37.699) * 0.5 + 0.5;
+      color = mix(wallAshlar * 0.85, wallAshlar * 1.15, flute);
+    } else {
+      color = wallAshlar * blockShade;
     }
+
+    let contactDark = 1.0 - smoothstep(0.0, 0.20, input.heightFraction) * 0.35;
+    color *= contactDark;
   } else if (input.part == 2u) {
-    // Crenellations / lintels
-    color = mix(masonryWall, vec3f(0.85), 0.2);
+    // Part 2: Overhanging crenellations, battlements, and corbels
+    if (input.featType == 5u) {
+      // Keep battlements: alternating crenel and merlon
+      let crenel = step(0.50, fract(input.uv.x * 3.0));
+      color = mix(accentGranite, primaryStone, crenel * 0.45);
+    } else if (input.featType == 4u) {
+      color = mix(wallAshlar, accentGranite, 0.40);
+    } else {
+      color = mix(wallAshlar, floorFlagstone, 0.25);
+    }
   } else {
-    // Flickering torch flame
-    let flicker = 0.7 + 0.3 * sin(uniforms.time * 8.0 + input.seed * 6.28);
-    color = torchFlame * flicker * 1.5;
+    // Part 3: Glowing torch flames & altar brazier fire
+    if (input.featType == 5u) {
+      // Boss altar flame: incandescent royal flame with golden core
+      let flameGrad = input.uv.y;
+      color = mix(torchGlow * 2.2, accentGranite * 1.5, flameGrad);
+    } else {
+      // Wall torch: warm golden flame
+      let flameGrad = input.uv.y;
+      color = mix(torchGlow * 2.0, vec3f(1.0, 0.4, 0.1), flameGrad);
+    }
   }
 
-  // Stone masonry detail: mortar lines darker
-  if (input.part == 1u || input.part == 2u) {
-    let mortarH = step(0.93, fract(input.local.y * 3.5 + input.seed));
-    let mortarV = step(0.93, fract(input.uv.x * 4.0 + input.seed * 1.7));
-    color = mix(color, color * 0.58, max(mortarH, mortarV) * 0.5);
-  }
-  // Contact shadow at base of each structure
-  let contact = 1.0 - smoothstep(0.0, 0.22, input.local.y) * 0.30 * (1.0 - uniforms.progress);
-  color *= contact;
-  // Full shade range
-  var shaded = color * clamp(input.shade, 0.0, 1.4);
+  var lit = color * input.shade;
+  lit *= input.castShadow;
+  lit *= 1.0 - input.valleyOcclusion * 0.28;
+  lit += color * input.rimLight;
 
-  let qrNoise = dungeonHash(input.uv + vec2f(f32(input.blockType) * 0.37));
+  let groundContact = 1.0 - smoothstep(0.0, 0.16, input.heightFraction) * 0.22 * (1.0 - uniforms.progress);
+  lit *= mix(groundContact, 1.0, uniforms.progress);
+
+  // High-contrast scannable QR generation
+  let qrNoise = dungeonHash(input.uv + vec2f(f32(input.blockType) * 0.43));
   let mask = dungeonQrMask(input.uv, input.connections);
   let isActive = select(0.0, 1.0, isDark);
-  let qrColor = mix(paper, dungeonQrColor(input.blockType, qrNoise), isActive * mask);
+  let qrInk = dungeonQrColor(input.blockType, input.featType, qrNoise);
+  let qrColor = mix(paper, qrInk, isActive * mask);
 
-  var result = mix(shaded, qrColor, inkStage);
-  result += (noise - 0.5) * 0.015 * (1.0 - inkStage);
+  var result = mix(lit, qrColor, inkStage);
+  result += (noise - 0.5) * 0.012 * (1.0 - inkStage);
 
   return vec4f(clamp(result, vec3f(0.0), vec3f(1.0)), 1.0);
 }

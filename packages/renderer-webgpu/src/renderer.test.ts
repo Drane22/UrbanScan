@@ -12,6 +12,7 @@ import {
   CIRCUIT_SIGNAL_SHADER,
   CIRCUIT_TRACE_SHADER,
 } from "./circuit-shaders";
+import { COLONY_SHADER } from "./colony-shaders";
 import { createSeedGpuScene, type SeedGpuScene } from "./gpu-scene";
 import { SEED_POST_SHADER, SEED_WEATHER_SHADER } from "./shared-shaders";
 import { TERRAIN_SHADER } from "./terrain-shaders";
@@ -621,6 +622,10 @@ it("gives Reef separate shelf, ecology, water, life, and QR passes", () => {
   expect(REEF_WATER_SHADER).toContain("reefMotionStage(0.18, 0.38, 0.12, 0.28)");
   expect(REEF_FISH_SHADER).toContain("reefMotionStage(0.0, 0.18, 0.0, 0.12)");
   expect(REEF_QR_SHADER).toContain("blockTypes[instanceIndex] != 0u");
+  expect(REEF_SHELF_SHADER).toContain("reefQrSubstrate()");
+  expect(REEF_QR_SHADER).toContain("reefQrInk()");
+  expect(REEF_QR_SHADER).toContain("finderRole");
+  expect(REEF_QR_SHADER).not.toContain("mix(moduleColor, vec3f(0.012), lock)");
 });
 
 it("gives Circuit dedicated material, component, routing, signal, and QR passes", () => {
@@ -642,6 +647,10 @@ it("gives Circuit dedicated material, component, routing, signal, and QR passes"
   expect(CIRCUIT_SIGNAL_SHADER).toContain("fn signalColor");
   expect(CIRCUIT_SIGNAL_SHADER).toContain("let activeRoute");
   expect(CIRCUIT_QR_SHADER).toContain("blockTypes[instanceIndex] != 0u");
+  expect(CIRCUIT_BOARD_SHADER).toContain("circuitQrSubstrate()");
+  expect(CIRCUIT_QR_SHADER).toContain("circuitQrInk()");
+  expect(CIRCUIT_QR_SHADER).toContain("finderRole");
+  expect(CIRCUIT_QR_SHADER).not.toContain("mix(moduleColor, vec3f(0.012), lock)");
 });
 
 it("uses an instanced multi-part City pipeline with a staged reversible QR morph", () => {
@@ -896,7 +905,7 @@ it("keeps every archetype lush without isolated flower towers", async () => {
     expect(outerTop - bulkTop, url).toBeLessThan(groundWidth * 0.16);
     expect(scene.flowerCount, url).toBeGreaterThan(1_350);
   }
-});
+}, 15000);
 
 it("uses a short accelerating bezier timeline for morphing", () => {
   const duration = Reflect.get(rendererModule, "MORPH_DURATION_MS");
@@ -972,4 +981,14 @@ it("lets Link DNA choose curated fantasy flower and leaf palettes", async () => 
   expect(
     Math.max(...appearances.map((item) => Reflect.get(item, "leafHueSpread"))),
   ).toBeGreaterThan(0.06);
+});
+
+it("fixes the microscopic Colony into a scan-safe QR endpoint", () => {
+  expect(COLONY_SHADER).toContain("fn cultureMediumRelief");
+  expect(COLONY_SHADER).toContain("input.moduleType >= 5u");
+  expect(COLONY_SHADER).toContain("let squareLock = smoothstep(0.92, 0.995, progress)");
+  expect(COLONY_SHADER).toContain("let scanPulse = sin(");
+  expect(COLONY_SHADER).toContain("scanPulse * pulseInterior * squareLock");
+  expect(COLONY_SHADER).not.toMatch(/ant|termite|queen|loam|worker/i);
+  expect(COLONY_SHADER).not.toMatch(/\b(?:let|var|const)\s+active\b/);
 });

@@ -32,8 +32,13 @@ function tileValue(
   }
   if (tile === CIRCUIT_MATERIAL_TILES.moldedPlastic) {
     const grain = Math.round(noise * 28);
-    const bevel = (column === 0 || column === 15 || row === 0 || row === 15) ? -24 : 0;
-    return [76 + grain + bevel, 78 + grain + bevel, 82 + grain + bevel, 188 + Math.round(noise * 36)];
+    const bevel = column === 0 || column === 15 || row === 0 || row === 15 ? -24 : 0;
+    return [
+      76 + grain + bevel,
+      78 + grain + bevel,
+      82 + grain + bevel,
+      188 + Math.round(noise * 36),
+    ];
   }
   if (tile === CIRCUIT_MATERIAL_TILES.brushedHorizontal) {
     const line = Math.round(hash(row, 0, 12) * 58 + Math.sin(row * 1.5) * 16);
@@ -50,7 +55,12 @@ function tileValue(
   if (tile === CIRCUIT_MATERIAL_TILES.solder) {
     const mottling = Math.round(noise * 64);
     const shine = Math.round(Math.sin((column + row) * 0.4) * 20);
-    return [155 + mottling + shine, 160 + mottling + shine, 165 + mottling + shine, 62 + Math.round(noise * 42)];
+    return [
+      155 + mottling + shine,
+      160 + mottling + shine,
+      165 + mottling + shine,
+      62 + Math.round(noise * 42),
+    ];
   }
   if (tile === CIRCUIT_MATERIAL_TILES.silkscreen) {
     const isLetter =

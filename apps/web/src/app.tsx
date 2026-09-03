@@ -31,7 +31,7 @@ const MODEL_INFO: Readonly<
 > = {
   city: { desc: "Skyscrapers & plazas", icon: "🏙️", label: "City" },
   circuit: { desc: "Motherboard & IC chips", icon: "⚡", label: "Circuit" },
-  colony: { desc: "Lunar habitat settlement", icon: "🚀", label: "Colony" },
+  colony: { desc: "Microscopic cell culture", icon: "🧫", label: "Colony" },
   constellation: { desc: "Deep space star map", icon: "✨", label: "Constellation" },
   dungeon: { desc: "Isometric stone labyrinth", icon: "🗝️", label: "Dungeon" },
   mycelium: { desc: "Bioluminescent fungal forest", icon: "🍄", label: "Mycelium" },

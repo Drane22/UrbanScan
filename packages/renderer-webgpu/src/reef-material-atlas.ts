@@ -26,19 +26,29 @@ function tilePixel(
   if (tile === REEF_MATERIAL_TILES.coralPores) {
     const dX = (column % 4) - 1.5;
     const dY = (row % 4) - 1.5;
-    const isCupule = (dX * dX + dY * dY) < 1.8;
+    const isCupule = dX * dX + dY * dY < 1.8;
     const pore = isCupule ? -62 : 12;
     return [164 + pore, 132 + pore, 124 + pore, 186 + Math.round(noise * 42)];
   }
   if (tile === REEF_MATERIAL_TILES.plateBands) {
     const band = Math.sin((row + noise * 0.4) * 1.57) * 34;
     const radial = Math.cos(column * 0.785) * 12;
-    return [177 + Math.round(band + radial), 145 + Math.round(band * 0.9), 128 + Math.round(band * 0.8), 174 + Math.round(noise * 38)];
+    return [
+      177 + Math.round(band + radial),
+      145 + Math.round(band * 0.9),
+      128 + Math.round(band * 0.8),
+      174 + Math.round(noise * 38),
+    ];
   }
   if (tile === REEF_MATERIAL_TILES.brainRidges) {
     const warp = Math.sin(row * 0.6 + column * 0.2) * 2.8;
     const ridge = Math.sin(column * 0.9 + warp) > 0.15 ? 42 : -45;
-    return [156 + ridge, 128 + Math.round(ridge * 0.9), 116 + Math.round(ridge * 0.8), 160 + Math.round(noise * 44)];
+    return [
+      156 + ridge,
+      128 + Math.round(ridge * 0.9),
+      116 + Math.round(ridge * 0.8),
+      160 + Math.round(noise * 44),
+    ];
   }
   if (tile === REEF_MATERIAL_TILES.limestone) {
     const pitted = noise > 0.82 ? -65 : Math.round(noise * 24);
@@ -48,17 +58,32 @@ function tilePixel(
   if (tile === REEF_MATERIAL_TILES.sand) {
     const ripple = Math.sin(row * 1.35 + column * 0.18 + noise * 0.2) * 20;
     const speckle = Math.round((noise - 0.5) * 32);
-    return [202 + Math.round(ripple) + speckle, 186 + Math.round(ripple * 0.9) + speckle, 148 + Math.round(ripple * 0.7) + speckle, 220 + Math.round(noise * 22)];
+    return [
+      202 + Math.round(ripple) + speckle,
+      186 + Math.round(ripple * 0.9) + speckle,
+      148 + Math.round(ripple * 0.7) + speckle,
+      220 + Math.round(noise * 22),
+    ];
   }
   if (tile === REEF_MATERIAL_TILES.tissue) {
     const vein = Math.sin(column * 0.6 + row * 0.35) * 22;
     const pulse = Math.cos(column * 0.3 - row * 0.5) * 14;
-    return [188 + Math.round(vein + pulse), 116 + Math.round(vein * 0.8), 126 + Math.round(pulse), 92 + Math.round(noise * 45)];
+    return [
+      188 + Math.round(vein + pulse),
+      116 + Math.round(vein * 0.8),
+      126 + Math.round(pulse),
+      92 + Math.round(noise * 45),
+    ];
   }
   if (tile === REEF_MATERIAL_TILES.tubeCavity) {
     const distance = Math.hypot(column - 7.5, row - 7.5);
     const rim = Math.abs(distance - 4.5) < 1.4 ? 58 : distance < 4.0 ? -82 : 6;
-    return [152 + rim, 112 + Math.round(rim * 0.85), 100 + Math.round(rim * 0.75), 168 + Math.round(noise * 36)];
+    return [
+      152 + rim,
+      112 + Math.round(rim * 0.85),
+      100 + Math.round(rim * 0.75),
+      168 + Math.round(noise * 36),
+    ];
   }
   if (tile === REEF_MATERIAL_TILES.biolum) {
     const dist = Math.hypot((column % 8) - 3.5, (row % 8) - 3.5);

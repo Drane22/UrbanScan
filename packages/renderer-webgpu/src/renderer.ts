@@ -1282,7 +1282,7 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
     pass.setPipeline(gpu.pipelines.reefWater);
     pass.draw(6);
     pass.setPipeline(gpu.pipelines.reefFish);
-    pass.draw(12, gpu.reefFishCount);
+    pass.draw(36, gpu.reefFishCount);
     pass.setPipeline(gpu.pipelines.reefQr);
     pass.draw(36, gpu.blockField.blocks.length);
   } else if (gpu.pipelines.form === "terrain") {
