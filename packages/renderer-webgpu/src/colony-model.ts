@@ -79,30 +79,30 @@ export function createColonyLayout(model: SeedModel): ColonyLayout {
       if (ring >= 0) {
         if (ring === 0) {
           type = COLONY_MODULE_TYPES.commandCenter;
-          height = 0.65;
+          height = 5.5;
         } else if (ring === 1) {
           type = COLONY_MODULE_TYPES.lunarTerrain;
-          height = 0.08;
-        } else {
-          type = COLONY_MODULE_TYPES.commandCenter;
-          height = ring === 3 ? 0.95 : 0.75;
-        }
-      } else if (isDark) {
-        if (topology.clusterSize[index]! >= 6 && cellSeed > 0.6) {
-          type = COLONY_MODULE_TYPES.habDome;
-          height = 0.45 + cellSeed * 0.3;
-        } else if (topology.neighbors4[index]! <= 1 && cellSeed > 0.7) {
-          type = COLONY_MODULE_TYPES.commDish;
-          height = 0.6;
-        } else if (topology.neighbors4[index]! <= 2 && cellSeed < 0.35) {
-          type = COLONY_MODULE_TYPES.solarArray;
-          height = 0.3;
-        } else if (cellSeed > 0.8) {
-          type = COLONY_MODULE_TYPES.landingPad;
           height = 0.15;
         } else {
+          type = COLONY_MODULE_TYPES.commandCenter;
+          height = ring === 3 ? 10.0 : 7.5;
+        }
+      } else if (isDark) {
+        if (topology.clusterSize[index]! >= 6 && cellSeed > 0.5) {
+          type = COLONY_MODULE_TYPES.habDome;
+          height = 5.5 + cellSeed * 3.5;
+        } else if (topology.neighbors4[index]! <= 1 && cellSeed > 0.6) {
+          type = COLONY_MODULE_TYPES.commDish;
+          height = 6.5;
+        } else if (topology.neighbors4[index]! <= 2 && cellSeed < 0.35) {
+          type = COLONY_MODULE_TYPES.solarArray;
+          height = 2.5;
+        } else if (cellSeed > 0.8) {
+          type = COLONY_MODULE_TYPES.landingPad;
+          height = 0.6;
+        } else {
           type = COLONY_MODULE_TYPES.researchStation;
-          height = 0.35 + cellSeed * 0.2;
+          height = 3.2 + cellSeed * 2.0;
         }
       }
 

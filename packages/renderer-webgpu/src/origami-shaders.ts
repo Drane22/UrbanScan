@@ -29,7 +29,9 @@ struct Uniforms {
   camera: vec4f,
 }
 
-fn origInk() -> vec3f {
+const ORIGAMI_PARTS: u32 = 4u;
+
+fn oriInk() -> vec3f {
   let first = uniforms.themePrimary.rgb;
   let second = uniforms.themeSecondary.rgb;
   let fourth = uniforms.themeFourth.rgb;
@@ -39,21 +41,21 @@ fn origInk() -> vec3f {
   var ink = select(first, second, secondLuma < firstLuma);
   let inkLuma = min(firstLuma, secondLuma);
   ink = select(ink, fourth, fourthLuma < inkLuma);
-  return mix(ink, vec3f(0.015), 0.22);
+  return mix(ink, vec3f(0.015), 0.15);
 }
 
-fn origPaper() -> vec3f {
-  return mix(uniforms.themeFifth.rgb, vec3f(1.0), 0.68);
+fn oriPaper() -> vec3f {
+  return mix(uniforms.themeFifth.rgb, vec3f(0.98), 0.55);
 }
 
-fn origStage(start: f32, end: f32) -> f32 {
+fn oriStage(start: f32, end: f32) -> f32 {
   return smoothstep(start, end, uniforms.progress);
 }
 
-fn origProject(localPos: vec3f) -> vec4f {
-  let camera = origStage(0.5, 1.0);
-  let angleY = mix(0.68, 0.0, camera);
-  let angleX = mix(-0.60, -1.570796, camera);
+fn oriProject(localPos: vec3f) -> vec4f {
+  let camera = oriStage(0.5, 1.0);
+  let angleY = mix(0.79, 0.0, camera);
+  let angleX = mix(-0.58, -1.570796, camera);
   let cy = cos(angleY);
   let sy = sin(angleY);
   let cx = cos(angleX);
@@ -66,10 +68,10 @@ fn origProject(localPos: vec3f) -> vec4f {
 
   let portrait = select(1.0, 1.18, uniforms.aspectRatio < 0.8);
   let pulse = 1.0 + sin(camera * 3.14159265) * 0.025;
-  let scale = mix(38.0, 46.4, camera) / uniforms.gridSize * portrait * pulse * uniforms.camera.x;
+  let scale = mix(40.0, 46.4, camera) / uniforms.gridSize * portrait * pulse * uniforms.camera.x;
   let scaleX = scale / max(uniforms.aspectRatio, 1.0);
   let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
-  let yOffset = mix(-0.16, 0.08, camera) + uniforms.cameraBobY;
+  let yOffset = mix(-0.18, 0.08, camera) + uniforms.cameraBobY;
 
   return vec4f(rotX * scaleX + uniforms.cameraBobX, (rotY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
 }
@@ -82,23 +84,129 @@ struct OrigamiOutput {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
   @location(1) uv: vec2f,
-  @location(2) @interpolate(flat) blockType: u32,
-  @location(3) @interpolate(flat) foldType: u32,
-  @location(4) shade: f32,
-  @location(5) seed: f32,
+  @location(2) local: vec3f,
+  @location(3) shade: f32,
+  @location(4) seed: f32,
+  @location(5) @interpolate(flat) blockType: u32,
+  @location(6) @interpolate(flat) foldType: u32,
+  @location(7) @interpolate(flat) connections: u32,
+  @location(8) @interpolate(flat) faceIndex: u32,
+  @location(9) @interpolate(flat) part: u32,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var<storage, read> blockTypes: array<u32>;
 @group(0) @binding(2) var<storage, read> blockPositions: array<vec4f>;
 @group(0) @binding(3) var<storage, read> blockHeights: array<f32>;
-@group(0) @binding(4) var<storage, read> panelData: array<vec4f>;
+@group(0) @binding(4) var<storage, read> foldData: array<vec4f>;
 
-// 2 triangular facets per cell
-const TRI_VERTS: array<vec2f, 6> = array<vec2f, 6>(
-  vec2f(-0.5, -0.5), vec2f(0.5, -0.5), vec2f(0.5, 0.5),
-  vec2f(-0.5, -0.5), vec2f(0.5, 0.5), vec2f(-0.5, 0.5)
-);
+fn origamiHash(pos: vec2f) -> f32 {
+  let scaled = fract(pos * vec2f(0.1031, 0.103));
+  let folded = scaled + dot(scaled, scaled.yx + 19.19);
+  return fract((folded.x + folded.y) * folded.x);
+}
+
+fn origamiBoxGeometry(faceIndex: u32, uv: vec2f, size: vec3f) -> array<vec3f, 2> {
+  let halfX = size.x * 0.5;
+  let halfZ = size.z * 0.5;
+  var pos = vec3f(0.0);
+  var norm = vec3f(0.0, 1.0, 0.0);
+  if (faceIndex == 0u) {
+    pos = vec3f((uv.x - 0.5) * size.x, size.y, (uv.y - 0.5) * size.z);
+  } else if (faceIndex == 1u) {
+    pos = vec3f((uv.x - 0.5) * size.x, 0.0, (0.5 - uv.y) * size.z);
+    norm = vec3f(0.0, -1.0, 0.0);
+  } else if (faceIndex == 2u) {
+    pos = vec3f((uv.x - 0.5) * size.x, uv.y * size.y, halfZ);
+    norm = vec3f(0.0, 0.0, 1.0);
+  } else if (faceIndex == 3u) {
+    pos = vec3f((0.5 - uv.x) * size.x, uv.y * size.y, -halfZ);
+    norm = vec3f(0.0, 0.0, -1.0);
+  } else if (faceIndex == 4u) {
+    pos = vec3f(halfX, uv.y * size.y, (uv.x - 0.5) * size.z);
+    norm = vec3f(1.0, 0.0, 0.0);
+  } else {
+    pos = vec3f(-halfX, uv.y * size.y, (0.5 - uv.x) * size.z);
+    norm = vec3f(-1.0, 0.0, 0.0);
+  }
+  return array<vec3f, 2>(pos, norm);
+}
+
+struct OrigamiPiece {
+  size: vec3f,
+  offset: vec3f,
+  visible: f32,
+}
+
+fn createOrigamiPiece(part: u32, fType: u32, fAngle: f32, isDark: bool, seed: f32) -> OrigamiPiece {
+  let propStage = 1.0 - oriStage(0.0, 0.18);
+  let detailStage = 1.0 - oriStage(0.12, 0.35);
+  let heightStage = 1.0 - oriStage(0.22, 0.65);
+  let footStage = oriStage(0.55, 0.90);
+
+  var piece: OrigamiPiece;
+  piece.visible = 1.0;
+
+  var footprint = mix(0.65 + seed * 0.28, 1.0, footStage);
+  // Paper folds need height to show crease angles – tall diamond-like forms
+  let totalHeight = mix(0.02, max(fAngle * 2.8, 0.12), heightStage);
+
+  if (part == 0u) {
+    // Base paper sheet layer
+    let baseH = select(0.02, 0.05, isDark);
+    piece.size = vec3f(footprint, baseH, footprint);
+    piece.offset = vec3f(0.0, 0.0, 0.0);
+    piece.visible = 1.0;
+    return piece;
+  }
+
+  if (part == 1u) {
+    // 3D Mountain fold paper facet
+    if (!isDark) {
+      piece.visible = 0.0;
+      piece.size = vec3f(0.0);
+      piece.offset = vec3f(0.0);
+      return piece;
+    }
+    // Mountain fold: the main facet - width varies by fold complexity
+    let bodyW = footprint * select(0.78, select(0.62, 0.88, fType >= 3u), fType == 1u);
+    let bodyH = totalHeight * 0.72 * heightStage;
+    piece.size = vec3f(bodyW, bodyH, bodyW);
+    piece.offset = vec3f((seed - 0.5) * 0.18, 0.05, -(seed - 0.5) * 0.18);
+    piece.visible = heightStage;
+    return piece;
+  }
+
+  if (part == 2u) {
+    // Secondary valley reverse crease flap
+    if (!isDark) {
+      piece.visible = 0.0;
+      piece.size = vec3f(0.0);
+      piece.offset = vec3f(0.0);
+      return piece;
+    }
+    let flapFootprint = footprint * select(0.60, 0.85, fType == 3u);
+    let flapH = select(0.10, 0.18, fType == 3u) * detailStage;
+    piece.size = vec3f(flapFootprint, flapH, flapFootprint);
+    piece.offset = vec3f(0.0, 0.05 + totalHeight * 0.70 * heightStage, 0.0);
+    piece.visible = detailStage;
+    return piece;
+  }
+
+  // Part 3: Rosette crane / Petal apex
+  if (!isDark || (fType != 3u && fType != 5u)) {
+    piece.visible = 0.0;
+    piece.size = vec3f(0.0);
+    piece.offset = vec3f(0.0);
+    return piece;
+  }
+  let peakSize = 0.25 * propStage;
+  let peakBase = 0.05 + totalHeight * heightStage;
+  piece.size = vec3f(peakSize, 0.35 * propStage, peakSize);
+  piece.offset = vec3f((seed - 0.5) * 0.3, peakBase, (fract(seed * 7.7) - 0.5) * 0.3);
+  piece.visible = propStage;
+  return piece;
+}
 
 @vertex
 fn vertexMain(
@@ -106,7 +214,16 @@ fn vertexMain(
   @builtin(instance_index) instanceIndex: u32
 ) -> OrigamiOutput {
   var output: OrigamiOutput;
-  let cellIndex = instanceIndex;
+  let cellIndex = instanceIndex / ORIGAMI_PARTS;
+  let part = instanceIndex % ORIGAMI_PARTS;
+  let faceIndex = vertexIndex / 6u;
+  let quadIndex = vertexIndex % 6u;
+
+  let quad = array<vec2f, 6>(
+    vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(0.0, 1.0),
+    vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0)
+  );
+  let uv = quad[quadIndex];
 
   if (cellIndex >= arrayLength(&blockPositions)) {
     output.position = vec4f(2.0, 2.0, 2.0, 1.0);
@@ -114,92 +231,160 @@ fn vertexMain(
   }
 
   let posData = blockPositions[cellIndex];
-  let raw = panelData[cellIndex];
-  let foldType = u32(raw.x);
-  let rawElevation = raw.y;
-  let angle = raw.z;
+  let raw = foldData[cellIndex];
+  let fType = u32(raw.x);
+  let fAngle = raw.y;
+  let conn = u32(raw.z);
   let seed = raw.w / 1000.0;
   let isDark = blockTypes[cellIndex] != 0u;
 
-  let v = TRI_VERTS[vertexIndex % 6u];
-  let triId = (vertexIndex % 6u) / 3u;
+  let piece = createOrigamiPiece(part, fType, fAngle, isDark, seed);
+  if (piece.visible < 0.01) {
+    output.position = vec4f(2.0, 2.0, 2.0, 1.0);
+    return output;
+  }
 
-  // Unfolding stage: paper flattens completely
-  let unfoldStage = origStage(0.15, 0.85);
-  let qrStage = origStage(0.8, 1.0);
+  let blockSize = uniforms.blockSize;
+  let geom = origamiBoxGeometry(faceIndex, uv, piece.size * blockSize);
+  let halfGrid = uniforms.gridSize * blockSize * 0.5;
+  let center = vec3f(
+    (posData.x + 0.5) * blockSize - halfGrid,
+    0.0,
+    (posData.y + 0.5) * blockSize - halfGrid
+  );
 
-  let elevation = mix(rawElevation, 0.0, unfoldStage);
+  let worldPos = center + piece.offset * blockSize + geom[0];
+  let normal = normalize(geom[1]);
+  // Paper: clean studio lighting, sharp single source, very low ambient
+  // Fold crease creates hard shadow between facets
+  let lightDir = normalize(vec3f(-0.45, 0.88, -0.15));
+  let diffuse = max(dot(normal, lightDir), 0.0);
+  let fillDir = normalize(vec3f(0.30, 0.40, 0.60));
+  let fill = max(dot(normal, fillDir), 0.0) * 0.08;
+  // Low ambient: paper picks up shadows strongly
+  var shade = 0.12 + pow(diffuse, 0.50) * 0.88 + fill;
+  if (normal.y > 0.45) { shade = min(1.5, shade * 1.25 + 0.20); }
+  // Heavy shadow on recessed side faces – this creates fold definition
+  if (abs(normal.y) < 0.12 && normal.x < -0.5) { shade *= 0.42; }
+  if (abs(normal.y) < 0.12 && normal.z > 0.5)  { shade *= 0.60; }
+  // Rim from back
+  let viewDir = normalize(vec3f(sin(0.79), 0.58, cos(0.79)));
+  shade += pow(1.0 - abs(dot(normal, viewDir)), 3.5) * 0.18;
 
-  // Faceted fold displacement
-  let foldDir = select(v.x + v.y, v.x - v.y, triId == 1u);
-  let foldY = (1.0 - abs(foldDir)) * elevation;
-
-  let center = (uniforms.gridSize - 1.0) * 0.5;
-  let sz = mix(0.96, 1.0, qrStage);
-  let worldX = posData.x - center + v.x * sz;
-  let worldZ = posData.y - center + v.y * sz;
-  let worldY = select(0.01, foldY, isDark);
-
-  let modelPos = vec3f(worldX, worldY, worldZ);
-  output.position = origProject(modelPos);
-  output.uv = v + 0.5;
-  output.blockType = blockTypes[cellIndex];
-  output.foldType = foldType;
-  output.seed = seed;
-
-  // Compute facet normal
-  let nx = select(-elevation * 0.5, elevation * 0.5, triId == 0u);
-  let nz = select(-elevation * 0.5, elevation * 0.5, triId == 1u);
-  let normal = normalize(vec3f(nx, 1.0, nz));
+  let collapsed = oriStage(0.22, 0.65);
+  output.position = oriProject(worldPos);
   output.normal = normal;
-
-  let lightDir = normalize(vec3f(0.5, 0.85, 0.35));
-  output.shade = clamp(dot(normal, lightDir) * 0.4 + 0.6, 0.3, 1.0);
+  output.uv = uv;
+  output.local = geom[0] / blockSize;
+  output.shade = mix(shade, 1.0, collapsed);
+  output.seed = seed;
+  output.blockType = blockTypes[cellIndex];
+  output.foldType = fType;
+  output.connections = conn;
+  output.faceIndex = faceIndex;
+  output.part = part;
 
   return output;
 }
 
+fn origamiQrColor(blockType: u32, noise: f32) -> vec3f {
+  var color = uniforms.themePrimary.rgb;
+  if (blockType == 3u) {
+    color = uniforms.themeSecondary.rgb;
+  } else if (blockType == 4u) {
+    color = mix(uniforms.themeThird.rgb, uniforms.themeFourth.rgb, 0.55);
+  } else if (blockType == 2u || blockType == 5u) {
+    color = uniforms.themeFourth.rgb;
+  }
+  let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
+  let contrast = mix(color, oriInk(), smoothstep(0.76, 0.96, luma) * 0.15);
+  return contrast * (0.94 + noise * 0.06);
+}
+
+fn origamiQrMask(uv: vec2f, neighborMask: u32) -> f32 {
+  let up = (neighborMask & 1u) != 0u;
+  let right = (neighborMask & 2u) != 0u;
+  let down = (neighborMask & 4u) != 0u;
+  let left = (neighborMask & 8u) != 0u;
+  let radius = 0.46;
+  var mask = 1.0;
+  if (!left && !up && uv.x < radius && uv.y < radius) {
+    mask *= 1.0 - step(radius, distance(uv, vec2f(radius)));
+  }
+  if (!right && !up && uv.x > 1.0 - radius && uv.y < radius) {
+    mask *= 1.0 - step(radius, distance(uv, vec2f(1.0 - radius, radius)));
+  }
+  if (!left && !down && uv.x < radius && uv.y > 1.0 - radius) {
+    mask *= 1.0 - step(radius, distance(uv, vec2f(radius, 1.0 - radius)));
+  }
+  if (!right && !down && uv.x > 1.0 - radius && uv.y > 1.0 - radius) {
+    mask *= 1.0 - step(radius, distance(uv, vec2f(1.0 - radius)));
+  }
+  return mask;
+}
+
 @fragment
 fn fragmentMain(input: OrigamiOutput) -> @location(0) vec4f {
+  let progress = uniforms.progress;
+  let inkStage = smoothstep(0.58, 0.96, progress);
   let isDark = input.blockType != 0u;
-  let morphQR = origStage(0.85, 1.0);
+  let paper = oriPaper();
+  let noise = origamiHash(input.position.xy + vec2f(uniforms.time * 0.13));
 
-  if (morphQR >= 1.0) {
-    let finalColor = select(origPaper(), origInk(), isDark);
-    return vec4f(finalColor, 1.0);
-  }
+  // Washi paper color system: base is warm cream/white, accent colors used sparingly
+  let washiBase = mix(uniforms.themeFifth.rgb, vec3f(0.94, 0.92, 0.88), 0.65);
+  // Fold shadow color: very dark version of primary, used only for depth cues
+  let foldShadow = mix(uniforms.themePrimary.rgb, vec3f(0.05, 0.03, 0.05), 0.3);
+  // Accent: vermilion seal / ink stamp
+  let vermilion = mix(uniforms.themeSecondary.rgb, vec3f(0.85, 0.12, 0.08), 0.4);
+  // Gold: metallic foil highlight
+  let goldLeaf = mix(uniforms.themeFourth.rgb, vec3f(0.88, 0.72, 0.22), 0.3);
 
-  // Washi paper aesthetic
-  let washiBase = vec3f(0.96, 0.95, 0.92);
-  let washiCrease = vec3f(0.82, 0.80, 0.76);
-  let origamiIndigo = vec3f(0.12, 0.16, 0.28);
-  let origamiCrimson = vec3f(0.68, 0.15, 0.18);
-  let origamiGold = vec3f(0.85, 0.70, 0.35);
+  var color = washiBase;
 
-  var paperColor = washiBase;
-  if (isDark) {
-    if (input.foldType == 4u || input.foldType == 5u) {
-      // Finder Rosette: Gold and crimson accents
-      paperColor = mix(origamiCrimson, origamiGold, input.seed);
-    } else if (input.foldType == 1u) {
-      // Mountain fold: Deep indigo washi
-      paperColor = mix(origamiIndigo, vec3f(0.18, 0.22, 0.35), input.seed);
-    } else {
-      paperColor = mix(origamiIndigo * 0.8, origamiCrimson * 0.6, input.seed * 0.4);
+  if (input.part == 0u) {
+    // Base paper: warm cream with subtle grain and crease lines
+    let uv = input.uv;
+    let diagonal = abs(uv.x - uv.y);
+    let crease = smoothstep(0.04, 0.0, diagonal);
+    let grain = origamiHash(uv * 14.0 + vec2f(input.seed * 2.1)) * 0.06;
+    color = mix(washiBase, washiBase * 0.82, crease * 0.5) + grain;
+  } else if (input.part == 1u) {
+    // Mountain fold body: warm washi, slightly darker than flat base
+    let shadedWashi = mix(washiBase * 0.88, washiBase, f32(input.foldType) / 6.0);
+    color = shadedWashi;
+    if (input.foldType == 5u) {
+      // Rosette/Crane: accent vermilion blush on center
+      color = mix(shadedWashi, mix(washiBase, vermilion, 0.35), 0.6);
+    } else if (input.foldType == 3u || input.foldType == 4u) {
+      // Complex folds: show the crease color - darker under-fold
+      color = mix(shadedWashi, foldShadow, 0.22);
     }
+  } else if (input.part == 2u) {
+    // Valley flap: lighter inner surface (interior of fold)
+    color = mix(washiBase, vec3f(0.96, 0.94, 0.92), 0.3);
+    if (input.foldType == 3u) {
+      color = mix(color, vermilion, 0.20);
+    }
+  } else {
+    // Rosette apex / crane beak tip: gold foil
+    color = mix(goldLeaf, vec3f(0.92, 0.80, 0.30), noise * 0.3) * 1.4;
   }
 
-  // Crease shadow along diagonal fold
-  let uv = input.uv;
-  let creaseDist = abs(uv.x - uv.y);
-  let creaseShadow = smoothstep(0.0, 0.08, creaseDist);
-  paperColor = mix(washiCrease * 0.8, paperColor, creaseShadow * 0.3 + 0.7);
+  // Contact shadow at fold base
+  let contact = 1.0 - smoothstep(0.0, 0.18, input.local.y) * 0.28 * (1.0 - uniforms.progress);
+  color *= contact;
+  // Full shade – paper has beautiful tonal range from bright white to deep fold shadow
+  var shaded = color * clamp(input.shade, 0.0, 1.5);
 
-  var shaded = paperColor * input.shade;
+  let qrNoise = origamiHash(input.uv + vec2f(f32(input.blockType) * 0.37));
+  let mask = origamiQrMask(input.uv, input.connections);
+  let isActive = select(0.0, 1.0, isDark);
+  let qrColor = mix(paper, origamiQrColor(input.blockType, qrNoise), isActive * mask);
 
-  let canonicalColor = select(origPaper(), origInk(), isDark);
-  shaded = mix(shaded, canonicalColor, morphQR);
+  var result = mix(shaded, qrColor, inkStage);
+  result += (noise - 0.5) * 0.015 * (1.0 - inkStage);
 
-  return vec4f(shaded, 1.0);
+  return vec4f(clamp(result, vec3f(0.0), vec3f(1.0)), 1.0);
 }
 `;

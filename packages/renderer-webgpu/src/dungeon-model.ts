@@ -79,30 +79,30 @@ export function createDungeonLayout(model: SeedModel): DungeonLayout {
       if (ring >= 0) {
         if (ring === 0) {
           type = DUNGEON_TILE_TYPES.fortressKeep;
-          height = dna.wallHeightBias * 1.3;
+          height = 6.5;
         } else if (ring === 1) {
           type = DUNGEON_TILE_TYPES.flagstoneFloor;
-          height = 0.08;
+          height = 0.15;
         } else {
           type = DUNGEON_TILE_TYPES.ritualAltar;
-          height = ring === 3 ? dna.wallHeightBias * 1.6 : dna.wallHeightBias * 1.2;
+          height = ring === 3 ? 11.0 : 8.0;
         }
       } else if (isDark) {
-        if (topology.clusterSize[index]! >= 6 && cellSeed > 0.6) {
+        if (topology.clusterSize[index]! >= 6 && cellSeed > 0.5) {
           type = DUNGEON_TILE_TYPES.raisedPlatform;
-          height = dna.wallHeightBias * 0.9;
+          height = 5.5 + cellSeed * 3.0;
         } else if (topology.neighbors4[index]! === 2 && cellSeed < dna.archFrequency) {
           type = DUNGEON_TILE_TYPES.archwayCorridor;
-          height = dna.wallHeightBias * 0.7;
-        } else if (topology.neighbors4[index]! <= 1 && cellSeed > 0.7) {
+          height = 4.5;
+        } else if (topology.neighbors4[index]! <= 1 && cellSeed > 0.6) {
           type = DUNGEON_TILE_TYPES.torchBrazier;
-          height = dna.wallHeightBias * 0.5;
+          height = 3.0;
         } else if (topology.neighbors4[index]! === 0) {
           type = DUNGEON_TILE_TYPES.pillar;
-          height = dna.wallHeightBias * 0.8;
+          height = 5.0;
         } else {
           type = DUNGEON_TILE_TYPES.stoneWall;
-          height = dna.wallHeightBias * (0.6 + cellSeed * 0.4);
+          height = 3.5 + cellSeed * 2.0;
         }
       }
 

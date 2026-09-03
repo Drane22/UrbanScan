@@ -78,27 +78,27 @@ export function createMyceliumLayout(model: SeedModel): MyceliumLayout {
       if (ring >= 0) {
         if (ring === 0) {
           type = FUNGAL_NODE_TYPES.giantFungalTower;
-          height = dna.stalkHeightBias * 1.5;
+          height = 6.0;
         } else if (ring === 1) {
           type = FUNGAL_NODE_TYPES.sporeSoil;
-          height = 0.08;
+          height = 0.15;
         } else {
           type = FUNGAL_NODE_TYPES.fungalSporeCore;
-          height = ring === 3 ? dna.stalkHeightBias * 2.0 : dna.stalkHeightBias * 1.3;
+          height = ring === 3 ? 11.5 : 8.0;
         }
       } else if (isDark) {
         if (topology.clusterSize[index]! >= 6 && cellSeed > 0.5) {
           type = FUNGAL_NODE_TYPES.glowingPuffball;
-          height = dna.stalkHeightBias * 0.9;
+          height = 6.0 + cellSeed * 3.5;
         } else if (topology.neighbors4[index]! <= 1 && cellSeed > 0.6) {
           type = FUNGAL_NODE_TYPES.shelfFungus;
-          height = dna.stalkHeightBias * 0.7;
+          height = 4.5;
         } else if (cellSeed < dna.strandDensity && conn !== 0) {
           type = FUNGAL_NODE_TYPES.hyphaeStrand;
-          height = 0.25;
+          height = 0.6;
         } else {
           type = FUNGAL_NODE_TYPES.stalkCluster;
-          height = dna.stalkHeightBias * (0.6 + cellSeed * 0.4);
+          height = 3.5 + cellSeed * 2.0;
         }
       }
 

@@ -29,6 +29,8 @@ struct Uniforms {
   camera: vec4f,
 }
 
+const CONSTELLATION_PARTS: u32 = 4u;
+
 fn constInk() -> vec3f {
   let first = uniforms.themePrimary.rgb;
   let second = uniforms.themeSecondary.rgb;
@@ -39,11 +41,11 @@ fn constInk() -> vec3f {
   var ink = select(first, second, secondLuma < firstLuma);
   let inkLuma = min(firstLuma, secondLuma);
   ink = select(ink, fourth, fourthLuma < inkLuma);
-  return mix(ink, vec3f(0.015), 0.22);
+  return mix(ink, vec3f(0.015), 0.15);
 }
 
 fn constPaper() -> vec3f {
-  return mix(uniforms.themeFifth.rgb, vec3f(1.0), 0.68);
+  return mix(uniforms.themeFifth.rgb, vec3f(0.98), 0.55);
 }
 
 fn constStage(start: f32, end: f32) -> f32 {
@@ -52,8 +54,8 @@ fn constStage(start: f32, end: f32) -> f32 {
 
 fn constProject(localPos: vec3f) -> vec4f {
   let camera = constStage(0.5, 1.0);
-  let angleY = mix(0.72, 0.0, camera);
-  let angleX = mix(-0.55, -1.570796, camera);
+  let angleY = mix(0.79, 0.0, camera);
+  let angleX = mix(-0.58, -1.570796, camera);
   let cy = cos(angleY);
   let sy = sin(angleY);
   let cx = cos(angleX);
@@ -66,10 +68,10 @@ fn constProject(localPos: vec3f) -> vec4f {
 
   let portrait = select(1.0, 1.18, uniforms.aspectRatio < 0.8);
   let pulse = 1.0 + sin(camera * 3.14159265) * 0.025;
-  let scale = mix(38.0, 46.4, camera) / uniforms.gridSize * portrait * pulse * uniforms.camera.x;
+  let scale = mix(40.0, 46.4, camera) / uniforms.gridSize * portrait * pulse * uniforms.camera.x;
   let scaleX = scale / max(uniforms.aspectRatio, 1.0);
   let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
-  let yOffset = mix(-0.15, 0.08, camera) + uniforms.cameraBobY;
+  let yOffset = mix(-0.18, 0.08, camera) + uniforms.cameraBobY;
 
   return vec4f(rotX * scaleX + uniforms.cameraBobX, (rotY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
 }
@@ -80,14 +82,16 @@ ${CONSTELLATION_UNIFORMS_WGSL}
 
 struct ConstellationOutput {
   @builtin(position) position: vec4f,
-  @location(0) uv: vec2f,
-  @location(1) @interpolate(flat) blockType: u32,
-  @location(2) @interpolate(flat) nodeType: u32,
-  @location(3) @interpolate(flat) connections: u32,
+  @location(0) normal: vec3f,
+  @location(1) uv: vec2f,
+  @location(2) local: vec3f,
+  @location(3) shade: f32,
   @location(4) seed: f32,
-  @location(5) starSize: f32,
-  @location(6) depth: f32,
-  @location(7) @interpolate(flat) partIndex: u32,
+  @location(5) @interpolate(flat) blockType: u32,
+  @location(6) @interpolate(flat) starType: u32,
+  @location(7) @interpolate(flat) connections: u32,
+  @location(8) @interpolate(flat) faceIndex: u32,
+  @location(9) @interpolate(flat) part: u32,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -96,10 +100,111 @@ struct ConstellationOutput {
 @group(0) @binding(3) var<storage, read> blockHeights: array<f32>;
 @group(0) @binding(4) var<storage, read> starData: array<vec4f>;
 
-const QUAD_VERTS: array<vec2f, 6> = array<vec2f, 6>(
-  vec2f(-0.5, -0.5), vec2f(0.5, -0.5), vec2f(0.5, 0.5),
-  vec2f(-0.5, -0.5), vec2f(0.5, 0.5), vec2f(-0.5, 0.5)
-);
+fn constHash(pos: vec2f) -> f32 {
+  let scaled = fract(pos * vec2f(0.1031, 0.103));
+  let folded = scaled + dot(scaled, scaled.yx + 19.19);
+  return fract((folded.x + folded.y) * folded.x);
+}
+
+fn constBoxGeometry(faceIndex: u32, uv: vec2f, size: vec3f) -> array<vec3f, 2> {
+  let halfX = size.x * 0.5;
+  let halfZ = size.z * 0.5;
+  var pos = vec3f(0.0);
+  var norm = vec3f(0.0, 1.0, 0.0);
+  if (faceIndex == 0u) {
+    pos = vec3f((uv.x - 0.5) * size.x, size.y, (uv.y - 0.5) * size.z);
+  } else if (faceIndex == 1u) {
+    pos = vec3f((uv.x - 0.5) * size.x, 0.0, (0.5 - uv.y) * size.z);
+    norm = vec3f(0.0, -1.0, 0.0);
+  } else if (faceIndex == 2u) {
+    pos = vec3f((uv.x - 0.5) * size.x, uv.y * size.y, halfZ);
+    norm = vec3f(0.0, 0.0, 1.0);
+  } else if (faceIndex == 3u) {
+    pos = vec3f((0.5 - uv.x) * size.x, uv.y * size.y, -halfZ);
+    norm = vec3f(0.0, 0.0, -1.0);
+  } else if (faceIndex == 4u) {
+    pos = vec3f(halfX, uv.y * size.y, (uv.x - 0.5) * size.z);
+    norm = vec3f(1.0, 0.0, 0.0);
+  } else {
+    pos = vec3f(-halfX, uv.y * size.y, (0.5 - uv.x) * size.z);
+    norm = vec3f(-1.0, 0.0, 0.0);
+  }
+  return array<vec3f, 2>(pos, norm);
+}
+
+struct ConstPiece {
+  size: vec3f,
+  offset: vec3f,
+  visible: f32,
+}
+
+fn createConstPiece(part: u32, sType: u32, sDepth: f32, isDark: bool, seed: f32) -> ConstPiece {
+  let propStage = 1.0 - constStage(0.0, 0.18);
+  let detailStage = 1.0 - constStage(0.12, 0.35);
+  let heightStage = 1.0 - constStage(0.22, 0.65);
+  let footStage = constStage(0.55, 0.90);
+
+  var piece: ConstPiece;
+  piece.visible = 1.0;
+
+  var footprint = mix(0.82 + seed * 0.10, 1.0, footStage);
+  let totalHeight = mix(0.02, max(abs(sDepth) * 2.0, 0.08), heightStage);
+
+  if (part == 0u) {
+    // Interstellar nebula field plate
+    let baseH = select(0.02, 0.05, isDark);
+    piece.size = vec3f(footprint, baseH, footprint);
+    piece.offset = vec3f(0.0, 0.0, 0.0);
+    piece.visible = 1.0;
+    return piece;
+  }
+
+  if (part == 1u) {
+    // 3D Stellar node core
+    if (!isDark) {
+      piece.visible = 0.0;
+      piece.size = vec3f(0.0);
+      piece.offset = vec3f(0.0);
+      return piece;
+    }
+    let bodyFootprint = footprint * select(0.70, 0.85, sType == 5u);
+    let bodyH = totalHeight * 0.70 * heightStage;
+    piece.size = vec3f(bodyFootprint, bodyH, bodyFootprint);
+    piece.offset = vec3f(0.0, 0.05, 0.0);
+    piece.visible = heightStage;
+    return piece;
+  }
+
+  if (part == 2u) {
+    // Orbital accretion ring / Planetary halo
+    if (!isDark) {
+      piece.visible = 0.0;
+      piece.size = vec3f(0.0);
+      piece.offset = vec3f(0.0);
+      return piece;
+    }
+    let ringFootprint = footprint * select(0.88, 0.95, sType == 5u);
+    let ringH = 0.06 * detailStage;
+    piece.size = vec3f(ringFootprint, ringH, ringFootprint);
+    piece.offset = vec3f(0.0, 0.05 + totalHeight * 0.70 * heightStage, 0.0);
+    piece.visible = detailStage;
+    return piece;
+  }
+
+  // Part 3: Stellar diffraction spike / Pulsar ray
+  if (!isDark || (sType != 2u && sType != 5u)) {
+    piece.visible = 0.0;
+    piece.size = vec3f(0.0);
+    piece.offset = vec3f(0.0);
+    return piece;
+  }
+  let spikeSize = 0.22 * propStage;
+  let spikeBase = 0.05 + totalHeight * heightStage;
+  piece.size = vec3f(spikeSize, 0.40 * propStage, spikeSize);
+  piece.offset = vec3f((seed - 0.5) * 0.3, spikeBase, (fract(seed * 7.7) - 0.5) * 0.3);
+  piece.visible = propStage;
+  return piece;
+}
 
 @vertex
 fn vertexMain(
@@ -107,8 +212,16 @@ fn vertexMain(
   @builtin(instance_index) instanceIndex: u32
 ) -> ConstellationOutput {
   var output: ConstellationOutput;
-  let cellIndex = instanceIndex / 2u;
-  let part = instanceIndex % 2u;
+  let cellIndex = instanceIndex / CONSTELLATION_PARTS;
+  let part = instanceIndex % CONSTELLATION_PARTS;
+  let faceIndex = vertexIndex / 6u;
+  let quadIndex = vertexIndex % 6u;
+
+  let quad = array<vec2f, 6>(
+    vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(0.0, 1.0),
+    vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0)
+  );
+  let uv = quad[quadIndex];
 
   if (cellIndex >= arrayLength(&blockPositions)) {
     output.position = vec4f(2.0, 2.0, 2.0, 1.0);
@@ -117,133 +230,139 @@ fn vertexMain(
 
   let posData = blockPositions[cellIndex];
   let raw = starData[cellIndex];
-  let nodeType = u32(raw.x);
-  let rawDepth = raw.y;
+  let sType = u32(raw.x);
+  let sDepth = raw.y;
   let conn = u32(raw.z);
-  let packed = u32(raw.w);
-  let starSize = f32(packed & 255u) / 100.0;
-  let seed = f32(packed >> 8u) / 1000.0;
+  let seed = fract(raw.w / 1000.0);
   let isDark = blockTypes[cellIndex] != 0u;
 
-  let v = QUAD_VERTS[vertexIndex % 6u];
-  let flattenStage = constStage(0.2, 0.8);
-  let qrStage = constStage(0.75, 1.0);
-
-  // Depth flattens toward 0.0
-  let depth = mix(rawDepth, 0.0, flattenStage);
-
-  let center = (uniforms.gridSize - 1.0) * 0.5;
-  var worldX = posData.x - center;
-  var worldZ = posData.y - center;
-  var worldY = depth;
-
-  if (part == 0u) {
-    // Background space cell / QR substrate
-    let sz = mix(0.96, 1.0, qrStage);
-    worldX += v.x * sz;
-    worldZ += v.y * sz;
-    worldY = 0.0;
-  } else {
-    // 3D Star Node / Constellation geometry
-    if (!isDark || flattenStage >= 1.0) {
-      output.position = vec4f(2.0, 2.0, 2.0, 1.0);
-      return output;
-    }
-    let sz = mix(starSize * 0.85, 1.0, flattenStage);
-    worldX += v.x * sz;
-    worldZ += v.y * sz;
+  let piece = createConstPiece(part, sType, sDepth, isDark, seed);
+  if (piece.visible < 0.01) {
+    output.position = vec4f(2.0, 2.0, 2.0, 1.0);
+    return output;
   }
 
-  let modelPos = vec3f(worldX, worldY, worldZ);
-  output.position = constProject(modelPos);
-  output.uv = v + 0.5;
-  output.blockType = blockTypes[cellIndex];
-  output.nodeType = nodeType;
-  output.connections = conn;
+  let blockSize = uniforms.blockSize;
+  let geom = constBoxGeometry(faceIndex, uv, piece.size * blockSize);
+  let halfGrid = uniforms.gridSize * blockSize * 0.5;
+  let center = vec3f(
+    (posData.x + 0.5) * blockSize - halfGrid,
+    0.0,
+    (posData.y + 0.5) * blockSize - halfGrid
+  );
+
+  let worldPos = center + piece.offset * blockSize + geom[0];
+  let normal = normalize(geom[1]);
+  // Space: single harsh directional (star light), near-zero ambient
+  let lightDir = normalize(vec3f(-0.42, 0.88, -0.22));
+  let diffuse = max(dot(normal, lightDir), 0.0);
+  // Stars are self-luminous – only the base plate and structural parts receive shading
+  var shade = 0.08 + pow(diffuse, 0.60) * 0.92;
+  if (normal.y > 0.45) { shade = min(1.4, shade * 1.18 + 0.18); }
+  if (abs(normal.y) < 0.12 && normal.x < -0.5) { shade *= 0.50; }
+  // Star/node cores: they glow – override shade to 1.0
+  let isStellar = select(0.0, 1.0, part >= 1u);
+  shade = mix(shade, 1.0, isStellar * 0.85); // still 15% shade so depth reads
+
+  let collapsed = constStage(0.22, 0.65);
+  output.position = constProject(worldPos);
+  output.normal = normal;
+  output.uv = uv;
+  output.local = geom[0] / blockSize;
+  output.shade = mix(shade, 1.0, collapsed);
   output.seed = seed;
-  output.starSize = starSize;
-  output.depth = depth;
-  output.partIndex = part;
+  output.blockType = blockTypes[cellIndex];
+  output.starType = sType;
+  output.connections = conn;
+  output.faceIndex = faceIndex;
+  output.part = part;
 
   return output;
 }
 
+fn constellationQrColor(blockType: u32, noise: f32) -> vec3f {
+  var color = uniforms.themePrimary.rgb;
+  if (blockType == 3u) {
+    color = uniforms.themeSecondary.rgb;
+  } else if (blockType == 4u) {
+    color = mix(uniforms.themeThird.rgb, uniforms.themeFourth.rgb, 0.55);
+  } else if (blockType == 2u || blockType == 5u) {
+    color = uniforms.themeFourth.rgb;
+  }
+  let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
+  let contrast = mix(color, constInk(), smoothstep(0.76, 0.96, luma) * 0.15);
+  return contrast * (0.94 + noise * 0.06);
+}
+
+fn constellationQrMask(uv: vec2f, neighborMask: u32) -> f32 {
+  let up = (neighborMask & 1u) != 0u;
+  let right = (neighborMask & 2u) != 0u;
+  let down = (neighborMask & 4u) != 0u;
+  let left = (neighborMask & 8u) != 0u;
+  let radius = 0.46;
+  var mask = 1.0;
+  if (!left && !up && uv.x < radius && uv.y < radius) {
+    mask *= 1.0 - step(radius, distance(uv, vec2f(radius)));
+  }
+  if (!right && !up && uv.x > 1.0 - radius && uv.y < radius) {
+    mask *= 1.0 - step(radius, distance(uv, vec2f(1.0 - radius, radius)));
+  }
+  if (!left && !down && uv.x < radius && uv.y > 1.0 - radius) {
+    mask *= 1.0 - step(radius, distance(uv, vec2f(radius, 1.0 - radius)));
+  }
+  if (!right && !down && uv.x > 1.0 - radius && uv.y > 1.0 - radius) {
+    mask *= 1.0 - step(radius, distance(uv, vec2f(1.0 - radius)));
+  }
+  return mask;
+}
+
 @fragment
 fn fragmentMain(input: ConstellationOutput) -> @location(0) vec4f {
+  let progress = uniforms.progress;
+  let inkStage = smoothstep(0.58, 0.96, progress);
   let isDark = input.blockType != 0u;
-  let morphQR = constStage(0.85, 1.0);
+  let paper = constPaper();
+  let noise = constHash(input.position.xy + vec2f(uniforms.time * 0.13));
 
-  if (morphQR >= 1.0) {
-    let finalColor = select(constPaper(), constInk(), isDark);
-    return vec4f(finalColor, 1.0);
-  }
-
-  let deepSpace = vec3f(0.02, 0.03, 0.07);
-  let starCyan = vec3f(0.4, 0.85, 1.0);
-  let starGold = vec3f(1.0, 0.85, 0.45);
-  let starWhite = vec3f(0.98, 0.98, 1.0);
-  let nebulaPurple = vec3f(0.18, 0.08, 0.28);
-  let lineCyan = vec3f(0.25, 0.65, 0.95);
+  // Celestial stellar colors directly from theme palette!
+  let deepSpace = mix(uniforms.themeFifth.rgb * 0.6, vec3f(0.04, 0.05, 0.10), 0.5);
+  let starGlow = uniforms.themePrimary.rgb;
+  let nebulaViolet = uniforms.themeSecondary.rgb;
+  let goldenPulsar = uniforms.themeFourth.rgb;
 
   var color = deepSpace;
 
-  if (input.partIndex == 0u) {
-    // Deep space background with subtle nebula gas and constellation trace lines
+  if (input.part == 0u) {
+    // Deep space plate with cosmic dust and constellation connecting lines
     let uv = input.uv;
     let dist = length(uv - 0.5);
-
-    // Subtle nebula haze
-    let neb = sin(uv.x * 3.14) * sin(uv.y * 3.14);
-    color = mix(deepSpace, nebulaPurple, neb * 0.35);
-
-    // Draw constellation lines connecting adjacent star nodes
-    let lineWidth = 0.04;
-    var hasLine = false;
-    if ((input.connections & 1u) != 0u && uv.y > 0.5 && abs(uv.x - 0.5) < lineWidth) { hasLine = true; }
-    if ((input.connections & 2u) != 0u && uv.x > 0.5 && abs(uv.y - 0.5) < lineWidth) { hasLine = true; }
-    if ((input.connections & 4u) != 0u && uv.y < 0.5 && abs(uv.x - 0.5) < lineWidth) { hasLine = true; }
-    if ((input.connections & 8u) != 0u && uv.x < 0.5 && abs(uv.y - 0.5) < lineWidth) { hasLine = true; }
-
-    if (hasLine) {
-      let pulse = 0.7 + 0.3 * sin(uniforms.time * 2.0 + input.seed * 6.28);
-      color = mix(color, lineCyan * pulse, 0.85);
+    let glow = smoothstep(0.5, 0.0, dist);
+    color = mix(deepSpace, nebulaViolet * 0.5, glow * 0.4);
+  } else if (input.part == 1u) {
+    // 3D Stellar core
+    let pulse = 0.85 + 0.15 * sin(uniforms.time * 4.0 + input.seed * 6.28);
+    color = starGlow * pulse;
+    if (input.starType == 5u) {
+      color = mix(starGlow, goldenPulsar, 0.5) * 1.3;
     }
+  } else if (input.part == 2u) {
+    // Accretion disk
+    color = nebulaViolet;
   } else {
-    // Star node billboard
-    let uv = input.uv;
-    let dist = length(uv - 0.5);
-
-    if (dist > 0.5) {
-      discard;
-    }
-
-    // Stellar glow profile
-    let glow = pow(max(0.0, 1.0 - dist * 2.0), 1.8);
-    let core = pow(max(0.0, 1.0 - dist * 3.5), 3.0);
-
-    let twinkle = 0.85 + 0.15 * sin(uniforms.time * 4.0 + input.seed * 12.56);
-    let baseColor = mix(starCyan, starGold, input.seed);
-
-    if (input.nodeType == 4u || input.nodeType == 5u) {
-      // Finder Landmark: Giant celestial hub with diffraction spikes
-      let spike = max(0.0, 1.0 - abs(uv.x - 0.5) * 16.0) * max(0.0, 1.0 - abs(uv.y - 0.5) * 3.0) +
-                  max(0.0, 1.0 - abs(uv.y - 0.5) * 16.0) * max(0.0, 1.0 - abs(uv.x - 0.5) * 3.0);
-      color = mix(starGold, starWhite, core) * (glow + spike * 0.8) * twinkle * 1.5;
-    } else if (input.nodeType == 3u) {
-      // Planet with ring
-      let ringDist = abs(dist - 0.38);
-      let ring = select(0.0, 0.7, ringDist < 0.04);
-      color = mix(baseColor * glow, vec3f(0.8, 0.7, 0.9), ring);
-    } else {
-      // Regular star / pulsar
-      color = mix(baseColor, starWhite, core) * glow * twinkle;
-    }
+    // Diffraction spike ray
+    color = goldenPulsar * 1.5;
   }
 
-  // Smooth morph to canonical QR code
-  let canonicalColor = select(constPaper(), constInk(), isDark);
-  color = mix(color, canonicalColor, morphQR);
+  var shaded = color * clamp(input.shade, 0.0, 1.5);
 
-  return vec4f(color, 1.0);
+  let qrNoise = constHash(input.uv + vec2f(f32(input.blockType) * 0.37));
+  let mask = constellationQrMask(input.uv, input.connections);
+  let isActive = select(0.0, 1.0, isDark);
+  let qrColor = mix(paper, constellationQrColor(input.blockType, qrNoise), isActive * mask);
+
+  var result = mix(shaded, qrColor, inkStage);
+  result += (noise - 0.5) * 0.015 * (1.0 - inkStage);
+
+  return vec4f(clamp(result, vec3f(0.0), vec3f(1.0)), 1.0);
 }
 `;

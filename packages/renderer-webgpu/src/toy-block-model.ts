@@ -79,27 +79,27 @@ export function createToyBlockLayout(model: SeedModel): ToyBlockLayout {
       if (ring >= 0) {
         if (ring === 0) {
           type = TOY_BLOCK_TYPES.blockCastle;
-          height = dna.blockHeightBias * 1.4;
+          height = 6.0;
         } else if (ring === 1) {
           type = TOY_BLOCK_TYPES.flatPlate;
-          height = 0.08;
+          height = 0.15;
         } else {
           type = TOY_BLOCK_TYPES.castleApex;
-          height = ring === 3 ? dna.blockHeightBias * 1.8 : dna.blockHeightBias * 1.2;
+          height = ring === 3 ? 11.0 : 8.0;
         }
       } else if (isDark) {
-        if (topology.clusterSize[index]! >= 6 && cellSeed > 0.6) {
+        if (topology.clusterSize[index]! >= 6 && cellSeed > 0.5) {
           type = TOY_BLOCK_TYPES.blockTower;
-          height = dna.blockHeightBias * (0.8 + cellSeed * 0.5);
+          height = 6.0 + cellSeed * 3.5;
         } else if (cellSeed < dna.vehicleRate && topology.neighbors4[index]! <= 2) {
           type = TOY_BLOCK_TYPES.toyVehicle;
-          height = 0.45;
+          height = 2.5;
         } else if (cellSeed > 0.75) {
           type = TOY_BLOCK_TYPES.tallBrick;
-          height = dna.blockHeightBias * 0.9;
+          height = 5.0;
         } else {
           type = TOY_BLOCK_TYPES.studBrick;
-          height = dna.blockHeightBias * 0.5;
+          height = 3.2;
         }
       }
 

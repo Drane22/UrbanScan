@@ -35,6 +35,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./palettes": {
+      "types": "./dist/world-palettes.d.ts",
+      "default": "./dist/world-palettes.js"
     }
   },
   "publishConfig": {

@@ -5,9 +5,23 @@ import * as seedModel from "./seed-model";
 import * as rendererModule from "./renderer";
 import * as gpuSceneModule from "./gpu-scene";
 import { CITY_SHADER } from "./city-shaders";
+import {
+  CIRCUIT_BOARD_SHADER,
+  CIRCUIT_COMPONENT_SHADER,
+  CIRCUIT_QR_SHADER,
+  CIRCUIT_SIGNAL_SHADER,
+  CIRCUIT_TRACE_SHADER,
+} from "./circuit-shaders";
 import { createSeedGpuScene, type SeedGpuScene } from "./gpu-scene";
 import { SEED_POST_SHADER, SEED_WEATHER_SHADER } from "./shared-shaders";
 import { TERRAIN_SHADER } from "./terrain-shaders";
+import {
+  REEF_CORAL_SHADER,
+  REEF_FISH_SHADER,
+  REEF_QR_SHADER,
+  REEF_SHELF_SHADER,
+  REEF_WATER_SHADER,
+} from "./reef-shaders";
 import {
   TREE_BLOCK_SHADER,
   TREE_BRANCH_SHADER,
@@ -562,6 +576,8 @@ it("loads only the shader bundle for the selected renderer model", async () => {
   const tree = await loadShaderSources("tree");
   const terrain = await loadShaderSources("terrain");
   const city = await loadShaderSources("city");
+  const circuit = await loadShaderSources("circuit");
+  const reef = await loadShaderSources("reef");
 
   expect(tree).toMatchObject({ form: "tree" });
   expect(tree).toHaveProperty("blocks");
@@ -573,6 +589,59 @@ it("loads only the shader bundle for the selected renderer model", async () => {
   expect(city).toHaveProperty("city");
   expect(city).not.toHaveProperty("blocks");
   expect(city).not.toHaveProperty("terrain");
+  expect(circuit).toMatchObject({ form: "circuit" });
+  expect(circuit).toHaveProperty("circuitBoard");
+  expect(circuit).toHaveProperty("circuitComponents");
+  expect(circuit).toHaveProperty("circuitQr");
+  expect(circuit).toHaveProperty("circuitSignals");
+  expect(circuit).toHaveProperty("circuitTraces");
+  expect(circuit).not.toHaveProperty("circuit");
+  expect(reef).toMatchObject({ form: "reef" });
+  expect(reef).toHaveProperty("reefShelf");
+  expect(reef).toHaveProperty("reefCorals");
+  expect(reef).toHaveProperty("reefWater");
+  expect(reef).toHaveProperty("reefFish");
+  expect(reef).toHaveProperty("reefQr");
+  expect(reef).not.toHaveProperty("reef");
+});
+
+it("gives Reef separate shelf, ecology, water, life, and QR passes", () => {
+  for (const shader of [
+    REEF_SHELF_SHADER,
+    REEF_CORAL_SHADER,
+    REEF_WATER_SHADER,
+    REEF_FISH_SHADER,
+    REEF_QR_SHADER,
+  ]) {
+    expect(shader).toContain("@group(0) @binding(6) var reefAtlas");
+    expect(shader).toContain("fn reefProject");
+  }
+  expect(REEF_CORAL_SHADER).toContain("const CORAL_PARTS: u32 = 12u");
+  expect(REEF_CORAL_SHADER).toContain("fn makePart");
+  expect(REEF_WATER_SHADER).toContain("reefMotionStage(0.18, 0.38, 0.12, 0.28)");
+  expect(REEF_FISH_SHADER).toContain("reefMotionStage(0.0, 0.18, 0.0, 0.12)");
+  expect(REEF_QR_SHADER).toContain("blockTypes[instanceIndex] != 0u");
+});
+
+it("gives Circuit dedicated material, component, routing, signal, and QR passes", () => {
+  for (const shader of [
+    CIRCUIT_BOARD_SHADER,
+    CIRCUIT_COMPONENT_SHADER,
+    CIRCUIT_QR_SHADER,
+    CIRCUIT_SIGNAL_SHADER,
+    CIRCUIT_TRACE_SHADER,
+  ]) {
+    expect(shader).toContain("@group(0) @binding(5) var materialAtlas");
+    expect(shader).toContain("fn circuitProject");
+  }
+  expect(CIRCUIT_COMPONENT_SHADER).toContain("const COMPONENT_PARTS: u32 = 12u");
+  expect(CIRCUIT_COMPONENT_SHADER).toContain("fn componentPart");
+  expect(CIRCUIT_TRACE_SHADER).toContain("fn traceMetal");
+  expect(CIRCUIT_BOARD_SHADER).toContain("uniforms.themePrimary.rgb");
+  expect(CIRCUIT_COMPONENT_SHADER).toContain("fn ceramicMaterial");
+  expect(CIRCUIT_SIGNAL_SHADER).toContain("fn signalColor");
+  expect(CIRCUIT_SIGNAL_SHADER).toContain("let activeRoute");
+  expect(CIRCUIT_QR_SHADER).toContain("blockTypes[instanceIndex] != 0u");
 });
 
 it("uses an instanced multi-part City pipeline with a staged reversible QR morph", () => {

@@ -1,4 +1,4 @@
-const TOY_UNIFORMS_WGSL = /* wgsl */ `
+const TOY_BLOCK_UNIFORMS_WGSL = /* wgsl */ `
 struct Uniforms {
   aspectRatio: f32,
   time: f32,
@@ -29,6 +29,8 @@ struct Uniforms {
   camera: vec4f,
 }
 
+const TOY_BLOCK_PARTS: u32 = 4u;
+
 fn toyInk() -> vec3f {
   let first = uniforms.themePrimary.rgb;
   let second = uniforms.themeSecondary.rgb;
@@ -39,11 +41,11 @@ fn toyInk() -> vec3f {
   var ink = select(first, second, secondLuma < firstLuma);
   let inkLuma = min(firstLuma, secondLuma);
   ink = select(ink, fourth, fourthLuma < inkLuma);
-  return mix(ink, vec3f(0.015), 0.22);
+  return mix(ink, vec3f(0.015), 0.15);
 }
 
 fn toyPaper() -> vec3f {
-  return mix(uniforms.themeFifth.rgb, vec3f(1.0), 0.68);
+  return mix(uniforms.themeFifth.rgb, vec3f(0.98), 0.55);
 }
 
 fn toyStage(start: f32, end: f32) -> f32 {
@@ -52,8 +54,8 @@ fn toyStage(start: f32, end: f32) -> f32 {
 
 fn toyProject(localPos: vec3f) -> vec4f {
   let camera = toyStage(0.5, 1.0);
-  let angleY = mix(0.7854, 0.0, camera);
-  let angleX = mix(-0.62, -1.570796, camera);
+  let angleY = mix(0.79, 0.0, camera);
+  let angleX = mix(-0.58, -1.570796, camera);
   let cy = cos(angleY);
   let sy = sin(angleY);
   let cx = cos(angleX);
@@ -66,71 +68,162 @@ fn toyProject(localPos: vec3f) -> vec4f {
 
   let portrait = select(1.0, 1.18, uniforms.aspectRatio < 0.8);
   let pulse = 1.0 + sin(camera * 3.14159265) * 0.025;
-  let scale = mix(38.0, 46.4, camera) / uniforms.gridSize * portrait * pulse * uniforms.camera.x;
+  let scale = mix(40.0, 46.4, camera) / uniforms.gridSize * portrait * pulse * uniforms.camera.x;
   let scaleX = scale / max(uniforms.aspectRatio, 1.0);
   let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
-  let yOffset = mix(-0.16, 0.08, camera) + uniforms.cameraBobY;
+  let yOffset = mix(-0.18, 0.08, camera) + uniforms.cameraBobY;
 
   return vec4f(rotX * scaleX + uniforms.cameraBobX, (rotY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
 }
 `;
 
 export const TOY_BLOCK_SHADER = /* wgsl */ `
-${TOY_UNIFORMS_WGSL}
+${TOY_BLOCK_UNIFORMS_WGSL}
 
-struct ToyOutput {
+struct ToyBlockOutput {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
   @location(1) uv: vec2f,
-  @location(2) @interpolate(flat) blockType: u32,
-  @location(3) @interpolate(flat) toyType: u32,
-  @location(4) @interpolate(flat) colorIndex: u32,
-  @location(5) @interpolate(flat) partIndex: u32,
-  @location(6) shade: f32,
-  @location(7) seed: f32,
+  @location(2) local: vec3f,
+  @location(3) shade: f32,
+  @location(4) seed: f32,
+  @location(5) @interpolate(flat) blockType: u32,
+  @location(6) @interpolate(flat) brickType: u32,
+  @location(7) @interpolate(flat) connections: u32,
+  @location(8) @interpolate(flat) faceIndex: u32,
+  @location(9) @interpolate(flat) part: u32,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var<storage, read> blockTypes: array<u32>;
 @group(0) @binding(2) var<storage, read> blockPositions: array<vec4f>;
 @group(0) @binding(3) var<storage, read> blockHeights: array<f32>;
-@group(0) @binding(4) var<storage, read> toyData: array<vec4f>;
+@group(0) @binding(4) var<storage, read> brickData: array<vec4f>;
 
-const CUBE_VERTS: array<vec3f, 36> = array<vec3f, 36>(
-  // Top
-  vec3f(-0.5, 0.5, -0.5), vec3f(-0.5, 0.5,  0.5), vec3f( 0.5, 0.5,  0.5),
-  vec3f(-0.5, 0.5, -0.5), vec3f( 0.5, 0.5,  0.5), vec3f( 0.5, 0.5, -0.5),
-  // Bottom
-  vec3f(-0.5, -0.5,  0.5), vec3f(-0.5, -0.5, -0.5), vec3f( 0.5, -0.5, -0.5),
-  vec3f(-0.5, -0.5,  0.5), vec3f( 0.5, -0.5, -0.5), vec3f( 0.5, -0.5,  0.5),
-  // Front
-  vec3f(-0.5, -0.5, 0.5), vec3f( 0.5, -0.5, 0.5), vec3f( 0.5, 0.5, 0.5),
-  vec3f(-0.5, -0.5, 0.5), vec3f( 0.5, 0.5, 0.5), vec3f(-0.5, 0.5, 0.5),
-  // Back
-  vec3f( 0.5, -0.5, -0.5), vec3f(-0.5, -0.5, -0.5), vec3f(-0.5, 0.5, -0.5),
-  vec3f( 0.5, -0.5, -0.5), vec3f(-0.5, 0.5, -0.5), vec3f( 0.5, 0.5, -0.5),
-  // Right
-  vec3f(0.5, -0.5,  0.5), vec3f(0.5, -0.5, -0.5), vec3f(0.5, 0.5, -0.5),
-  vec3f(0.5, -0.5,  0.5), vec3f(0.5, 0.5, -0.5), vec3f(0.5, 0.5,  0.5),
-  // Left
-  vec3f(-0.5, -0.5, -0.5), vec3f(-0.5, -0.5,  0.5), vec3f(-0.5, 0.5,  0.5),
-  vec3f(-0.5, -0.5, -0.5), vec3f(-0.5, 0.5,  0.5), vec3f(-0.5, 0.5, -0.5)
-);
+fn toyBlockHash(pos: vec2f) -> f32 {
+  let scaled = fract(pos * vec2f(0.1031, 0.103));
+  let folded = scaled + dot(scaled, scaled.yx + 19.19);
+  return fract((folded.x + folded.y) * folded.x);
+}
 
-const CUBE_NORMS: array<vec3f, 6> = array<vec3f, 6>(
-  vec3f(0.0, 1.0, 0.0), vec3f(0.0, -1.0, 0.0),
-  vec3f(0.0, 0.0, 1.0), vec3f(0.0, 0.0, -1.0),
-  vec3f(1.0, 0.0, 0.0), vec3f(-1.0, 0.0, 0.0)
-);
+fn toyBoxGeometry(faceIndex: u32, uv: vec2f, size: vec3f) -> array<vec3f, 2> {
+  let halfX = size.x * 0.5;
+  let halfZ = size.z * 0.5;
+  var pos = vec3f(0.0);
+  var norm = vec3f(0.0, 1.0, 0.0);
+  if (faceIndex == 0u) {
+    pos = vec3f((uv.x - 0.5) * size.x, size.y, (uv.y - 0.5) * size.z);
+  } else if (faceIndex == 1u) {
+    pos = vec3f((uv.x - 0.5) * size.x, 0.0, (0.5 - uv.y) * size.z);
+    norm = vec3f(0.0, -1.0, 0.0);
+  } else if (faceIndex == 2u) {
+    pos = vec3f((uv.x - 0.5) * size.x, uv.y * size.y, halfZ);
+    norm = vec3f(0.0, 0.0, 1.0);
+  } else if (faceIndex == 3u) {
+    pos = vec3f((0.5 - uv.x) * size.x, uv.y * size.y, -halfZ);
+    norm = vec3f(0.0, 0.0, -1.0);
+  } else if (faceIndex == 4u) {
+    pos = vec3f(halfX, uv.y * size.y, (uv.x - 0.5) * size.z);
+    norm = vec3f(1.0, 0.0, 0.0);
+  } else {
+    pos = vec3f(-halfX, uv.y * size.y, (0.5 - uv.x) * size.z);
+    norm = vec3f(-1.0, 0.0, 0.0);
+  }
+  return array<vec3f, 2>(pos, norm);
+}
+
+struct ToyPiece {
+  size: vec3f,
+  offset: vec3f,
+  visible: f32,
+}
+
+fn createToyPiece(part: u32, bType: u32, bHeight: f32, isDark: bool, seed: f32) -> ToyPiece {
+  let propStage = 1.0 - toyStage(0.0, 0.18);
+  let detailStage = 1.0 - toyStage(0.12, 0.35);
+  let heightStage = 1.0 - toyStage(0.22, 0.65);
+  let footStage = toyStage(0.55, 0.90);
+
+  var piece: ToyPiece;
+  piece.visible = 1.0;
+
+  var footprint = mix(0.72 + seed * 0.18, 1.0, footStage);
+  // Toy bricks need to be visibly 3D – 2x taller minimum
+  let brickScale = select(2.2, select(3.0, 1.6, bType == 1u), bType >= 4u);
+  let totalHeight = mix(0.04, max(bHeight * brickScale, 0.20), heightStage);
+
+  if (part == 0u) {
+    // Modular base plate with studs
+    let baseH = select(0.03, 0.06, isDark);
+    piece.size = vec3f(footprint, baseH, footprint);
+    piece.offset = vec3f(0.0, 0.0, 0.0);
+    piece.visible = 1.0;
+    return piece;
+  }
+
+  if (part == 1u) {
+    // 3D Modular Brick Body
+    if (!isDark) {
+      piece.visible = 0.0;
+      piece.size = vec3f(0.0);
+      piece.offset = vec3f(0.0);
+      return piece;
+    }
+    let bodyW = footprint * 0.85; // brick body slightly smaller than base for stud overhang
+    let bodyH = totalHeight * 0.80 * heightStage;
+    piece.size = vec3f(bodyW, bodyH, bodyW);
+    piece.offset = vec3f(0.0, 0.06, 0.0);
+    piece.visible = heightStage;
+    return piece;
+  }
+
+  if (part == 2u) {
+    // Cylindrical top studs (4-stud pattern)
+    if (!isDark) {
+      piece.visible = 0.0;
+      piece.size = vec3f(0.0);
+      piece.offset = vec3f(0.0);
+      return piece;
+    }
+    let studFootprint = footprint * 0.55;
+    let studH = 0.18 * detailStage;
+    piece.size = vec3f(studFootprint, studH, studFootprint);
+    piece.offset = vec3f(0.0, 0.06 + totalHeight * 0.75 * heightStage, 0.0);
+    piece.visible = detailStage;
+    return piece;
+  }
+
+  // Part 3: Castle Turret / Roof Cone / Flag
+  if (!isDark || (bType != 3u && bType != 5u)) {
+    piece.visible = 0.0;
+    piece.size = vec3f(0.0);
+    piece.offset = vec3f(0.0);
+    return piece;
+  }
+  let turretSize = 0.30 * propStage;
+  let turretBase = 0.06 + totalHeight * heightStage;
+  piece.size = vec3f(turretSize, 0.55 * propStage, turretSize);
+  piece.offset = vec3f((seed - 0.5) * 0.35, turretBase, (fract(seed * 7.7) - 0.5) * 0.35);
+  piece.visible = propStage;
+  return piece;
+}
 
 @vertex
 fn vertexMain(
   @builtin(vertex_index) vertexIndex: u32,
   @builtin(instance_index) instanceIndex: u32
-) -> ToyOutput {
-  var output: ToyOutput;
-  let cellIndex = instanceIndex / 2u;
-  let part = instanceIndex % 2u;
+) -> ToyBlockOutput {
+  var output: ToyBlockOutput;
+  let cellIndex = instanceIndex / TOY_BLOCK_PARTS;
+  let part = instanceIndex % TOY_BLOCK_PARTS;
+  let faceIndex = vertexIndex / 6u;
+  let quadIndex = vertexIndex % 6u;
+
+  let quad = array<vec2f, 6>(
+    vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(0.0, 1.0),
+    vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0)
+  );
+  let uv = quad[quadIndex];
 
   if (cellIndex >= arrayLength(&blockPositions)) {
     output.position = vec4f(2.0, 2.0, 2.0, 1.0);
@@ -138,116 +231,149 @@ fn vertexMain(
   }
 
   let posData = blockPositions[cellIndex];
-  let raw = toyData[cellIndex];
-  let toyType = u32(raw.x);
-  let rawHeight = raw.y;
-  let colorIdx = u32(raw.z);
+  let raw = brickData[cellIndex];
+  let bType = u32(raw.x);
+  let bHeight = raw.y;
+  let conn = u32(raw.z);
   let seed = raw.w / 1000.0;
   let isDark = blockTypes[cellIndex] != 0u;
 
-  let v = CUBE_VERTS[vertexIndex % 36u];
-  let normal = CUBE_NORMS[(vertexIndex % 36u) / 6u];
-
-  let deconstruct = toyStage(0.2, 0.85);
-  let qrStage = toyStage(0.8, 1.0);
-
-  var sizeX = 0.94;
-  var sizeZ = 0.94;
-  var sizeY = 0.06;
-  var offsetY = sizeY * 0.5;
-
-  if (part == 0u) {
-    // Base plate
-    sizeX = mix(0.94, 1.0, qrStage);
-    sizeZ = mix(0.94, 1.0, qrStage);
-    sizeY = mix(0.06, 0.01, qrStage);
-    offsetY = sizeY * 0.5;
-  } else {
-    // Modular toy brick
-    if (!isDark || deconstruct >= 1.0) {
-      output.position = vec4f(2.0, 2.0, 2.0, 1.0);
-      return output;
-    }
-    let h = mix(rawHeight * 0.55, 0.01, deconstruct);
-    sizeY = h;
-    sizeX = mix(0.90, 1.0, deconstruct);
-    sizeZ = mix(0.90, 1.0, deconstruct);
-    offsetY = 0.06 + sizeY * 0.5;
+  let piece = createToyPiece(part, bType, bHeight, isDark, seed);
+  if (piece.visible < 0.01) {
+    output.position = vec4f(2.0, 2.0, 2.0, 1.0);
+    return output;
   }
 
-  let center = (uniforms.gridSize - 1.0) * 0.5;
-  let worldX = posData.x - center + v.x * sizeX;
-  let worldZ = posData.y - center + v.z * sizeZ;
-  let worldY = offsetY + v.y * sizeY;
+  let blockSize = uniforms.blockSize;
+  let geom = toyBoxGeometry(faceIndex, uv, piece.size * blockSize);
+  let halfGrid = uniforms.gridSize * blockSize * 0.5;
+  let center = vec3f(
+    (posData.x + 0.5) * blockSize - halfGrid,
+    0.0,
+    (posData.y + 0.5) * blockSize - halfGrid
+  );
 
-  let modelPos = vec3f(worldX, worldY, worldZ);
-  output.position = toyProject(modelPos);
+  let worldPos = center + piece.offset * blockSize + geom[0];
+  let normal = normalize(geom[1]);
+  // Plastic toy: bright, clean, high-specular lighting
+  let lightDir = normalize(vec3f(-0.50, 0.84, -0.22));
+  let diffuse = max(dot(normal, lightDir), 0.0);
+  let fillDir = normalize(vec3f(0.40, 0.55, 0.65));
+  let fill = max(dot(normal, fillDir), 0.0) * 0.22;
+  // Low-ish ambient: toy bricks are glossy, need strong highlights
+  var shade = 0.15 + pow(diffuse, 0.55) * 0.85 + fill;
+  if (normal.y > 0.45) { shade = min(1.4, shade * 1.15 + 0.15); }
+  if (abs(normal.y) < 0.12 && normal.x < -0.5) { shade *= 0.58; }
+  if (abs(normal.y) < 0.12 && normal.z > 0.5)  { shade *= 0.72; }
+  // Plastic specular rim
+  let viewDir = normalize(vec3f(sin(0.79), 0.58, cos(0.79)));
+  shade += pow(1.0 - abs(dot(normal, viewDir)), 2.8) * 0.30;
+
+  let collapsed = toyStage(0.22, 0.65);
+  output.position = toyProject(worldPos);
   output.normal = normal;
-  output.uv = v.xz + 0.5;
-  output.blockType = blockTypes[cellIndex];
-  output.toyType = toyType;
-  output.colorIndex = colorIdx;
-  output.partIndex = part;
+  output.uv = uv;
+  output.local = geom[0] / blockSize;
+  output.shade = mix(shade, 1.0, collapsed);
   output.seed = seed;
-
-  let lightDir = normalize(vec3f(0.5, 0.85, 0.35));
-  output.shade = clamp(dot(normal, lightDir) * 0.45 + 0.55, 0.25, 1.0);
+  output.blockType = blockTypes[cellIndex];
+  output.brickType = bType;
+  output.connections = conn;
+  output.faceIndex = faceIndex;
+  output.part = part;
 
   return output;
 }
 
+fn toyBlockQrColor(blockType: u32, noise: f32) -> vec3f {
+  var color = uniforms.themePrimary.rgb;
+  if (blockType == 3u) {
+    color = uniforms.themeSecondary.rgb;
+  } else if (blockType == 4u) {
+    color = mix(uniforms.themeThird.rgb, uniforms.themeFourth.rgb, 0.55);
+  } else if (blockType == 2u || blockType == 5u) {
+    color = uniforms.themeFourth.rgb;
+  }
+  let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
+  let contrast = mix(color, toyInk(), smoothstep(0.76, 0.96, luma) * 0.15);
+  return contrast * (0.94 + noise * 0.06);
+}
+
+fn toyBlockQrMask(uv: vec2f, neighborMask: u32) -> f32 {
+  let up = (neighborMask & 1u) != 0u;
+  let right = (neighborMask & 2u) != 0u;
+  let down = (neighborMask & 4u) != 0u;
+  let left = (neighborMask & 8u) != 0u;
+  let radius = 0.46;
+  var mask = 1.0;
+  if (!left && !up && uv.x < radius && uv.y < radius) {
+    mask *= 1.0 - step(radius, distance(uv, vec2f(radius)));
+  }
+  if (!right && !up && uv.x > 1.0 - radius && uv.y < radius) {
+    mask *= 1.0 - step(radius, distance(uv, vec2f(1.0 - radius, radius)));
+  }
+  if (!left && !down && uv.x < radius && uv.y > 1.0 - radius) {
+    mask *= 1.0 - step(radius, distance(uv, vec2f(radius, 1.0 - radius)));
+  }
+  if (!right && !down && uv.x > 1.0 - radius && uv.y > 1.0 - radius) {
+    mask *= 1.0 - step(radius, distance(uv, vec2f(1.0 - radius)));
+  }
+  return mask;
+}
+
 @fragment
-fn fragmentMain(input: ToyOutput) -> @location(0) vec4f {
+fn fragmentMain(input: ToyBlockOutput) -> @location(0) vec4f {
+  let progress = uniforms.progress;
+  let inkStage = smoothstep(0.58, 0.96, progress);
   let isDark = input.blockType != 0u;
-  let morphQR = toyStage(0.85, 1.0);
+  let paper = toyPaper();
+  let noise = toyBlockHash(input.position.xy + vec2f(uniforms.time * 0.13));
 
-  if (morphQR >= 1.0) {
-    let finalColor = select(toyPaper(), toyInk(), isDark);
-    return vec4f(finalColor, 1.0);
-  }
+  // Derive vibrant toy plastic colors directly from theme palette!
+  let basePlate = mix(uniforms.themeFifth.rgb * 0.92, vec3f(0.85), 0.3);
+  let brickColor = uniforms.themePrimary.rgb;
+  let studHighlight = uniforms.themeSecondary.rgb;
+  let turretAccent = uniforms.themeFourth.rgb;
 
-  // Classic primary block colors
-  let blockColors: array<vec3f, 5> = array<vec3f, 5>(
-    vec3f(0.85, 0.12, 0.15), // Bold Red
-    vec3f(0.08, 0.38, 0.85), // Classic Blue
-    vec3f(0.95, 0.78, 0.12), // Sunshine Yellow
-    vec3f(0.12, 0.65, 0.25), // Grass Green
-    vec3f(0.95, 0.95, 0.95)  // Clean White
-  );
+  var color = basePlate;
 
-  let plateGreen = vec3f(0.18, 0.55, 0.22);
-  let castleGray = vec3f(0.55, 0.58, 0.62);
-
-  var color = plateGreen;
-
-  if (input.partIndex == 0u) {
-    // Base plate with circular stud indentations
+  if (input.part == 0u) {
+    // Base plate with subtle circular stud guide rings
     let uv = input.uv;
-    let studDist = length(uv - 0.5);
-    let studRing = select(0.0, 0.2, abs(studDist - 0.28) < 0.04);
-    color = mix(plateGreen, vec3f(0.12, 0.42, 0.16), studRing);
+    let dist = length(uv - 0.5);
+    let ring = smoothstep(0.24, 0.26, dist) * (1.0 - smoothstep(0.28, 0.30, dist));
+    color = mix(basePlate, basePlate * 0.85, ring * 0.4);
+  } else if (input.part == 1u) {
+    // Glossy plastic brick body with chamfered edge lighting
+    color = brickColor;
+    if (input.brickType == 5u) {
+      color = mix(brickColor, turretAccent, 0.45);
+    }
+  } else if (input.part == 2u) {
+    // Cylindrical stud with circular specular highlight
+    let uv = input.uv;
+    let dist = length(uv - 0.5);
+    let studCircle = smoothstep(0.48, 0.42, dist);
+    color = mix(brickColor, studHighlight, studCircle * 0.5 + 0.2);
   } else {
-    // 3D plastic building brick with raised cylindrical stud top
-    if (input.toyType == 5u || input.toyType == 6u) {
-      // Castle landmark (Finder)
-      color = castleGray;
-    } else {
-      color = blockColors[input.colorIndex % 5u];
-    }
-
-    // Top surface stud highlight
-    let uv = input.uv;
-    let studDist = length(uv - 0.5);
-    if (studDist < 0.26) {
-      color = color * 1.15; // Stud highlight
-    }
+    // Castle turret / Roof accessory
+    color = turretAccent * 1.2;
   }
 
-  // Glossy plastic specular
-  var shaded = color * input.shade;
-  let canonicalColor = select(toyPaper(), toyInk(), isDark);
-  shaded = mix(shaded, canonicalColor, morphQR);
+  // Contact shadow at base of each brick
+  let contact = 1.0 - smoothstep(0.0, 0.15, input.local.y) * 0.28 * (1.0 - uniforms.progress);
+  color *= contact;
+  // Full shade: plastic is glossy, high contrast
+  var shaded = color * clamp(input.shade, 0.0, 1.5);
 
-  return vec4f(shaded, 1.0);
+  let qrNoise = toyBlockHash(input.uv + vec2f(f32(input.blockType) * 0.37));
+  let mask = toyBlockQrMask(input.uv, input.connections);
+  let isActive = select(0.0, 1.0, isDark);
+  let qrColor = mix(paper, toyBlockQrColor(input.blockType, qrNoise), isActive * mask);
+
+  var result = mix(shaded, qrColor, inkStage);
+  result += (noise - 0.5) * 0.015 * (1.0 - inkStage);
+
+  return vec4f(clamp(result, vec3f(0.0), vec3f(1.0)), 1.0);
 }
 `;

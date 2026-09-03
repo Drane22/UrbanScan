@@ -44,8 +44,10 @@ export type SeedSceneConfig = {
 
 type PipelineLayouts = {
   readonly blocks: GPUBindGroupLayout;
+  readonly circuit: GPUBindGroupLayout;
   readonly items: GPUBindGroupLayout;
   readonly post: GPUBindGroupLayout;
+  readonly reef: GPUBindGroupLayout;
 };
 
 type SharedPipelines = {
@@ -75,7 +77,11 @@ type CityPipelines = SharedPipelines & {
 };
 
 type CircuitPipelines = SharedPipelines & {
-  readonly circuit: GPURenderPipeline;
+  readonly circuitBoard: GPURenderPipeline;
+  readonly circuitComponents: GPURenderPipeline;
+  readonly circuitQr: GPURenderPipeline;
+  readonly circuitSignals: GPURenderPipeline;
+  readonly circuitTraces: GPURenderPipeline;
   readonly form: "circuit";
 };
 
@@ -106,7 +112,11 @@ type OrigamiPipelines = SharedPipelines & {
 
 type ReefPipelines = SharedPipelines & {
   readonly form: "reef";
-  readonly reef: GPURenderPipeline;
+  readonly reefCorals: GPURenderPipeline;
+  readonly reefFish: GPURenderPipeline;
+  readonly reefQr: GPURenderPipeline;
+  readonly reefShelf: GPURenderPipeline;
+  readonly reefWater: GPURenderPipeline;
 };
 
 type StainedGlassPipelines = SharedPipelines & {
@@ -155,7 +165,11 @@ type CityShaderSources = {
 };
 
 type CircuitShaderSources = {
-  readonly circuit: string;
+  readonly circuitBoard: string;
+  readonly circuitComponents: string;
+  readonly circuitQr: string;
+  readonly circuitSignals: string;
+  readonly circuitTraces: string;
   readonly form: "circuit";
 };
 
@@ -186,7 +200,11 @@ type OrigamiShaderSources = {
 
 type ReefShaderSources = {
   readonly form: "reef";
-  readonly reef: string;
+  readonly reefCorals: string;
+  readonly reefFish: string;
+  readonly reefQr: string;
+  readonly reefShelf: string;
+  readonly reefWater: string;
 };
 
 type StainedGlassShaderSources = {
@@ -231,7 +249,15 @@ const VERSION_ONE_SHADER_LOADERS = {
       loadVersionOneSharedShaders(),
       import("./circuit-shaders.js"),
     ]);
-    return { ...shared, circuit: m.CIRCUIT_SHADER, form: "circuit" };
+    return {
+      ...shared,
+      circuitBoard: m.CIRCUIT_BOARD_SHADER,
+      circuitComponents: m.CIRCUIT_COMPONENT_SHADER,
+      circuitQr: m.CIRCUIT_QR_SHADER,
+      circuitSignals: m.CIRCUIT_SIGNAL_SHADER,
+      circuitTraces: m.CIRCUIT_TRACE_SHADER,
+      form: "circuit",
+    };
   },
   city: async (): Promise<SeedShaderSources> => {
     const [shared, city] = await Promise.all([
@@ -280,7 +306,15 @@ const VERSION_ONE_SHADER_LOADERS = {
       loadVersionOneSharedShaders(),
       import("./reef-shaders.js"),
     ]);
-    return { ...shared, form: "reef", reef: m.REEF_SHADER };
+    return {
+      ...shared,
+      form: "reef",
+      reefCorals: m.REEF_CORAL_SHADER,
+      reefFish: m.REEF_FISH_SHADER,
+      reefQr: m.REEF_QR_SHADER,
+      reefShelf: m.REEF_SHELF_SHADER,
+      reefWater: m.REEF_WATER_SHADER,
+    };
   },
   "stained-glass": async (): Promise<SeedShaderSources> => {
     const [shared, m] = await Promise.all([
@@ -345,7 +379,11 @@ type SeedBuffers = {
   readonly grass: GPUBuffer;
   readonly groundPetals: GPUBuffer;
   readonly cityLots: GPUBuffer;
+  readonly circuitTraces: GPUBuffer;
   readonly rain: GPUBuffer;
+  readonly reefCorals: GPUBuffer;
+  readonly reefFish: GPUBuffer;
+  readonly reefShelf: GPUBuffer;
   readonly segments: GPUBuffer;
   readonly uniforms: GPUBuffer;
 };
@@ -354,11 +392,13 @@ type SeedBindGroups = {
   readonly blocks: GPUBindGroup;
   readonly branches: GPUBindGroup;
   readonly butterflies: GPUBindGroup;
+  readonly circuit: GPUBindGroup | undefined;
   readonly fallingPetals: GPUBindGroup;
   readonly flowers: GPUBindGroup;
   readonly grass: GPUBindGroup;
   readonly groundPetals: GPUBindGroup;
   readonly rain: GPUBindGroup;
+  readonly reef: GPUBindGroup | undefined;
 };
 
 type RenderTargets = {
@@ -373,6 +413,9 @@ type SeedGpuResources = {
   readonly blockField: SeedBlockField;
   readonly buffers: SeedBuffers;
   readonly cityPartCount: number;
+  readonly circuitComponentCount: number;
+  readonly circuitMaterial: GPUTexture | undefined;
+  readonly circuitTraceCount: number;
   clearColor: GPUColor;
   readonly context: GPUCanvasContext;
   readonly device: GPUDevice;
@@ -381,6 +424,9 @@ type SeedGpuResources = {
   readonly layouts: PipelineLayouts;
   readonly pipelines: SeedPipelines;
   readonly sampler: GPUSampler;
+  readonly reefCoralCount: number;
+  readonly reefFishCount: number;
+  readonly reefMaterial: GPUTexture | undefined;
   readonly scene: SeedGpuScene;
   palette: SeedScenePalette;
   terrainPalette: TerrainScenePalette;
@@ -398,6 +444,16 @@ function createClearColor(scene: SeedSceneConfig): GPUColor {
     g: Math.max(0, Math.min(1, g)),
     r: Math.max(0, Math.min(1, r)),
   };
+}
+
+function createFormClearColor(scene: SeedSceneConfig, form: SeedForm): GPUColor {
+  if (form === "circuit" && !scene.background) {
+    return { a: 1, b: 0.86, g: 0.895, r: 0.91 };
+  }
+  if (form === "reef" && !scene.background) {
+    return { a: 1, b: 0.2, g: 0.12, r: 0.035 };
+  }
+  return createClearColor(scene);
 }
 
 export function seedSceneEffectCode(effect: SeedSceneEffect | undefined): number {
@@ -460,6 +516,7 @@ const SHADER_STAGE = {
   vertex: 0x1,
 } as const;
 const TEXTURE_USAGE = {
+  copyDestination: 0x02,
   renderAttachment: 0x10,
   textureBinding: 0x04,
 } as const;
@@ -560,6 +617,31 @@ function createLayouts(device: GPUDevice): PipelineLayouts {
       { binding: 4, buffer: { type: "read-only-storage" }, visibility },
     ],
   });
+  const circuit = device.createBindGroupLayout({
+    label: "every-qrcode-circuit-layout",
+    entries: [
+      { binding: 0, buffer: { type: "uniform" }, visibility },
+      { binding: 1, buffer: { type: "read-only-storage" }, visibility },
+      { binding: 2, buffer: { type: "read-only-storage" }, visibility },
+      { binding: 3, buffer: { type: "read-only-storage" }, visibility },
+      { binding: 4, buffer: { type: "read-only-storage" }, visibility },
+      { binding: 5, texture: { sampleType: "float" }, visibility: SHADER_STAGE.fragment },
+      { binding: 6, sampler: { type: "filtering" }, visibility: SHADER_STAGE.fragment },
+    ],
+  });
+  const reef = device.createBindGroupLayout({
+    label: "every-qrcode-reef-layout",
+    entries: [
+      { binding: 0, buffer: { type: "uniform" }, visibility },
+      { binding: 1, buffer: { type: "read-only-storage" }, visibility },
+      { binding: 2, buffer: { type: "read-only-storage" }, visibility },
+      { binding: 3, buffer: { type: "read-only-storage" }, visibility },
+      { binding: 4, buffer: { type: "read-only-storage" }, visibility },
+      { binding: 5, buffer: { type: "read-only-storage" }, visibility },
+      { binding: 6, texture: { sampleType: "float" }, visibility: SHADER_STAGE.fragment },
+      { binding: 7, sampler: { type: "filtering" }, visibility: SHADER_STAGE.fragment },
+    ],
+  });
   const items = device.createBindGroupLayout({
     label: "every-qrcode-item-layout",
     entries: [
@@ -575,7 +657,7 @@ function createLayouts(device: GPUDevice): PipelineLayouts {
       { binding: 2, sampler: { type: "filtering" }, visibility: SHADER_STAGE.fragment },
     ],
   });
-  return { blocks, items, post };
+  return { blocks, circuit, items, post, reef };
 }
 
 async function createShaderModule(
@@ -670,6 +752,86 @@ async function createCityPipelines(
     module,
   });
   return { ...shared, city, form: sources.form };
+}
+
+async function createCircuitPipelines(
+  device: GPUDevice,
+  format: GPUTextureFormat,
+  layouts: PipelineLayouts,
+  shared: SharedPipelines,
+  sources: CircuitShaderSources,
+): Promise<CircuitPipelines> {
+  const [board, components, qr, signals, traces] = await Promise.all([
+    createShaderModule(device, "every-qrcode-circuit-board", sources.circuitBoard),
+    createShaderModule(device, "every-qrcode-circuit-components", sources.circuitComponents),
+    createShaderModule(device, "every-qrcode-circuit-qr", sources.circuitQr),
+    createShaderModule(device, "every-qrcode-circuit-signals", sources.circuitSignals),
+    createShaderModule(device, "every-qrcode-circuit-traces", sources.circuitTraces),
+  ]);
+  return {
+    ...shared,
+    circuitBoard: createScenePipeline(device, format, {
+      label: "every-qrcode-circuit-board-pipeline",
+      layout: layouts.circuit,
+      module: board,
+    }),
+    circuitComponents: createScenePipeline(device, format, {
+      label: "every-qrcode-circuit-components-pipeline",
+      layout: layouts.circuit,
+      module: components,
+    }),
+    circuitQr: createScenePipeline(device, format, {
+      label: "every-qrcode-circuit-qr-pipeline",
+      layout: layouts.circuit,
+      module: qr,
+    }),
+    circuitSignals: createScenePipeline(device, format, {
+      blend: ALPHA_BLEND,
+      depthWrite: false,
+      label: "every-qrcode-circuit-signals-pipeline",
+      layout: layouts.circuit,
+      module: signals,
+    }),
+    circuitTraces: createScenePipeline(device, format, {
+      blend: ALPHA_BLEND,
+      label: "every-qrcode-circuit-traces-pipeline",
+      layout: layouts.circuit,
+      module: traces,
+    }),
+    form: sources.form,
+  };
+}
+
+async function createReefPipelines(
+  device: GPUDevice,
+  format: GPUTextureFormat,
+  layouts: PipelineLayouts,
+  shared: SharedPipelines,
+  sources: ReefShaderSources,
+): Promise<ReefPipelines> {
+  const [shelf, corals, water, fish, qr] = await Promise.all([
+    createShaderModule(device, "every-qrcode-reef-shelf", sources.reefShelf),
+    createShaderModule(device, "every-qrcode-reef-corals", sources.reefCorals),
+    createShaderModule(device, "every-qrcode-reef-water", sources.reefWater),
+    createShaderModule(device, "every-qrcode-reef-fish", sources.reefFish),
+    createShaderModule(device, "every-qrcode-reef-qr", sources.reefQr),
+  ]);
+  const create = (label: string, module: GPUShaderModule, blend = false): GPURenderPipeline =>
+    createScenePipeline(device, format, {
+      ...(blend ? { blend: ALPHA_BLEND, depthWrite: false } : {}),
+      label,
+      layout: layouts.reef,
+      module,
+    });
+  return {
+    ...shared,
+    form: sources.form,
+    reefCorals: create("every-qrcode-reef-coral-pipeline", corals, true),
+    reefFish: create("every-qrcode-reef-fish-pipeline", fish, true),
+    reefQr: create("every-qrcode-reef-qr-pipeline", qr),
+    reefShelf: create("every-qrcode-reef-shelf-pipeline", shelf),
+    reefWater: create("every-qrcode-reef-water-pipeline", water, true),
+  };
 }
 
 async function createTreePipelines(
@@ -784,6 +946,12 @@ async function createPipelines(
   if (sources.form === "city") {
     return createCityPipelines(device, format, layouts, shared, sources);
   }
+  if (sources.form === "circuit") {
+    return createCircuitPipelines(device, format, layouts, shared, sources);
+  }
+  if (sources.form === "reef") {
+    return createReefPipelines(device, format, layouts, shared, sources);
+  }
   if (sources.form === "terrain") {
     return createTerrainPipelines(device, format, layouts, shared, sources);
   }
@@ -799,6 +967,10 @@ function createBuffers(
   field: SeedBlockField,
   scene: SeedGpuScene,
   cityLots: Float32Array<ArrayBufferLike>,
+  circuitTraces: Float32Array<ArrayBufferLike> = new Float32Array(),
+  reefShelf: Float32Array<ArrayBufferLike> = new Float32Array(),
+  reefCorals: Float32Array<ArrayBufferLike> = new Float32Array(),
+  reefFish: Float32Array<ArrayBufferLike> = new Float32Array(),
 ): SeedBuffers {
   const uniforms = device.createBuffer({
     label: "every-qrcode-uniforms",
@@ -811,15 +983,53 @@ function createBuffers(
     blockPositions: createGpuBuffer(device, "every-qrcode-block-positions", field.positions),
     blockTypes: createGpuBuffer(device, "every-qrcode-block-types", field.types),
     butterflies: createGpuBuffer(device, "every-qrcode-butterflies", scene.butterflies),
+    circuitTraces: createGpuBuffer(device, "every-qrcode-circuit-traces", circuitTraces),
     fallingPetals: createGpuBuffer(device, "every-qrcode-falling-petals", scene.fallingPetals),
     flowers: createGpuBuffer(device, "every-qrcode-flowers", scene.flowers),
     grass: createGpuBuffer(device, "every-qrcode-grass", scene.grass),
     groundPetals: createGpuBuffer(device, "every-qrcode-ground-petals", scene.groundPetals),
     cityLots: createGpuBuffer(device, "every-qrcode-city-lots", cityLots),
     rain: createGpuBuffer(device, "every-qrcode-rain", scene.rain),
+    reefCorals: createGpuBuffer(device, "every-qrcode-reef-corals", reefCorals),
+    reefFish: createGpuBuffer(device, "every-qrcode-reef-fish", reefFish),
+    reefShelf: createGpuBuffer(device, "every-qrcode-reef-shelf", reefShelf),
     segments: createGpuBuffer(device, "every-qrcode-segments", scene.segments),
     uniforms,
   };
+}
+
+async function createCircuitMaterialTexture(device: GPUDevice): Promise<GPUTexture> {
+  const atlas = await import("./circuit-material-atlas.js");
+  const texture = device.createTexture({
+    format: "rgba8unorm",
+    label: "every-qrcode-circuit-material-atlas",
+    size: [atlas.CIRCUIT_MATERIAL_ATLAS_SIZE, atlas.CIRCUIT_MATERIAL_ATLAS_SIZE],
+    usage: TEXTURE_USAGE.copyDestination | TEXTURE_USAGE.textureBinding,
+  });
+  device.queue.writeTexture(
+    { texture },
+    atlas.createCircuitMaterialAtlas(),
+    { bytesPerRow: atlas.CIRCUIT_MATERIAL_ATLAS_SIZE * 4 },
+    [atlas.CIRCUIT_MATERIAL_ATLAS_SIZE, atlas.CIRCUIT_MATERIAL_ATLAS_SIZE],
+  );
+  return texture;
+}
+
+async function createReefMaterialTexture(device: GPUDevice): Promise<GPUTexture> {
+  const atlas = await import("./reef-material-atlas.js");
+  const texture = device.createTexture({
+    format: "rgba8unorm",
+    label: "every-qrcode-reef-material-atlas",
+    size: [atlas.REEF_MATERIAL_ATLAS_SIZE, atlas.REEF_MATERIAL_ATLAS_SIZE],
+    usage: TEXTURE_USAGE.copyDestination | TEXTURE_USAGE.textureBinding,
+  });
+  device.queue.writeTexture(
+    { texture },
+    atlas.createReefMaterialAtlas(),
+    { bytesPerRow: atlas.REEF_MATERIAL_ATLAS_SIZE * 4 },
+    [atlas.REEF_MATERIAL_ATLAS_SIZE, atlas.REEF_MATERIAL_ATLAS_SIZE],
+  );
+  return texture;
 }
 
 function createBindGroups(
@@ -827,6 +1037,9 @@ function createBindGroups(
   layouts: PipelineLayouts,
   buffers: SeedBuffers,
   form: SeedForm,
+  materialTexture?: GPUTexture,
+  materialSampler?: GPUSampler,
+  reefTexture?: GPUTexture,
 ): SeedBindGroups {
   const uniformEntry = { binding: 0, resource: { buffer: buffers.uniforms } } as const;
   const blocks = device.createBindGroup({
@@ -880,15 +1093,50 @@ function createBindGroups(
     layout: layouts.items,
     entries: [uniformEntry, { binding: 1, resource: { buffer: buffers.butterflies } }],
   });
+  const circuit =
+    form === "circuit" && materialTexture && materialSampler
+      ? device.createBindGroup({
+          label: "every-qrcode-circuit-bind-group",
+          layout: layouts.circuit,
+          entries: [
+            uniformEntry,
+            { binding: 1, resource: { buffer: buffers.blockTypes } },
+            { binding: 2, resource: { buffer: buffers.blockPositions } },
+            { binding: 3, resource: { buffer: buffers.cityLots } },
+            { binding: 4, resource: { buffer: buffers.circuitTraces } },
+            { binding: 5, resource: materialTexture.createView() },
+            { binding: 6, resource: materialSampler },
+          ],
+        })
+      : undefined;
+  const reef =
+    form === "reef" && reefTexture && materialSampler
+      ? device.createBindGroup({
+          label: "every-qrcode-reef-bind-group",
+          layout: layouts.reef,
+          entries: [
+            uniformEntry,
+            { binding: 1, resource: { buffer: buffers.blockTypes } },
+            { binding: 2, resource: { buffer: buffers.blockPositions } },
+            { binding: 3, resource: { buffer: buffers.reefShelf } },
+            { binding: 4, resource: { buffer: buffers.reefCorals } },
+            { binding: 5, resource: { buffer: buffers.reefFish } },
+            { binding: 6, resource: reefTexture.createView() },
+            { binding: 7, resource: materialSampler },
+          ],
+        })
+      : undefined;
   return {
     blocks,
     branches,
     butterflies,
+    circuit,
     fallingPetals,
     flowers,
     grass,
     groundPetals,
     rain,
+    reef,
   };
 }
 
@@ -941,6 +1189,7 @@ function writeUniforms(
   progress: number,
   time: number,
   toggleAge: number,
+  target: number,
 ): void {
   const idle = 1 - progress;
   const bounce = Math.exp(-6 * toggleAge) * Math.sin(12 * toggleAge) * 0.012;
@@ -980,6 +1229,7 @@ function writeUniforms(
     values[offset + 3] = 1;
   }
   values[56] = gpu.zoom;
+  values[57] = target;
   gpu.device.queue.writeBuffer(gpu.buffers.uniforms, 0, values);
 }
 
@@ -1007,6 +1257,34 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
   if (gpu.pipelines.form === "city") {
     pass.setPipeline(gpu.pipelines.city);
     pass.draw(36, gpu.blockField.blocks.length * gpu.cityPartCount);
+  } else if (gpu.pipelines.form === "circuit") {
+    const circuitBindGroup = gpu.bindGroups.circuit;
+    if (!circuitBindGroup) throw new Error("Circuit bind group was not initialized");
+    pass.setBindGroup(0, circuitBindGroup);
+    pass.setPipeline(gpu.pipelines.circuitBoard);
+    pass.draw(36, 2);
+    pass.setPipeline(gpu.pipelines.circuitTraces);
+    pass.draw(6, gpu.circuitTraceCount);
+    pass.setPipeline(gpu.pipelines.circuitComponents);
+    pass.draw(36, gpu.circuitComponentCount * 12);
+    pass.setPipeline(gpu.pipelines.circuitSignals);
+    pass.draw(6, gpu.circuitTraceCount);
+    pass.setPipeline(gpu.pipelines.circuitQr);
+    pass.draw(36, gpu.blockField.blocks.length);
+  } else if (gpu.pipelines.form === "reef") {
+    const reefBindGroup = gpu.bindGroups.reef;
+    if (!reefBindGroup) throw new Error("Reef bind group was not initialized");
+    pass.setBindGroup(0, reefBindGroup);
+    pass.setPipeline(gpu.pipelines.reefShelf);
+    pass.draw(6, gpu.blockField.blocks.length);
+    pass.setPipeline(gpu.pipelines.reefCorals);
+    pass.draw(36, gpu.reefCoralCount * 12);
+    pass.setPipeline(gpu.pipelines.reefWater);
+    pass.draw(6);
+    pass.setPipeline(gpu.pipelines.reefFish);
+    pass.draw(12, gpu.reefFishCount);
+    pass.setPipeline(gpu.pipelines.reefQr);
+    pass.draw(36, gpu.blockField.blocks.length);
   } else if (gpu.pipelines.form === "terrain") {
     pass.setPipeline(gpu.pipelines.terrain);
     pass.draw(36, gpu.blockField.blocks.length);
@@ -1036,14 +1314,7 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
   } else {
     const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
     pass.setPipeline(pipeline);
-    const form = gpu.pipelines.form;
-    if (form === "origami" || form === "stained-glass") {
-      pass.draw(6, gpu.blockField.blocks.length);
-    } else if (form === "constellation") {
-      pass.draw(6, gpu.blockField.blocks.length * 2);
-    } else {
-      pass.draw(36, gpu.blockField.blocks.length * 2);
-    }
+    pass.draw(36, gpu.blockField.blocks.length * 4);
   }
   pass.setPipeline(gpu.pipelines.rain);
   pass.setBindGroup(0, gpu.bindGroups.rain);
@@ -1085,6 +1356,8 @@ function renderGpuFrame(gpu: SeedGpuResources): void {
 function destroyGpuResources(gpu: SeedGpuResources | undefined): void {
   if (!gpu) return;
   destroyTargets(gpu.targets);
+  gpu.circuitMaterial?.destroy();
+  gpu.reefMaterial?.destroy();
   for (const buffer of Object.values(gpu.buffers)) buffer.destroy();
   gpu.context.unconfigure();
   gpu.device.destroy();
@@ -1111,6 +1384,14 @@ async function initializeGpu(
     const scene = createSeedGpuScene(model, form);
     let modelData: Float32Array<ArrayBufferLike> = new Float32Array();
     let cityPartCount = 0;
+    let circuitComponentCount = 0;
+    let circuitTraceCount = 0;
+    let circuitTraceData: Float32Array<ArrayBufferLike> = new Float32Array();
+    let reefCoralCount = 0;
+    let reefFishCount = 0;
+    let reefShelfData: Float32Array<ArrayBufferLike> = new Float32Array();
+    let reefCoralData: Float32Array<ArrayBufferLike> = new Float32Array();
+    let reefFishData: Float32Array<ArrayBufferLike> = new Float32Array();
 
     if (form === "city") {
       const cityModule = await import("./city-model.js");
@@ -1118,8 +1399,11 @@ async function initializeGpu(
       cityPartCount = cityModule.CITY_PARTS_PER_LOT;
     } else if (form === "circuit") {
       const m = await import("./circuit-model.js");
-      modelData = m.createCircuitLayout(model).cellData;
-      cityPartCount = 2;
+      const circuit = m.createCircuitLayout(model);
+      modelData = circuit.componentData;
+      circuitTraceData = circuit.traceData;
+      circuitComponentCount = circuit.components.length;
+      circuitTraceCount = circuit.traces.length;
     } else if (form === "constellation") {
       const m = await import("./constellation-model.js");
       modelData = m.createConstellationLayout(model).starData;
@@ -1150,22 +1434,49 @@ async function initializeGpu(
       cityPartCount = 2;
     } else if (form === "reef") {
       const m = await import("./reef-model.js");
-      modelData = m.createReefLayout(model).reefData;
-      cityPartCount = 2;
+      const reef = m.createReefLayout(model);
+      reefShelfData = reef.shelf.shelfData;
+      reefCoralData = reef.coralData;
+      reefFishData = reef.fishData;
+      reefCoralCount = reef.colonies.length;
+      reefFishCount = reef.fishPaths.length;
     }
 
     const layouts = createLayouts(device);
     const pipelines = await createPipelines(device, format, layouts, form, model.generatorVersion);
-    const buffers = createBuffers(device, blockField, scene, modelData);
-    const bindGroups = createBindGroups(device, layouts, buffers, form);
+    const buffers = createBuffers(
+      device,
+      blockField,
+      scene,
+      modelData,
+      circuitTraceData,
+      reefShelfData,
+      reefCoralData,
+      reefFishData,
+    );
     const sampler = device.createSampler({ magFilter: "linear", minFilter: "linear" });
+    const circuitMaterial =
+      form === "circuit" ? await createCircuitMaterialTexture(device) : undefined;
+    const reefMaterial = form === "reef" ? await createReefMaterialTexture(device) : undefined;
+    const bindGroups = createBindGroups(
+      device,
+      layouts,
+      buffers,
+      form,
+      circuitMaterial,
+      sampler,
+      reefMaterial,
+    );
     const palette = createPalette(sceneConfig);
     return {
       bindGroups,
       blockField,
       buffers,
       cityPartCount,
-      clearColor: createClearColor(sceneConfig),
+      circuitComponentCount,
+      circuitMaterial,
+      circuitTraceCount,
+      clearColor: createFormClearColor(sceneConfig, form),
       context,
       device,
       format,
@@ -1173,6 +1484,9 @@ async function initializeGpu(
       layouts,
       pipelines,
       palette,
+      reefCoralCount,
+      reefFishCount,
+      reefMaterial,
       sampler,
       scene,
       sceneEffect: createSceneEffect(sceneConfig),
@@ -1189,7 +1503,7 @@ async function initializeGpu(
 
 function updateGpuScene(gpu: SeedGpuResources, scene: SeedSceneConfig): void {
   const palette = createPalette(scene);
-  gpu.clearColor = createClearColor(scene);
+  gpu.clearColor = createFormClearColor(scene, gpu.form);
   gpu.palette = palette;
   gpu.sceneEffect = createSceneEffect(scene);
   gpu.terrainPalette = createTerrainPalette(palette);
@@ -1225,7 +1539,7 @@ function animate(canvas: HTMLCanvasElement, state: RendererState, now: number): 
   resizeGpuCanvas(canvas, gpu);
   const time = now / 1000;
   const toggleAge = Math.max(0, (now - state.toggleTime) / 1000);
-  writeUniforms(canvas, gpu, state.progress, time, toggleAge);
+  writeUniforms(canvas, gpu, state.progress, time, toggleAge, state.target);
   renderGpuFrame(gpu);
   state.frame = requestAnimationFrame((next) => animate(canvas, state, next));
 }

@@ -78,28 +78,28 @@ export function createOrigamiLayout(model: SeedModel): OrigamiLayout {
         // Finder pattern folded rosette / pyramid
         if (ring === 0) {
           type = ORIGAMI_FOLD_TYPES.rosette;
-          elevation = dna.foldAmplitude * 0.7;
+          elevation = 5.0;
           angle = col % 2 === 0 ? 0.7854 : -0.7854;
         } else if (ring === 1) {
           type = ORIGAMI_FOLD_TYPES.flat;
-          elevation = 0.02;
+          elevation = 0.15;
         } else {
           type = ORIGAMI_FOLD_TYPES.rosetteCore;
-          elevation = ring === 3 ? dna.foldAmplitude * 1.5 : dna.foldAmplitude * 1.1;
+          elevation = ring === 3 ? 9.5 : 7.0;
           angle = 0.7854;
         }
       } else if (isDark) {
         if (topology.neighbors4[index]! >= 3) {
           type = ORIGAMI_FOLD_TYPES.mountain;
-          elevation = dna.foldAmplitude * (0.6 + cellSeed * 0.5);
+          elevation = 5.5 + cellSeed * 3.0;
           angle = (col + row) % 2 === 0 ? 0.7854 : -0.7854;
         } else if (topology.neighbors4[index]! <= 1) {
           type = ORIGAMI_FOLD_TYPES.facet;
-          elevation = dna.foldAmplitude * (0.4 + cellSeed * 0.4);
+          elevation = 4.0 + cellSeed * 2.0;
           angle = cellSeed * 3.14159;
         } else {
           type = ORIGAMI_FOLD_TYPES.valley;
-          elevation = dna.foldAmplitude * 0.3;
+          elevation = 2.5;
           angle = 0.0;
         }
       }
