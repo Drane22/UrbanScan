@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc --noEmit -p ../../tsconfig.json && vite build",
+    "build": "pnpm --filter @every-qrcode/core build && pnpm --filter @every-qrcode/renderer-webgpu build && pnpm --filter @every-qrcode/react build && pnpm --filter @every-qrcode/web-component build && tsc --noEmit -p ../../tsconfig.json && vite build",
     "dev": "vite --host 127.0.0.1",
     "preview": "vite preview --host 127.0.0.1"
   },
