@@ -1,4 +1,4 @@
-import { analyzeQRTopology, type QRTopologyAnalysis } from "@every-qrcode/core";
+import { analyzeQRTopology, type QRTopologyAnalysis, createQRMatrix } from "@every-qrcode/core";
 import type { SeedModel } from "./seed-model.js";
 import { createBaseWorldDNA, seededRandom, type WorldDNA } from "./world-dna.js";
 
@@ -170,6 +170,55 @@ export function createColonyLayout(model: SeedModel): ColonyLayout {
       moduleData[offset + 2] = conn;
       moduleData[offset + 3] = Math.floor(cellSeed * 1000);
     }
+  }
+
+  // Fallback: if no modules were generated (e.g. empty model.modules), create a basic QR code
+  // so the colony visualization still shows something when the view is switched to QR.
+  if (units.length === 0) {
+    const fallbackMatrix = createQRMatrix("https://example.com", 1);
+    const size = fallbackMatrix.size;
+    const activeCells = new Uint8Array(size * size);
+    for (let i = 0; i < fallbackMatrix.cells.length; i++) {
+      activeCells[i] = fallbackMatrix.cells[i];
+    }
+    const topology = analyzeQRTopology({ cells: activeCells, size });
+    const dna = createColonyDNA({ morphSeed: 1, generatorVersion: 1 } as unknown as SeedModel);
+    const fallbackUnits: ColonyUnit[] = [];
+    const fallbackModuleData = new Float32Array(size * size * 4);
+    for (let row = 0; row < size; row++) {
+      for (let col = 0; col < size; col++) {
+        const idx = row * size + col;
+        const isDark = activeCells[idx] === 1;
+        let type: ColonyModuleType = COLONY_MODULE_TYPES.cultureMedium;
+        let height = 0.0;
+        if (!isDark) {
+          type = COLONY_MODULE_TYPES.cultureMedium;
+          height = 0.04;
+        }
+        const cellSeed = 0.5;
+        fallbackUnits.push({
+          column: col,
+          connections: 0,
+          height,
+          index: idx,
+          row,
+          seed: cellSeed,
+          type,
+        });
+        const off = idx * 4;
+        fallbackModuleData[off] = type;
+        fallbackModuleData[off + 1] = height;
+        fallbackModuleData[off + 2] = 0;
+        fallbackModuleData[off + 3] = Math.floor(cellSeed * 1000);
+      }
+    }
+    return {
+      dna,
+      moduleData: fallbackModuleData,
+      qrSize: size,
+      topology,
+      units: fallbackUnits as readonly ColonyUnit[],
+    };
   }
 
   return { dna, moduleData, qrSize: size, topology, units };
