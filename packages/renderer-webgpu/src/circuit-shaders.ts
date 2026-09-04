@@ -92,6 +92,20 @@ fn circuitFinderInk(role: u32) -> vec3f {
   return select(plated, base * 0.72, role == 2u);
 }
 
+fn circuitQrColor(blockType: u32, noise: f32) -> vec3f {
+  var color = uniforms.themePrimary.rgb;
+  if (blockType == 3u) {
+    color = uniforms.themeSecondary.rgb;
+  } else if (blockType == 4u) {
+    color = mix(uniforms.themeThird.rgb, uniforms.themeFourth.rgb, 0.58);
+  } else if (blockType == 2u || blockType == 5u) {
+    color = uniforms.themeFourth.rgb;
+  }
+  let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
+  let contrast = mix(color, circuitQrInk(), smoothstep(0.76, 0.96, luma) * 0.2);
+  return contrast * (0.92 + noise * 0.08);
+}
+
 fn finderRole(column: f32, row: f32) -> u32 {
   let farOrigin = uniforms.gridSize - 7.0;
   var local = vec2f(-1.0);
@@ -219,7 +233,7 @@ fn qrModuleMask(uv: vec2f, neighborMask: u32) -> f32 {
   let right = (neighborMask & 2u) != 0u;
   let down = (neighborMask & 4u) != 0u;
   let left = (neighborMask & 8u) != 0u;
-  let radius = 0.44;
+  let radius = 0.46;
   var mask = 1.0;
   if (!left && !up && uv.x < radius && uv.y < radius) {
     mask *= 1.0 - step(radius, distance(uv, vec2f(radius, radius)));
@@ -791,12 +805,14 @@ struct Output {
   @location(4) @interpolate(flat) visible: u32,
   @location(5) @interpolate(flat) neighborMask: u32,
   @location(6) @interpolate(flat) finderRole: u32,
+  @location(7) @interpolate(flat) blockType: u32,
 }
 
 @vertex
 fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) instanceIndex: u32) -> Output {
   var output: Output;
   let activeModule = blockTypes[instanceIndex] != 0u;
+  let blockType = blockTypes[instanceIndex];
   let face = vertexIndex / 6u;
   let uv = quadUv(vertexIndex);
   let position = blockPositions[instanceIndex];
@@ -812,7 +828,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let molten = rise * (1.0 - settle);
   // Tall molten bump that cools down into the shallow scan module profile.
   let height = (0.052 + max(0.38 * rise - 0.052, 0.0) * (1.0 - settle)) * uniforms.blockSize;
-  let footprint = mix(0.86, 0.92, settle) * uniforms.blockSize;
+  let footprint = mix(0.86, 1.0, settle) * uniforms.blockSize;
   let geometry = boxGeometry(face, uv, vec3f(footprint, height, footprint));
   var local = geometry[0];
   // Round the pillar crown while molten; the locked module stays a square.
@@ -831,6 +847,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   output.visible = select(0u, 1u, activeModule && rise > 0.002);
   output.neighborMask = u32(position.w);
   output.finderRole = role;
+  output.blockType = blockType;
   if (output.visible == 0u) { output.position = vec4f(2.0, 2.0, 2.0, 1.0); }
   return output;
 }
@@ -841,12 +858,14 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
 
   let lock = stage(0.88, 1.0);
   let organicMask = qrModuleMask(input.uv, input.neighborMask);
-  let moduleMask = select(organicMask, 1.0, input.finderRole > 0u && lock > 0.7);
-  if (abs(input.normal.y) > 0.5 && moduleMask < 0.5) {
+  if (abs(input.normal.y) > 0.5 && organicMask < 0.5) {
     discard;
   }
 
-  let roleInk = select(circuitQrInk(), circuitFinderInk(input.finderRole), input.finderRole > 0u);
+  var roleInk = circuitQrColor(input.blockType, input.tint);
+  if (input.finderRole > 0u) {
+    roleInk = mix(roleInk, circuitFinderInk(input.finderRole), 0.35);
+  }
   let edgeDistance = min(min(input.uv.x, 1.0 - input.uv.x), min(input.uv.y, 1.0 - input.uv.y));
   let platedInset = 1.0 - smoothstep(0.045, 0.13, edgeDistance);
   let contactInk = mix(roleInk, goldPad(), platedInset * 0.075);
