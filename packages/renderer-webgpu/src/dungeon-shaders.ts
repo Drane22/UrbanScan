@@ -50,7 +50,9 @@ fn dungPaper() -> vec3f {
 
 fn dungQrContrast(color: vec3f) -> vec3f {
   let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
-  let correction = smoothstep(0.72, 0.94, luma) * 0.25;
+  // Torch-amber and pale ashlar tones must resolve to dark ink at scan lock
+  // while deep stone and crimson tones keep their hue identity.
+  let correction = smoothstep(0.38, 0.68, luma) * 0.80;
   return mix(color, dungInk(), correction);
 }
 
