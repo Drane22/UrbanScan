@@ -151,12 +151,7 @@ describe("origami-model", () => {
     const origamiPalettes = WORLD_PALETTES.origami;
     expect(origamiPalettes.length).toBeGreaterThanOrEqual(4);
 
-    const expectedIds = [
-      "washi-indigo",
-      "mulberry-crimson",
-      "bamboo-sage",
-      "gold-leaf-lacquer",
-    ];
+    const expectedIds = ["washi-indigo", "mulberry-crimson", "bamboo-sage", "gold-leaf-lacquer"];
     for (const expectedId of expectedIds) {
       const p = origamiPalettes.find((palette) => palette.id === expectedId);
       expect(p).toBeDefined();
@@ -172,4 +167,3 @@ describe("origami-model", () => {
     }
   });
 });
-

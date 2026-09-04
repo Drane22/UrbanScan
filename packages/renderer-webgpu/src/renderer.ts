@@ -5,6 +5,7 @@ import {
 } from "@every-qrcode/core";
 
 import { createSeedGpuScene, type SeedGpuScene } from "./gpu-scene.js";
+import { COLONY_INSTANCES_PER_CELL } from "./colony-model.js";
 import {
   createSeedBlockField,
   type SeedBlockField,
@@ -1311,6 +1312,9 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
       pass.setBindGroup(0, gpu.bindGroups.fallingPetals);
       pass.draw(gpu.scene.fallingPetalCount * 24);
     }
+  } else if (gpu.pipelines.form === "colony") {
+    pass.setPipeline(gpu.pipelines.colony);
+    pass.draw(36, gpu.blockField.blocks.length * COLONY_INSTANCES_PER_CELL);
   } else {
     const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
     pass.setPipeline(pipeline);

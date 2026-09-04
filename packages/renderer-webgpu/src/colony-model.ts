@@ -19,6 +19,12 @@ export const COLONY_MODULE_TYPES = {
 
 export type ColonyModuleType = (typeof COLONY_MODULE_TYPES)[keyof typeof COLONY_MODULE_TYPES];
 
+/**
+ * GPU instances per grid cell: medium film, membrane dome, nucleus, vesicle,
+ * QR prism, and germ. The renderer draw call must match this count.
+ */
+export const COLONY_INSTANCES_PER_CELL = 6;
+
 export interface ColonyDNA extends WorldDNA {
   readonly cultureArchetype: number;
   readonly membraneVariation: number;

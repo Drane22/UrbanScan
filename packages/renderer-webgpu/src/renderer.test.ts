@@ -619,8 +619,11 @@ it("gives Reef separate shelf, ecology, water, life, and QR passes", () => {
   }
   expect(REEF_CORAL_SHADER).toContain("const CORAL_PARTS: u32 = 12u");
   expect(REEF_CORAL_SHADER).toContain("fn makePart");
-  expect(REEF_WATER_SHADER).toContain("reefMotionStage(0.18, 0.38, 0.12, 0.28)");
-  expect(REEF_FISH_SHADER).toContain("reefMotionStage(0.0, 0.18, 0.0, 0.12)");
+  // The morph is a single continuous choreography: no asymmetric reverse
+  // windows, only mirrored smoothstep stages shared by forward and reverse.
+  expect(REEF_WATER_SHADER).toContain("reefStage(0.10, 0.44)");
+  expect(REEF_FISH_SHADER).toContain("reefStage(0.0, 0.26)");
+  expect(REEF_CORAL_SHADER).toContain("fn reefDelay");
   expect(REEF_QR_SHADER).toContain("blockTypes[instanceIndex] != 0u");
   expect(REEF_SHELF_SHADER).toContain("reefQrSubstrate()");
   expect(REEF_QR_SHADER).toContain("reefQrInk()");

@@ -113,24 +113,35 @@ fn stage(start: f32, end: f32) -> f32 {
   return smoothstep(start, end, uniforms.progress);
 }
 
+// Seeded per-object delay so dissolution sweeps across the board instead of
+// popping globally. Radial term sinks the center first and the corner finder
+// processors last, handing their positions off to the rising QR finder pillars.
+fn circuitDelay(column: f32, row: f32, seed: f32) -> f32 {
+  let center = uniforms.gridSize * 0.5;
+  let radial = distance(vec2f(column, row), vec2f(center, center)) / max(uniforms.gridSize * 0.71, 1.0);
+  let jitter = fract(sin(seed * 91.7 + column * 17.3 + row * 31.1) * 43758.5);
+  return clamp((1.0 - radial) * 0.16 + jitter * 0.12, 0.0, 0.28);
+}
+
+// Tree-contract camera: moves across the whole morph with a breathing pulse and
+// idle/bounce bob instead of waiting for the second half to swing to top-down.
 fn circuitProject(localPos: vec3f) -> vec4f {
-  let cameraStage = smoothstep(0.48, 0.96, uniforms.progress);
-  let angleY = mix(0.70, 0.0, cameraStage);
-  let angleX = mix(-0.55, -1.570796, cameraStage);
-  let cy = cos(angleY);
-  let sy = sin(angleY);
-  let cx = cos(angleX);
-  let sx = sin(angleX);
+  let cy = cos(mix(0.70, 0.0, uniforms.progress) + uniforms.cameraBobX);
+  let sy = sin(mix(0.70, 0.0, uniforms.progress) + uniforms.cameraBobX);
+  let cx = cos(mix(-0.55, -1.570796, uniforms.progress) + uniforms.cameraBobY);
+  let sx = sin(mix(-0.55, -1.570796, uniforms.progress) + uniforms.cameraBobY);
   let rotX = localPos.x * cy - localPos.z * sy;
   let rotZ = localPos.x * sy + localPos.z * cy;
   let rotY = localPos.y * cx - rotZ * sx;
   let depth = localPos.y * sx + rotZ * cx;
   let portrait = select(1.0, 1.16, uniforms.aspectRatio < 0.8);
-  let scale = mix(40.5, 46.2, cameraStage) / uniforms.gridSize * portrait * uniforms.camera.x;
+  let morphPulse = 1.0 + sin(uniforms.progress * 3.14159265) * 0.035;
+  let scale = mix(40.5, 46.2, uniforms.progress) / uniforms.gridSize * portrait * morphPulse * uniforms.camera.x;
   let scaleX = scale / max(uniforms.aspectRatio, 1.0);
   let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
-  let yOffset = mix(-0.13, 0.07, cameraStage);
-  return vec4f(rotX * scaleX, (rotY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
+  let yOffset = mix(-0.13, 0.07, uniforms.progress);
+  let xOffset = mix(0.0, 0.015, uniforms.progress);
+  return vec4f((rotX + xOffset) * scaleX, (rotY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
 }
 
 fn boardPoint(column: f32, row: f32, height: f32) -> vec3f {
@@ -347,6 +358,7 @@ struct Output {
   @location(1) normal: vec3f,
   @location(2) seed: f32,
   @location(3) level: f32,
+  @location(4) delay: f32,
 }
 
 @vertex
@@ -371,12 +383,17 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   output.normal = vec3f(0.0, 1.0, 0.0);
   output.seed = traceData[instanceIndex * 3u + 2u].y;
   output.level = b.y;
+  output.delay = circuitDelay(min(a.x, a.z), min(a.y, a.w), traceData[instanceIndex * 3u + 2u].y);
   return output;
 }
 
 @fragment
 fn fragmentMain(input: Output) -> @location(0) vec4f {
-  let fade = 1.0 - stage(0.54, 0.88);
+  // Each trace dies in its own staggered window with a brief emissive drain
+  // shimmer as the current bleeds out, instead of one global alpha fade.
+  let fade = 1.0 - stage(0.50 + input.delay, 0.82 + input.delay);
+  let drain = stage(0.50 + input.delay, 0.60 + input.delay)
+    * (1.0 - stage(0.62 + input.delay, 0.78 + input.delay));
   let brushed = textureSampleLevel(materialAtlas, materialSampler, atlasUv(2.0, input.uv, 4.0), 0.0);
 
   let edgeDist = abs(input.uv.y - 0.5) * 2.0;
@@ -386,6 +403,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   if (input.level > 1.5) {
     copper = goldPad() * (0.9 + brushed.r * 0.2);
   }
+  copper *= 1.0 + drain * 1.8;
 
   let endDist = min(input.uv.x, 1.0 - input.uv.x);
   if (endDist < 0.18) {
@@ -638,11 +656,14 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let c = componentData[componentIndex * 3u + 2u];
   let kind = u32(b.z);
   let variant = u32(b.w);
-  let detailFade = 1.0 - stage(0.18, 0.48);
-  let bodyFade = 1.0 - stage(0.46, 0.72);
-  let reverseDelay = select(1.0, smoothstep(0.0, 0.34, 1.0 - uniforms.progress), uniforms.camera.y < 0.5);
+  // Staggered reflow: details retract first, then each body deflates into its
+  // own pad. Hero processors hold until the end so the rising QR finder
+  // pillars read as a handoff instead of everything vanishing at once.
+  let delay = circuitDelay(a.x, a.y, c.x) + select(0.0, 0.12, kind == 0u);
+  let detailFade = 1.0 - stage(0.08 + delay, 0.32 + delay);
+  let bodyFade = 1.0 - stage(0.36 + delay, 0.62 + delay);
   let partGeometry = componentPart(part, kind, vec3f(a.z, b.x, a.w), variant);
-  let visibility = select(bodyFade, detailFade, part > 0u) * reverseDelay;
+  let visibility = select(bodyFade, detailFade, part > 0u);
   let uv = quadUv(vertexIndex);
   let face = vertexIndex / 6u;
   let geometry = boxGeometry(face, uv, partGeometry.size * uniforms.blockSize * vec3f(1.0, visibility, 1.0));
@@ -765,9 +786,11 @@ struct Output {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
   @location(1) uv: vec2f,
-  @location(2) @interpolate(flat) visible: u32,
-  @location(3) @interpolate(flat) neighborMask: u32,
-  @location(4) @interpolate(flat) finderRole: u32,
+  @location(2) molten: f32,
+  @location(3) tint: f32,
+  @location(4) @interpolate(flat) visible: u32,
+  @location(5) @interpolate(flat) neighborMask: u32,
+  @location(6) @interpolate(flat) finderRole: u32,
 }
 
 @vertex
@@ -777,17 +800,37 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let face = vertexIndex / 6u;
   let uv = quadUv(vertexIndex);
   let position = blockPositions[instanceIndex];
-  let reveal = stage(0.68, 0.94);
-  let height = mix(0.18, 0.052, reveal) * uniforms.blockSize;
-  let footprint = mix(0.82, 0.92, reveal) * uniforms.blockSize;
+  let role = finderRole(position.x, position.y);
+  // Finder cells bloom first; the rest sweep outward from the corners with
+  // seeded jitter so solder reflows across the board instead of popping in.
+  let center = uniforms.gridSize * 0.5;
+  let radial = distance(vec2f(position.x, position.y), vec2f(center, center)) / max(uniforms.gridSize * 0.71, 1.0);
+  let jitter = fract(sin((position.x * 12.9898 + position.y * 78.233) * 43.7585) * 43758.5453);
+  let delay = clamp(radial * 0.20 + jitter * 0.10 - select(0.0, 0.08, role > 0u), 0.0, 0.30);
+  let rise = stage(0.14 + delay, 0.52 + delay);
+  let settle = stage(0.60 + delay, 0.90 + delay);
+  let molten = rise * (1.0 - settle);
+  // Tall molten bump that cools down into the shallow scan module profile.
+  let height = (0.052 + max(0.38 * rise - 0.052, 0.0) * (1.0 - settle)) * uniforms.blockSize;
+  let footprint = mix(0.86, 0.92, settle) * uniforms.blockSize;
   let geometry = boxGeometry(face, uv, vec3f(footprint, height, footprint));
-  let center = boardPoint(position.x, position.y, 0.12);
-  output.position = circuitProject(center + geometry[0]);
+  var local = geometry[0];
+  // Round the pillar crown while molten; the locked module stays a square.
+  let topness = clamp(local.y / max(height, 0.0001), 0.0, 1.0);
+  let pinch = 1.0 - topness * molten * 0.34;
+  local.x *= pinch;
+  local.z *= pinch;
+  let wobblePhase = position.x * 3.1 + position.y * 5.7;
+  let wobble = sin(uniforms.time * 2.2 + wobblePhase) * 0.02 * molten * uniforms.blockSize;
+  let moduleCenter = boardPoint(position.x, position.y, 0.12);
+  output.position = circuitProject(moduleCenter + local + vec3f(wobble, 0.0, -wobble));
   output.normal = geometry[1];
   output.uv = uv;
+  output.molten = molten;
+  output.tint = fract(sin(position.x * 17.3 + position.y * 31.1) * 43758.5);
+  output.visible = select(0u, 1u, activeModule && rise > 0.002);
   output.neighborMask = u32(position.w);
-  output.finderRole = finderRole(position.x, position.y);
-  output.visible = select(0u, 1u, activeModule && reveal > 0.002);
+  output.finderRole = role;
   if (output.visible == 0u) { output.position = vec4f(2.0, 2.0, 2.0, 1.0); }
   return output;
 }
@@ -803,14 +846,16 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
     discard;
   }
 
-  let goldContact = goldPad() * 1.35 * studioLight(input.normal, 0.22);
   let roleInk = select(circuitQrInk(), circuitFinderInk(input.finderRole), input.finderRole > 0u);
   let edgeDistance = min(min(input.uv.x, 1.0 - input.uv.x), min(input.uv.y, 1.0 - input.uv.y));
   let platedInset = 1.0 - smoothstep(0.045, 0.13, edgeDistance);
   let contactInk = mix(roleInk, goldPad(), platedInset * 0.075);
   let scanMaterial = select(contactInk * 0.82, contactInk, input.normal.y > 0.5);
-  let moduleColor = mix(goldContact, scanMaterial, smoothstep(0.75, 0.95, uniforms.progress));
-  let finalColor = mix(moduleColor, scanMaterial, lock);
+  // Locked modules keep per-module brightness variation like the tree QR.
+  let cooled = scanMaterial * (0.94 + input.tint * 0.09);
+  let moltenColor = mix(goldPad(), vec3f(1.0, 0.86, 0.48), 0.4 * input.molten)
+    * (1.25 + input.molten * 1.0);
+  let finalColor = mix(cooled, moltenColor, input.molten);
   return vec4f(acesToneMap(finalColor), 1.0);
 }
 `;

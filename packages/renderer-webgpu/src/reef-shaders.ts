@@ -42,29 +42,31 @@ fn reefStage(start: f32, end: f32) -> f32 {
   return smoothstep(start, end, uniforms.progress);
 }
 
-fn reefMotionStage(forwardStart: f32, forwardEnd: f32, reverseStart: f32, reverseEnd: f32) -> f32 {
-  let forward = smoothstep(forwardStart, forwardEnd, uniforms.progress);
-  let reverse = smoothstep(reverseStart, reverseEnd, uniforms.progress);
-  return select(reverse, forward, uniforms.camera.y > 0.5);
-}
-
+// Tree-contract camera: continuous swing with a breathing pulse instead of a
+// late jump to top-down.
 fn reefProject(localPos: vec3f) -> vec4f {
-  let cameraStage = smoothstep(0.58, 0.98, uniforms.progress);
-  let angleY = mix(0.72, 0.0, cameraStage);
-  let angleX = mix(-0.48, -1.570796, cameraStage);
-  let cy = cos(angleY);
-  let sy = sin(angleY);
-  let cx = cos(angleX);
-  let sx = sin(angleX);
+  let cy = cos(mix(0.72, 0.0, uniforms.progress) + uniforms.cameraBobX);
+  let sy = sin(mix(0.72, 0.0, uniforms.progress) + uniforms.cameraBobX);
+  let cx = cos(mix(-0.48, -1.570796, uniforms.progress) + uniforms.cameraBobY);
+  let sx = sin(mix(-0.48, -1.570796, uniforms.progress) + uniforms.cameraBobY);
   let rotX = localPos.x * cy - localPos.z * sy;
   let rotZ = localPos.x * sy + localPos.z * cy;
   let rotY = localPos.y * cx - rotZ * sx;
   let depth = localPos.y * sx + rotZ * cx;
   let portrait = select(1.0, 1.16, uniforms.aspectRatio < 0.8);
-  let scale = mix(40.0, 46.2, cameraStage) / uniforms.gridSize * portrait * uniforms.camera.x;
+  let morphPulse = 1.0 + sin(uniforms.progress * 3.14159265) * 0.035;
+  let scale = mix(40.0, 46.2, uniforms.progress) / uniforms.gridSize * portrait * morphPulse * uniforms.camera.x;
   let scaleX = scale / max(uniforms.aspectRatio, 1.0);
   let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
-  return vec4f(rotX * scaleX, (rotY + mix(-0.15, 0.07, cameraStage)) * scaleY, depth * 0.01 + 0.5, 1.0);
+  return vec4f((rotX + mix(0.0, 0.015, uniforms.progress)) * scaleX, (rotY + mix(-0.15, 0.07, uniforms.progress)) * scaleY, depth * 0.01 + 0.5, 1.0);
+}
+
+// Seeded per-colony delay so the reef contracts as a traveling wave.
+fn reefDelay(column: f32, row: f32, seed: f32) -> f32 {
+  let center = uniforms.gridSize * 0.5;
+  let radial = distance(vec2f(column, row), vec2f(center, center)) / max(uniforms.gridSize * 0.71, 1.0);
+  let jitter = fract(sin((column * 12.9898 + row * 78.233 + seed * 37.7) * 43.7585) * 43758.5453);
+  return clamp((1.0 - radial) * 0.16 + jitter * 0.10, 0.0, 0.28);
 }
 
 fn reefPoint(column: f32, row: f32, height: f32) -> vec3f {
@@ -214,7 +216,6 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let uv = quadUv(vertexIndex);
   let position = blockPositions[instanceIndex];
   let shelf = shelfData[instanceIndex];
-  let flatten = reefStage(0.62, 0.88);
 
   let gridX = position.x + uv.x - 0.5;
   let gridZ = position.y + uv.y - 0.5;
@@ -223,6 +224,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let sandWave = sin(gridX * 0.38 + gridZ * 0.28) * 0.12 + sin(gridX * 0.82 - gridZ * 0.65) * 0.06;
   let ripple = sin(gridX * 3.6 + gridZ * 2.4) * 0.018;
   let baseRelief = shelf.x * 0.95 + 0.10 + sandWave + ripple;
+  let flatten = reefStage(0.34, 0.86);
   let relief = mix(baseRelief, 0.035, flatten);
 
   let world = reefPoint(gridX, gridZ, relief);
@@ -294,6 +296,7 @@ struct Output {
   @location(5) @interpolate(flat) part: u32,
   @location(6) @interpolate(flat) visible: u32,
   @location(7) paramT: f32,
+  @location(8) delay: f32,
 }
 
 fn makePart(part: u32, family: u32, scale: f32, height: f32, seed: f32) -> Part {
@@ -398,7 +401,10 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let waveSurge = sin(time * 1.4 + a.x * 0.28 + a.y * 0.19) * 0.16 + sin(time * 2.8 + a.x * 0.5) * 0.05;
   let current = waveSurge * (flexible + select(0.02, 0.12, partData.isTentacle));
 
-  let contract = 1.0 - reefMotionStage(0.38, 0.68, 0.48, 0.78) * select(0.78, 0.96, flexible > 0.0);
+  // Staggered contraction wave: soft colonies fold first, rigid heads last,
+  // each within its own seeded window instead of one global pop.
+  let delay = reefDelay(a.x, a.y, c.x) + select(0.0, 0.10, flexible < 0.5);
+  let contract = 1.0 - reefStage(0.30 + delay, 0.72 + delay) * select(0.78, 0.96, flexible > 0.0);
   let face = vertexIndex / 6u;
   let uv = quadUv(vertexIndex);
   let geometry = boxGeometry(face, uv, partData.size * uniforms.blockSize * vec3f(contract, contract, contract));
@@ -439,6 +445,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   output.family = family;
   output.part = partIndex;
   output.paramT = uv.y;
+  output.delay = delay;
   output.visible = select(0u, 1u, partData.visible && contract > 0.01);
   if (output.visible == 0u) { output.position = vec4f(2.0, 2.0, 2.0, 1.0); }
   return output;
@@ -514,7 +521,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let albedo = color * (0.80 + detail.r * 0.32);
   let normal = normalize(input.normal);
   let lit = underwaterLighting(normal, input.world, albedo, 0.42, sssTint, sssAmount);
-  let fade = 1.0 - reefStage(0.64, 0.84);
+  let fade = 1.0 - reefStage(0.60 + input.delay, 0.86 + input.delay);
   return vec4f(acesToneMap(lit), fade);
 }
 `;
@@ -535,7 +542,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> Output {
   let uv = quadUv(vertexIndex);
   let width = uniforms.gridSize * uniforms.blockSize * 1.65;
   let wave = sin(uv.x * 6.5 + uniforms.time * 0.65) * 0.08 + sin(uv.y * 5.2 - uniforms.time * 0.52) * 0.06;
-  let withdraw = reefMotionStage(0.18, 0.38, 0.12, 0.28);
+  let withdraw = reefStage(0.10, 0.44);
   let world = vec3f((uv.x - 0.5) * width, (12.0 + wave + withdraw * 4.0) * uniforms.blockSize, (uv.y - 0.5) * width);
   output.position = reefProject(world);
   output.uv = uv;
@@ -549,7 +556,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> Output {
 
 @fragment
 fn fragmentMain(input: Output) -> @location(0) vec4f {
-  let withdraw = reefMotionStage(0.18, 0.38, 0.12, 0.28);
+  let withdraw = reefStage(0.10, 0.44);
   let rim = pow(abs(input.wave) * 4.5, 1.3);
   let sunGlint = pow(max(sin((input.uv.x + input.uv.y) * 14.0 + uniforms.time * 1.6), 0.0), 5.0) * 0.35;
   let surfaceAqua = mix(waterColor(), vec3f(0.18, 0.78, 0.90), 0.5);
@@ -576,7 +583,9 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let a = fishData[instanceIndex * 3u];
   let b = fishData[instanceIndex * 3u + 1u];
   let c = fishData[instanceIndex * 3u + 2u];
-  let retreat = reefMotionStage(0.0, 0.18, 0.0, 0.12);
+  let retreat = reefStage(0.0, 0.26);
+  // Fish dart away and dive under the shelf as fixation begins.
+  let diveDepth = b.z + 1.8 - retreat * 16.0;
 
   let speed = b.w * 0.045;
   let t = fract(uniforms.time * speed + c.x + retreat * 0.7);
@@ -659,7 +668,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
     alpha = 0.90;
   }
 
-  let world = reefPoint(col, row, b.z + 1.8) + local;
+  let world = reefPoint(col, row, diveDepth) + local;
   output.position = reefProject(world);
   output.bodyPart = partId;
   output.shade = fract(t + c.x);
@@ -720,27 +729,48 @@ struct Output {
   @builtin(position) position: vec4f,
   @location(0) normal: vec3f,
   @location(1) uv: vec2f,
-  @location(2) @interpolate(flat) visible: u32,
-  @location(3) @interpolate(flat) neighborMask: u32,
-  @location(4) @interpolate(flat) finderRole: u32,
+  @location(2) molten: f32,
+  @location(3) tint: f32,
+  @location(4) @interpolate(flat) visible: u32,
+  @location(5) @interpolate(flat) neighborMask: u32,
+  @location(6) @interpolate(flat) finderRole: u32,
 }
 
 @vertex
 fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) instanceIndex: u32) -> Output {
   var output: Output;
   let position = blockPositions[instanceIndex];
-  let reveal = reefStage(0.78, 0.97);
+  let role = finderRole(position.x, position.y);
+  // Living polyps sprout upward in a seeded radial sweep, finder polyps
+  // first, then settle into the flat scan plaques.
+  let center = uniforms.gridSize * 0.5;
+  let radial = distance(vec2f(position.x, position.y), vec2f(center, center)) / max(uniforms.gridSize * 0.71, 1.0);
+  let jitter = fract(sin((position.x * 12.9898 + position.y * 78.233 + 5.13) * 43.7585) * 43758.5453);
+  let delay = clamp(radial * 0.20 + jitter * 0.10 - select(0.0, 0.08, role > 0u), 0.0, 0.30);
+  let rise = reefStage(0.18 + delay, 0.56 + delay);
+  let settle = reefStage(0.62 + delay, 0.92 + delay);
+  let molten = rise * (1.0 - settle);
+  let height = (0.052 + max(0.34 * rise - 0.052, 0.0) * (1.0 - settle)) * uniforms.blockSize;
+  let footprint = mix(0.84, 0.92, settle) * uniforms.blockSize;
   let uv = quadUv(vertexIndex);
-  let height = mix(0.16, 0.052, reveal) * uniforms.blockSize;
-  let footprint = mix(0.82, 0.92, reveal) * uniforms.blockSize;
   let geometry = boxGeometry(vertexIndex / 6u, uv, vec3f(footprint, height, footprint));
-  let world = reefPoint(position.x, position.y, 0.10) + geometry[0];
+  var local = geometry[0];
+  // Lobed organic crown while the polyp stands; square plaque at lock.
+  let topness = clamp(local.y / max(height, 0.0001), 0.0, 1.0);
+  let lobe = sin(atan2(local.z, local.x) * 3.0 + position.x * 2.3 + position.y * 1.7) * 0.10;
+  let pinch = 1.0 - topness * molten * (0.30 - lobe);
+  local.x *= pinch;
+  local.z *= pinch;
+  let sway = sin(uniforms.time * 1.6 + position.x * 4.1 + position.y * 2.9) * 0.03 * molten * uniforms.blockSize;
+  let world = reefPoint(position.x, position.y, 0.10) + local + vec3f(sway, 0.0, -sway);
   output.position = reefProject(world);
   output.normal = geometry[1];
   output.uv = uv;
+  output.molten = molten;
+  output.tint = fract(sin(position.x * 17.3 + position.y * 31.1 + 9.7) * 43758.5);
+  output.visible = select(0u, 1u, blockTypes[instanceIndex] != 0u && rise > 0.002);
   output.neighborMask = u32(position.w);
-  output.finderRole = finderRole(position.x, position.y);
-  output.visible = select(0u, 1u, blockTypes[instanceIndex] != 0u && reveal > 0.001);
+  output.finderRole = role;
   if (output.visible == 0u) { output.position = vec4f(2.0, 2.0, 2.0, 1.0); }
   return output;
 }
@@ -756,7 +786,6 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
     discard;
   }
 
-  let coralPlinth = mix(coralPrimary(), vec3f(0.95, 0.92, 0.88), 0.45);
   let roleInk = select(reefQrInk(), reefFinderInk(input.finderRole), input.finderRole > 0u);
   let edgeDistance = min(min(input.uv.x, 1.0 - input.uv.x), min(input.uv.y, 1.0 - input.uv.y));
   let membrane = 1.0 - smoothstep(0.055, 0.16, edgeDistance);
@@ -764,8 +793,11 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   var plaqueInk = mix(roleInk, coralPrimary(), membrane * 0.065);
   plaqueInk *= 0.97 + reefDetail.r * 0.035;
   let scanMaterial = select(plaqueInk * 0.84, plaqueInk, input.normal.y > 0.5);
-  let moduleColor = mix(coralPlinth, scanMaterial, smoothstep(0.82, 0.96, uniforms.progress));
-  let finalColor = mix(moduleColor, scanMaterial, lock);
+  // Per-module tint variation survives scan lock like the tree QR.
+  let cooled = scanMaterial * (0.94 + input.tint * 0.09);
+  let polypColor = mix(coralPrimary() * 1.1, coralAccent() * 1.4, 0.5 * input.molten)
+    * (1.15 + input.molten * 0.85);
+  let finalColor = mix(cooled, polypColor, input.molten);
   return vec4f(acesToneMap(finalColor), 1.0);
 }
 `;
