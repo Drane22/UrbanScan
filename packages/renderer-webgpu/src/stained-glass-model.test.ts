@@ -45,4 +45,47 @@ describe("stained-glass-model", () => {
     const centerIndex = 3 * model.qrSize + 3;
     expect(layout.panes[centerIndex]!.type).toBe(GLASS_PANE_TYPES.roseCenter);
   });
+
+  it("maps every finder ring to its medallion tier", async () => {
+    const id = await createEveryQRCodeIdentity(url1, { identityScope: "url" });
+    const model = await createSeedModel(id);
+    const layout = createGlassLayout(model);
+    const size = model.qrSize;
+
+    // 7x7 outer medallion ring
+    expect(layout.panes[0]!.type).toBe(GLASS_PANE_TYPES.roseMedallion);
+    // Separator clear field
+    expect(layout.panes[size + 1]!.type).toBe(GLASS_PANE_TYPES.clearField);
+    // Inner rose ring and center
+    expect(layout.panes[2 * size + 2]!.type).toBe(GLASS_PANE_TYPES.roseCenter);
+    expect(layout.panes[3 * size + 3]!.type).toBe(GLASS_PANE_TYPES.roseCenter);
+  });
+
+  it("keeps light cells clear and dark cells jeweled", async () => {
+    const id = await createEveryQRCodeIdentity(url1, { identityScope: "url" });
+    const model = await createSeedModel(id);
+    const layout = createGlassLayout(model);
+    const activeSet = new Set(model.modules.map((m) => m.index));
+    let lightCount = 0;
+    let darkCount = 0;
+
+    for (const pane of layout.panes) {
+      if (!activeSet.has(pane.index)) {
+        lightCount += 1;
+        expect(pane.type).toBe(GLASS_PANE_TYPES.clearField);
+      } else {
+        darkCount += 1;
+        expect(
+          pane.type === GLASS_PANE_TYPES.coloredPane ||
+            pane.type === GLASS_PANE_TYPES.jewelAccent ||
+            pane.type === GLASS_PANE_TYPES.roseMedallion ||
+            pane.type === GLASS_PANE_TYPES.roseCenter,
+        ).toBe(true);
+      }
+      expect(pane.colorIndex).toBeGreaterThanOrEqual(0);
+      expect(pane.colorIndex).toBeLessThanOrEqual(5);
+    }
+    expect(lightCount).toBeGreaterThan(0);
+    expect(darkCount).toBeGreaterThan(0);
+  });
 });

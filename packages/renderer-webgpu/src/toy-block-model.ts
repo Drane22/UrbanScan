@@ -33,7 +33,7 @@ export interface ToyBlockPiece {
 }
 
 export interface ToyBlockLayout {
-  /** vec4 per cell: type, height, colorIndex, packedSeed */
+  /** vec4 per cell: type, height, connections, packedSeedColor */
   readonly blockData: Float32Array;
   readonly dna: ToyBlockDNA;
   readonly pieces: readonly ToyBlockPiece[];
@@ -70,6 +70,7 @@ export function createToyBlockLayout(model: SeedModel): ToyBlockLayout {
       const index = row * size + col;
       const isDark = activeCells[index] === 1;
       const ring = topology.finderRing[index]!;
+      const conn = topology.connections[index]!;
       const cellSeed = seededRandom(model.morphSeed, col, row, 888);
 
       let type: ToyBlockType = TOY_BLOCK_TYPES.flatPlate;
@@ -116,8 +117,10 @@ export function createToyBlockLayout(model: SeedModel): ToyBlockLayout {
       const offset = index * 4;
       blockData[offset] = type;
       blockData[offset + 1] = height;
-      blockData[offset + 2] = colorIndex;
-      blockData[offset + 3] = Math.floor(cellSeed * 1000);
+      blockData[offset + 2] = conn;
+      // Low 4 digits hold the quantized seed; upper digits hold the seeded
+      // brick color family so the shader can unpack both deterministically.
+      blockData[offset + 3] = Math.floor(cellSeed * 1000) + colorIndex * 10000;
     }
   }
 
