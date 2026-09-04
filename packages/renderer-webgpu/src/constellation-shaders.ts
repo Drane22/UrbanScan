@@ -138,7 +138,7 @@ struct ConstPiece {
   visible: f32,
 }
 
-fn createConstPiece(part: u32, sType: u32, sDepth: f32, isDark: bool, seed: f32) -> ConstPiece {
+fn createConstPiece(part: u32, sType: u32, sDepth: f32, starSize: f32, isDark: bool, seed: f32) -> ConstPiece {
   let propStage = 1.0 - constStage(0.0, 0.18);
   let detailStage = 1.0 - constStage(0.12, 0.35);
   let heightStage = 1.0 - constStage(0.22, 0.65);
@@ -167,7 +167,10 @@ fn createConstPiece(part: u32, sType: u32, sDepth: f32, isDark: bool, seed: f32)
       piece.offset = vec3f(0.0);
       return piece;
     }
-    let bodyFootprint = footprint * select(0.70, 0.85, sType == 5u);
+    // Seeded star size gives real mass hierarchy: finder hubs and major
+    // systems read as larger celestial bodies than ordinary stars.
+    let bodyFootprint = footprint * select(0.70, 0.85, sType == 5u)
+      * (0.72 + min(starSize, 1.8) * 0.22);
     let bodyH = totalHeight * 0.70 * heightStage;
     piece.size = vec3f(bodyFootprint, bodyH, bodyFootprint);
     piece.offset = vec3f(0.0, 0.05, 0.0);
@@ -233,10 +236,15 @@ fn vertexMain(
   let sType = u32(raw.x);
   let sDepth = raw.y;
   let conn = u32(raw.z);
-  let seed = fract(raw.w / 1000.0);
+  // starData.w packs starSize + floor(cellSeed * 1000) * 256: the low byte
+  // range holds the celestial size while the upper bits hold the seed.
+  let packedW = raw.w;
+  let seedCell = floor(packedW / 256.0);
+  let seed = seedCell / 1000.0;
+  let starSize = packedW - seedCell * 256.0;
   let isDark = blockTypes[cellIndex] != 0u;
 
-  let piece = createConstPiece(part, sType, sDepth, isDark, seed);
+  let piece = createConstPiece(part, sType, sDepth, starSize, isDark, seed);
   if (piece.visible < 0.01) {
     output.position = vec4f(2.0, 2.0, 2.0, 1.0);
     return output;
@@ -290,7 +298,9 @@ fn constellationQrColor(blockType: u32, noise: f32) -> vec3f {
     color = uniforms.themeFourth.rgb;
   }
   let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
-  let contrast = mix(color, constInk(), smoothstep(0.76, 0.96, luma) * 0.15);
+  // Bright stellar tones (gold, sirius blue) must resolve to dark ink at scan
+  // lock while already-dark tones keep their hue identity.
+  let contrast = mix(color, constInk(), smoothstep(0.35, 0.65, luma) * 0.85);
   return contrast * (0.94 + noise * 0.06);
 }
 
@@ -333,11 +343,30 @@ fn fragmentMain(input: ConstellationOutput) -> @location(0) vec4f {
   var color = deepSpace;
 
   if (input.part == 0u) {
-    // Deep space plate with cosmic dust and constellation connecting lines
+    // Deep space plate with cosmic dust and constellation connecting lines.
+    // Each dark cell draws line segments toward its dark 4-neighbors, so the
+    // visible constellation graph is the QR connectivity itself. Lines fade
+    // as the reveal locks, leaving clean scan modules behind.
     let uv = input.uv;
     let dist = length(uv - 0.5);
     let glow = smoothstep(0.5, 0.0, dist);
     color = mix(deepSpace, nebulaViolet * 0.5, glow * 0.4);
+    let lineHalfWidth = 0.045;
+    var starLinks = 0.0;
+    if ((input.connections & 1u) != 0u) {
+      starLinks = max(starLinks, (1.0 - smoothstep(lineHalfWidth * 0.5, lineHalfWidth, abs(uv.x - 0.5))) * step(uv.y, 0.5));
+    }
+    if ((input.connections & 2u) != 0u) {
+      starLinks = max(starLinks, (1.0 - smoothstep(lineHalfWidth * 0.5, lineHalfWidth, abs(uv.y - 0.5))) * step(0.5, uv.x));
+    }
+    if ((input.connections & 4u) != 0u) {
+      starLinks = max(starLinks, (1.0 - smoothstep(lineHalfWidth * 0.5, lineHalfWidth, abs(uv.x - 0.5))) * step(0.5, uv.y));
+    }
+    if ((input.connections & 8u) != 0u) {
+      starLinks = max(starLinks, (1.0 - smoothstep(lineHalfWidth * 0.5, lineHalfWidth, abs(uv.y - 0.5))) * step(uv.x, 0.5));
+    }
+    let lineColor = mix(nebulaViolet, goldenPulsar, 0.45) * 1.2;
+    color = mix(color, lineColor, clamp(starLinks, 0.0, 1.0) * 0.8 * select(0.0, 1.0, isDark) * (1.0 - inkStage));
   } else if (input.part == 1u) {
     // 3D Stellar core
     let pulse = 0.85 + 0.15 * sin(uniforms.time * 4.0 + input.seed * 6.28);

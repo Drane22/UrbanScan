@@ -288,17 +288,24 @@ fn vertexMain(
   return output;
 }
 
-fn stainedGlassQrColor(blockType: u32, noise: f32) -> vec3f {
+fn stainedGlassQrColor(colorIdx: u32, paneType: u32, noise: f32) -> vec3f {
+  // Each glass family keeps its hue identity in the final QR: jewel panes
+  // resolve to their seeded jewel tone and rose medallions to a warm
+  // ceremonial ink. The contrast correction preserves scan-safe luminance
+  // separation for every curated palette family.
   var color = uniforms.themePrimary.rgb;
-  if (blockType == 3u) {
-    color = uniforms.themeSecondary.rgb;
-  } else if (blockType == 4u) {
-    color = mix(uniforms.themeThird.rgb, uniforms.themeFourth.rgb, 0.55);
-  } else if (blockType == 2u || blockType == 5u) {
-    color = uniforms.themeFourth.rgb;
+  if (colorIdx % 3u == 1u) {
+    color = mix(uniforms.themePrimary.rgb, uniforms.themeSecondary.rgb, 0.30);
+  } else if (colorIdx % 3u == 2u) {
+    color = mix(uniforms.themePrimary.rgb, uniforms.themeThird.rgb, 0.30);
+  }
+  if (paneType == 3u || paneType == 2u) {
+    color = mix(color, uniforms.themeFourth.rgb, 0.25);
+  } else if (paneType == 4u) {
+    color = mix(color, uniforms.themeSecondary.rgb, 0.30);
   }
   let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
-  let contrast = mix(color, glassInk(), smoothstep(0.76, 0.96, luma) * 0.15);
+  let contrast = mix(color, glassInk(), smoothstep(0.55, 0.85, luma) * 0.35);
   return contrast * (0.94 + noise * 0.06);
 }
 
@@ -372,7 +379,7 @@ fn fragmentMain(input: GlassOutput) -> @location(0) vec4f {
   let qrNoise = glassHash(input.uv + vec2f(f32(input.blockType) * 0.37));
   let mask = stainedGlassQrMask(input.uv, input.connections);
   let isActive = select(0.0, 1.0, isDark);
-  let qrColor = mix(paper, stainedGlassQrColor(input.blockType, qrNoise), isActive * mask);
+  let qrColor = mix(paper, stainedGlassQrColor(input.colorIndex, input.paneType, qrNoise), isActive * mask);
 
   var result = mix(shaded, qrColor, inkStage);
   result += (noise - 0.5) * 0.015 * (1.0 - inkStage);

@@ -92,6 +92,7 @@ struct ToyBlockOutput {
   @location(7) @interpolate(flat) connections: u32,
   @location(8) @interpolate(flat) faceIndex: u32,
   @location(9) @interpolate(flat) part: u32,
+  @location(10) @interpolate(flat) colorIndex: u32,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -235,7 +236,11 @@ fn vertexMain(
   let bType = u32(raw.x);
   let bHeight = raw.y;
   let conn = u32(raw.z);
-  let seed = raw.w / 1000.0;
+  // brickData.w packs floor(seed * 1000) + colorIndex * 10000, mirroring
+  // the origami panel packing convention.
+  let packedBrick = u32(raw.w);
+  let seed = f32(packedBrick % 10000u) / 1000.0;
+  let colorIdx = packedBrick / 10000u;
   let isDark = blockTypes[cellIndex] != 0u;
 
   let piece = createToyPiece(part, bType, bHeight, isDark, seed);
@@ -281,21 +286,38 @@ fn vertexMain(
   output.connections = conn;
   output.faceIndex = faceIndex;
   output.part = part;
+  output.colorIndex = colorIdx;
 
   return output;
 }
 
-fn toyBlockQrColor(blockType: u32, noise: f32) -> vec3f {
+fn toyBrickColor(colorIdx: u32) -> vec3f {
+  // Seeded brick family drawn from the curated world palette: every brick
+  // belongs to one of five coherent color families instead of being
+  // independently randomized.
   var color = uniforms.themePrimary.rgb;
-  if (blockType == 3u) {
+  if (colorIdx == 1u) {
     color = uniforms.themeSecondary.rgb;
-  } else if (blockType == 4u) {
-    color = mix(uniforms.themeThird.rgb, uniforms.themeFourth.rgb, 0.55);
-  } else if (blockType == 2u || blockType == 5u) {
+  } else if (colorIdx == 2u) {
+    color = uniforms.themeThird.rgb;
+  } else if (colorIdx == 3u) {
     color = uniforms.themeFourth.rgb;
+  } else if (colorIdx == 4u) {
+    color = mix(uniforms.themeFifth.rgb, vec3f(1.0), 0.35);
+  }
+  return color;
+}
+
+fn toyBlockQrColor(colorIdx: u32, noise: f32) -> vec3f {
+  // The final QR keeps the brick family's hue identity while the contrast
+  // correction guarantees scan-safe luminance separation. White plate bricks
+  // carry no hue, so they resolve directly to ink at scan lock.
+  var color = toyBrickColor(colorIdx);
+  if (colorIdx == 4u) {
+    color = toyInk();
   }
   let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
-  let contrast = mix(color, toyInk(), smoothstep(0.76, 0.96, luma) * 0.15);
+  let contrast = mix(color, toyInk(), smoothstep(0.42, 0.72, luma) * 0.55);
   return contrast * (0.94 + noise * 0.06);
 }
 
@@ -329,10 +351,10 @@ fn fragmentMain(input: ToyBlockOutput) -> @location(0) vec4f {
   let paper = toyPaper();
   let noise = toyBlockHash(input.position.xy + vec2f(uniforms.time * 0.13));
 
-  // Derive vibrant toy plastic colors directly from theme palette!
+  // Derive vibrant toy plastic colors directly from the seeded brick family!
   let basePlate = mix(uniforms.themeFifth.rgb * 0.92, vec3f(0.85), 0.3);
-  let brickColor = uniforms.themePrimary.rgb;
-  let studHighlight = uniforms.themeSecondary.rgb;
+  let brickColor = toyBrickColor(input.colorIndex);
+  let studHighlight = mix(brickColor, vec3f(1.0), 0.30);
   let turretAccent = uniforms.themeFourth.rgb;
 
   var color = basePlate;
@@ -369,7 +391,7 @@ fn fragmentMain(input: ToyBlockOutput) -> @location(0) vec4f {
   let qrNoise = toyBlockHash(input.uv + vec2f(f32(input.blockType) * 0.37));
   let mask = toyBlockQrMask(input.uv, input.connections);
   let isActive = select(0.0, 1.0, isDark);
-  let qrColor = mix(paper, toyBlockQrColor(input.blockType, qrNoise), isActive * mask);
+  let qrColor = mix(paper, toyBlockQrColor(input.colorIndex, qrNoise), isActive * mask);
 
   var result = mix(shaded, qrColor, inkStage);
   result += (noise - 0.5) * 0.015 * (1.0 - inkStage);

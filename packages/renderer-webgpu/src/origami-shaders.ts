@@ -54,7 +54,9 @@ fn oriStage(start: f32, end: f32) -> f32 {
 
 fn oriQrContrast(color: vec3f) -> vec3f {
   let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
-  let correction = smoothstep(0.70, 0.92, luma) * 0.28;
+  // Bright fold tones (gilded gold leaf) must resolve to dark ink at scan
+  // lock while sumi, vermilion, and sage tones keep their hue identity.
+  let correction = smoothstep(0.38, 0.68, luma) * 0.80;
   return mix(color, oriInk(), correction);
 }
 

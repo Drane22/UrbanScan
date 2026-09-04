@@ -301,7 +301,9 @@ fn myceliumQrColor(blockType: u32, noise: f32) -> vec3f {
     color = uniforms.themeFourth.rgb;
   }
   let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
-  let contrast = mix(color, mycInk(), smoothstep(0.76, 0.96, luma) * 0.15);
+  // Bright bioluminescent tones (lime, cyan) must resolve to dark ink at scan
+  // lock while already-dark tones keep their hue identity.
+  let contrast = mix(color, mycInk(), smoothstep(0.35, 0.65, luma) * 0.85);
   return contrast * (0.94 + noise * 0.06);
 }
 

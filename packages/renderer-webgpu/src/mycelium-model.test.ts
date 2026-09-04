@@ -45,4 +45,48 @@ describe("mycelium-model", () => {
     const centerIndex = 3 * model.qrSize + 3;
     expect(layout.nodes[centerIndex]!.type).toBe(FUNGAL_NODE_TYPES.fungalSporeCore);
   });
+
+  it("maps every finder ring to its fungal colony tier", async () => {
+    const id = await createEveryQRCodeIdentity(url1, { identityScope: "url" });
+    const model = await createSeedModel(id);
+    const layout = createMyceliumLayout(model);
+    const size = model.qrSize;
+
+    // 7x7 outer colony rim
+    expect(layout.nodes[0]!.type).toBe(FUNGAL_NODE_TYPES.giantFungalTower);
+    expect(layout.nodes[0]!.height).toBe(6.0);
+    // Separator soil
+    expect(layout.nodes[size + 1]!.type).toBe(FUNGAL_NODE_TYPES.sporeSoil);
+    expect(layout.nodes[size + 1]!.height).toBe(0.15);
+    // Inner spore ring
+    expect(layout.nodes[2 * size + 2]!.type).toBe(FUNGAL_NODE_TYPES.fungalSporeCore);
+    expect(layout.nodes[2 * size + 2]!.height).toBe(8.0);
+    // Central spore core: the tallest colony anchor
+    expect(layout.nodes[3 * size + 3]!.type).toBe(FUNGAL_NODE_TYPES.fungalSporeCore);
+    expect(layout.nodes[3 * size + 3]!.height).toBe(11.5);
+  });
+
+  it("keeps light cells as bare spore soil", async () => {
+    const id = await createEveryQRCodeIdentity(url1, { identityScope: "url" });
+    const model = await createSeedModel(id);
+    const layout = createMyceliumLayout(model);
+    const activeSet = new Set(model.modules.map((m) => m.index));
+    let lightCount = 0;
+    let darkCount = 0;
+
+    for (const node of layout.nodes) {
+      const ring = layout.topology.finderRing[node.index]!;
+      if (!activeSet.has(node.index)) {
+        lightCount += 1;
+        expect(node.type).toBe(FUNGAL_NODE_TYPES.sporeSoil);
+        if (ring === 1) expect(node.height).toBe(0.15);
+        else expect(node.height).toBe(0.05);
+      } else {
+        darkCount += 1;
+        expect(node.type).not.toBe(FUNGAL_NODE_TYPES.sporeSoil);
+      }
+    }
+    expect(lightCount).toBeGreaterThan(0);
+    expect(darkCount).toBeGreaterThan(0);
+  });
 });
