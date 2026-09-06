@@ -45,3 +45,33 @@ describe("world-palettes", () => {
     }
   });
 });
+
+const luminance = (color: readonly number[]): number =>
+  color[0]! * 0.2126 + color[1]! * 0.7152 + color[2]! * 0.0722;
+
+const mixColor = (left: readonly number[], right: readonly number[], amount: number): number[] =>
+  left.map((channel, index) => channel * (1 - amount) + right[index]! * amount);
+
+it("keeps Circuit and Reef scan materials high-contrast across every palette", () => {
+  for (const { palette } of WORLD_PALETTES.circuit) {
+    const [primary, secondary, third, fourth, fifth] = palette;
+    const ink = mixColor(primary, third, 0.16).map((channel) => channel * 0.52);
+    const paperTone = mixColor(fifth, third, 0.16);
+    const substrate = mixColor(paperTone, fourth, 0.08);
+
+    expect(luminance(substrate) - luminance(ink)).toBeGreaterThan(0.35);
+    expect(luminance(secondary)).toBeGreaterThan(luminance(ink));
+  }
+
+  for (const { palette } of WORLD_PALETTES.reef) {
+    const [primary, secondary, third, _fourth, fifth] = palette;
+    const ink = mixColor(primary, secondary, 0.12).map((channel) => channel * 0.56);
+    const water = mixColor(primary, third, 0.62);
+    const limestone = mixColor(fifth, third, 0.18);
+    const sand = mixColor(limestone, water, 0.22);
+    const sandTone = mixColor(sand, third, 0.1);
+    const substrate = mixColor(sandTone, water, 0.14);
+
+    expect(luminance(substrate) - luminance(ink)).toBeGreaterThan(0.35);
+  }
+});

@@ -5,7 +5,8 @@ import {
 } from "@every-qrcode/core";
 
 import { createSeedGpuScene, type SeedGpuScene } from "./gpu-scene.js";
-import { COLONY_INSTANCES_PER_CELL } from "./colony-model.js";
+import { isStagedWorld, selectWorldPalette } from "./staged-world.js";
+import { COLONY_INSTANCES_PER_CELL, COLONY_VERTICES_PER_PART } from "./colony-model.js";
 import {
   createSeedBlockField,
   type SeedBlockField,
@@ -448,6 +449,18 @@ function createClearColor(scene: SeedSceneConfig): GPUColor {
 }
 
 function createFormClearColor(scene: SeedSceneConfig, form: SeedForm): GPUColor {
+  if (form === "stained-glass" && scene.palette) {
+    const [r, g, b] = scene.palette[4].map((c) => c * 0.45 + 0.98 * 0.55);
+    return { r: r!, g: g!, b: b!, a: 1 };
+  }
+  if (form === "origami" && scene.palette) {
+    const [r, g, b] = scene.palette[4];
+    return { r, g, b, a: 1 };
+  }
+  if (form === "dungeon" && scene.palette) {
+    const [r, g, b] = scene.palette[4].map((c) => c * 0.42 + 0.98 * 0.58);
+    return { r: r!, g: g!, b: b!, a: 1 };
+  }
   if (form === "circuit" && !scene.background) {
     return { a: 1, b: 0.86, g: 0.895, r: 0.91 };
   }
@@ -482,6 +495,7 @@ function createPalette(scene: SeedSceneConfig): SeedScenePalette {
 
 type RendererState = {
   closed: boolean;
+  readyTime: number;
   frame: number;
   from: number;
   gpu: SeedGpuResources | undefined;
@@ -1191,6 +1205,7 @@ function writeUniforms(
   time: number,
   toggleAge: number,
   target: number,
+  sceneAge: number,
 ): void {
   const idle = 1 - progress;
   const bounce = Math.exp(-6 * toggleAge) * Math.sin(12 * toggleAge) * 0.012;
@@ -1231,6 +1246,16 @@ function writeUniforms(
   }
   values[56] = gpu.zoom;
   values[57] = target;
+  if (isStagedWorld(gpu.form)) {
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    values[58] = reduced ? 10 : sceneAge;
+    // No time-dependent projection or weather at the locked QR endpoint.
+    if (progress === 1 || reduced) {
+      values[5] = 0;
+      values[6] = 0;
+    }
+    if (reduced) values[1] = 0;
+  }
   gpu.device.queue.writeBuffer(gpu.buffers.uniforms, 0, values);
 }
 
@@ -1314,7 +1339,10 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
     }
   } else if (gpu.pipelines.form === "colony") {
     pass.setPipeline(gpu.pipelines.colony);
-    pass.draw(36, gpu.blockField.blocks.length * COLONY_INSTANCES_PER_CELL);
+    pass.draw(
+      COLONY_VERTICES_PER_PART,
+      gpu.blockField.blocks.length * COLONY_INSTANCES_PER_CELL + 1,
+    );
   } else {
     const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
     pass.setPipeline(pipeline);
@@ -1543,7 +1571,15 @@ function animate(canvas: HTMLCanvasElement, state: RendererState, now: number): 
   resizeGpuCanvas(canvas, gpu);
   const time = now / 1000;
   const toggleAge = Math.max(0, (now - state.toggleTime) / 1000);
-  writeUniforms(canvas, gpu, state.progress, time, toggleAge, state.target);
+  writeUniforms(
+    canvas,
+    gpu,
+    state.progress,
+    time,
+    toggleAge,
+    state.target,
+    Math.max(0, (now - state.readyTime) / 1000),
+  );
   renderGpuFrame(gpu);
   state.frame = requestAnimationFrame((next) => animate(canvas, state, next));
 }
@@ -1552,6 +1588,7 @@ function createInitialState(): RendererState {
   const now = performance.now();
   return {
     closed: false,
+    readyTime: now,
     frame: 0,
     from: 0,
     gpu: undefined,
@@ -1575,7 +1612,11 @@ export function mountSeed(
   options: SeedRendererOptions = {},
 ): SeedRenderer {
   const state = createInitialState();
-  let sceneConfig = scene;
+  const resolveScene = (value: SeedSceneConfig): SeedSceneConfig =>
+    isStagedWorld(form)
+      ? { ...value, palette: value.palette ?? selectWorldPalette(form, model.morphSeed).palette }
+      : value;
+  let sceneConfig = resolveScene(scene);
   canvas.dataset["renderer"] = "webgpu-initializing";
   void initializeGpu(canvas, model, sceneConfig, form)
     .then((gpu) => {
@@ -1586,6 +1627,7 @@ export function mountSeed(
       updateGpuScene(gpu, sceneConfig);
       gpu.zoom = state.zoom;
       state.gpu = gpu;
+      state.readyTime = performance.now();
       canvas.dataset["renderer"] = "webgpu-wgsl";
       resizeGpuCanvas(canvas, gpu);
       state.frame = requestAnimationFrame((now) => animate(canvas, state, now));
@@ -1616,12 +1658,18 @@ export function mountSeed(
       state.target = target;
       state.transitionDuration =
         MORPH_DURATION_MS * Math.max(0.25, Math.abs(state.target - state.from));
+      if (
+        isStagedWorld(form) &&
+        (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false)
+      ) {
+        state.transitionDuration = 0;
+      }
       state.transitionStart = now;
       state.toggleTime = now;
     },
     setScene: (nextScene) => {
-      sceneConfig = nextScene;
-      if (state.gpu) updateGpuScene(state.gpu, nextScene);
+      sceneConfig = resolveScene(nextScene);
+      if (state.gpu) updateGpuScene(state.gpu, sceneConfig);
     },
     setZoom: (zoom) => {
       state.zoom = clampSeedZoom(zoom);

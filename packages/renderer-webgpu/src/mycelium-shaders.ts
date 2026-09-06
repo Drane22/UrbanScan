@@ -53,7 +53,7 @@ fn mycStage(start: f32, end: f32) -> f32 {
 }
 
 fn mycProject(localPos: vec3f) -> vec4f {
-  let camera = mycStage(0.5, 1.0);
+  let camera = uniforms.progress;
   let angleY = mix(0.79, 0.0, camera);
   let angleX = mix(-0.58, -1.570796, camera);
   let cy = cos(angleY);
@@ -68,12 +68,12 @@ fn mycProject(localPos: vec3f) -> vec4f {
 
   let portrait = select(1.0, 1.18, uniforms.aspectRatio < 0.8);
   let pulse = 1.0 + sin(camera * 3.14159265) * 0.025;
-  let scale = mix(40.0, 46.4, camera) / uniforms.gridSize * portrait * pulse * uniforms.camera.x;
+  let scale = mix(1.36, 1.9, camera) / ((uniforms.gridSize + 10.0) * uniforms.blockSize) * portrait * pulse * uniforms.camera.x;
   let scaleX = scale / max(uniforms.aspectRatio, 1.0);
   let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
-  let yOffset = mix(-0.18, 0.08, camera) + uniforms.cameraBobY;
+  let yOffset = mix(-0.05, 0.0, camera);
 
-  return vec4f(rotX * scaleX + uniforms.cameraBobX, (rotY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
+  return vec4f(rotX * scaleX, (rotY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
 }
 `;
 
@@ -244,7 +244,11 @@ fn vertexMain(
   let seed = raw.w / 1000.0;
   let isDark = blockTypes[cellIndex] != 0u;
 
-  let piece = createMyceliumPiece(part, mType, mHeight, isDark, seed);
+  var piece = createMyceliumPiece(part, mType, mHeight, isDark, seed);
+  let construction = smoothstep(0.0, 2.8, uniforms.camera.z);
+  piece.size.y *= construction;
+  piece.offset.y *= construction;
+  piece.visible *= construction;
   if (piece.visible < 0.01) {
     output.position = vec4f(2.0, 2.0, 2.0, 1.0);
     return output;
@@ -259,7 +263,12 @@ fn vertexMain(
     (posData.y + 0.5) * blockSize - halfGrid
   );
 
-  let worldPos = center + piece.offset * blockSize + geom[0];
+  var worldPos = center + piece.offset * blockSize + geom[0];
+  // Finder colonies are the three largest fungal landmarks and settle into
+  // their owned QR centers as the living network fixes.
+  if (mType >= 4u) {
+    worldPos.y += blockSize * 0.7 * (1.0 - mycStage(0.36, 0.92));
+  }
   let normal = normalize(geom[1]);
   // Forest floor: diffuse overhead light filtered through canopy
   let lightDir = normalize(vec3f(-0.38, 0.90, -0.20));
@@ -374,9 +383,10 @@ fn fragmentMain(input: MyceliumOutput) -> @location(0) vec4f {
   }
 
   let qrNoise = myceliumHash(input.uv + vec2f(f32(input.blockType) * 0.37));
-  let mask = myceliumQrMask(input.uv, input.connections);
+  let mask = mix(myceliumQrMask(input.uv, input.connections), 1.0, mycStage(0.90, 0.985));
   let isActive = select(0.0, 1.0, isDark);
-  let qrColor = mix(paper, myceliumQrColor(input.blockType, qrNoise), isActive * mask);
+  let qrInk = mix(mycInk(), myceliumQrColor(input.blockType, qrNoise), 0.16);
+  let qrColor = mix(paper, qrInk, isActive * mask);
 
   var result = mix(shaded, qrColor, inkStage);
   result += (noise - 0.5) * 0.015 * (1.0 - inkStage);

@@ -1,39 +1,30 @@
-import { analyzeQRTopology, type QRTopologyAnalysis, createQRMatrix } from "@every-qrcode/core";
+import { analyzeQRTopology, type QRTopologyAnalysis } from "@every-qrcode/core";
 import type { SeedModel } from "./seed-model.js";
 import { createBaseWorldDNA, seededRandom, type WorldDNA } from "./world-dna.js";
 
-/**
- * Microscopic culture module types. `cultureMedium` stays zero because the
- * reveal path treats zero as a light QR cell.
- */
+/** Zero always denotes a light module; primary surfaces retain QR ownership. */
 export const COLONY_MODULE_TYPES = {
-  cultureMedium: 0,
-  tissueCell: 1,
-  dividingCell: 2,
-  nutrientCell: 3,
-  signalingCell: 4,
-  growthOrganoid: 5,
-  nutrientOrganoid: 6,
-  signalingOrganoid: 7,
+  substrate: 0,
+  tunnel: 1,
+  chamber: 2,
+  resource: 3,
+  junction: 4,
+  queenHub: 5,
+  nurseryHub: 6,
+  storeHub: 7,
 } as const;
 
 export type ColonyModuleType = (typeof COLONY_MODULE_TYPES)[keyof typeof COLONY_MODULE_TYPES];
 
-/**
- * GPU instances per grid cell: medium film, membrane dome, nucleus, vesicle,
- * QR prism, and germ. The renderer draw call must match this count.
- */
-export const COLONY_INSTANCES_PER_CELL = 6;
+// Persistent chamber, east tunnel, south tunnel, resource mound, worker.
+export const COLONY_INSTANCES_PER_CELL = 5;
+export const COLONY_VERTICES_PER_PART = 192;
 
 export interface ColonyDNA extends WorldDNA {
-  readonly cultureArchetype: number;
-  readonly membraneVariation: number;
-  readonly reagentStrength: number;
-  readonly vesselWinding: number;
-  readonly cultureActivity: number;
+  readonly rimVariation: number;
+  readonly activity: number;
   readonly reliefBias: number;
-  readonly cellScale: number;
-  readonly pulseRate: number;
+  readonly winding: number;
 }
 
 export interface ColonyUnit {
@@ -44,11 +35,13 @@ export interface ColonyUnit {
   readonly row: number;
   readonly seed: number;
   readonly type: ColonyModuleType;
+  readonly buildDelay: number;
+  readonly qr: readonly [number, number];
 }
 
 export interface ColonyLayout {
   readonly dna: ColonyDNA;
-  /** vec4 per cell: type, height, connections, packedSeedFlags */
+  /** Two vec4s per owner: type/height/connectivity/seed, delay/hub/rim/winding. */
   readonly moduleData: Float32Array;
   readonly qrSize: number;
   readonly topology: QRTopologyAnalysis;
@@ -87,74 +80,86 @@ export function createColonyDNA(model: SeedModel): ColonyDNA {
   const base = createBaseWorldDNA(seed);
   return {
     ...base,
-    cultureArchetype: Math.floor(seededRandom(seed, 61, 0, 100) * 4),
-    membraneVariation: seededRandom(seed, 62, 0, 200),
-    reagentStrength: 0.35 + seededRandom(seed, 63, 0, 300) * 0.55,
-    vesselWinding: 0.15 + seededRandom(seed, 64, 0, 400) * 0.65,
-    cultureActivity: 0.3 + seededRandom(seed, 66, 0, 600) * 0.55,
+    rimVariation: seededRandom(seed, 62, 0, 200),
+    winding: seededRandom(seed, 64, 0, 400),
+    activity: 0.3 + seededRandom(seed, 66, 0, 600) * 0.55,
     reliefBias: 0.82 + seededRandom(seed, 68, 0, 800) * 0.28,
-    cellScale: 0.82 + seededRandom(seed, 65, 0, 500) * 0.32,
-    pulseRate: 0.7 + seededRandom(seed, 67, 0, 700) * 0.8,
   };
 }
 
 export function createColonyLayout(model: SeedModel): ColonyLayout {
   const size = model.qrSize;
+  if (!Number.isInteger(size) || size < 21 || size > 41 || (size - 17) % 4 !== 0) {
+    throw new RangeError("Colony requires a supported canonical QR size");
+  }
   const activeCells = new Uint8Array(size * size);
   for (const module of model.modules) {
+    if (!Number.isInteger(module.index) || module.index < 0 || module.index >= size * size) {
+      throw new RangeError("Colony module lies outside its QR matrix");
+    }
     activeCells[module.index] = 1;
   }
 
   const topology = analyzeQRTopology({ cells: activeCells, size });
   const dna = createColonyDNA(model);
   const units: ColonyUnit[] = [];
-  const moduleData = new Float32Array(size * size * 4);
+  const moduleData = new Float32Array(size * size * 8);
 
   for (let row = 0; row < size; row += 1) {
     for (let col = 0; col < size; col += 1) {
       const index = row * size + col;
       const isDark = activeCells[index] === 1;
       const ring = topology.finderRing[index]!;
-      const conn = topology.connections[index]!;
+      const conn = isDark ? topology.connections[index]! : 0;
       const cluster = topology.clusterSize[index]!;
       const neighbors = topology.neighbors4[index]!;
       const cellSeed = colonyCellRandom(model.morphSeed, col, row, 666);
 
-      let type: ColonyModuleType = COLONY_MODULE_TYPES.cultureMedium;
+      let type: ColonyModuleType = COLONY_MODULE_TYPES.substrate;
       let height = 0.0;
 
       if (ring >= 0) {
         const finderIndex = topology.finderIndex[index]!;
         if (finderIndex === 0) {
-          type = COLONY_MODULE_TYPES.growthOrganoid;
+          type = COLONY_MODULE_TYPES.queenHub;
         } else if (finderIndex === 1) {
-          type = COLONY_MODULE_TYPES.nutrientOrganoid;
+          type = COLONY_MODULE_TYPES.nurseryHub;
         } else {
-          type = COLONY_MODULE_TYPES.signalingOrganoid;
+          type = COLONY_MODULE_TYPES.storeHub;
         }
-        height = ring === 0 ? 1.35 : ring === 1 ? 0.04 : ring === 2 ? 1.8 : 2.15;
+        height = (ring === 0 ? 1.9 : ring === 1 ? 0 : ring === 2 ? 2.4 : 2.8) * dna.reliefBias;
         if (!isDark) {
-          type = COLONY_MODULE_TYPES.cultureMedium;
+          type = COLONY_MODULE_TYPES.substrate;
           height = 0.04;
         }
       } else if (isDark) {
         if (cluster >= 8 && cellSeed > 0.68) {
-          type = COLONY_MODULE_TYPES.dividingCell;
+          type = COLONY_MODULE_TYPES.chamber;
         } else if (neighbors <= 1) {
-          type = COLONY_MODULE_TYPES.nutrientCell;
+          type = COLONY_MODULE_TYPES.resource;
         } else if (neighbors >= 3) {
-          type = COLONY_MODULE_TYPES.signalingCell;
+          type = COLONY_MODULE_TYPES.junction;
         } else {
-          type = COLONY_MODULE_TYPES.tissueCell;
+          type = COLONY_MODULE_TYPES.tunnel;
         }
-        height = 0.68 + cellSeed * 0.62 + Math.min(cluster, 12) * 0.025;
-        if (type === COLONY_MODULE_TYPES.dividingCell) height += 0.24;
+        height = (0.35 + cellSeed * 0.4 + Math.min(cluster, 12) * 0.025) * dna.reliefBias;
+        if (type === COLONY_MODULE_TYPES.chamber) height += 0.24;
       } else {
-        type = COLONY_MODULE_TYPES.cultureMedium;
+        type = COLONY_MODULE_TYPES.substrate;
         height = 0.0;
       }
 
+      const hubDistance =
+        Math.min(
+          Math.hypot(col - 3, row - 3),
+          Math.hypot(col - (size - 4), row - 3),
+          Math.hypot(col - 3, row - (size - 4)),
+        ) / size;
+      const buildDelay =
+        ring >= 0 ? 0.18 + cellSeed * 0.12 : 0.5 + hubDistance * 0.65 + cellSeed * 0.22;
       units.push({
+        buildDelay,
+        qr: [col, row],
         column: col,
         connections: conn,
         height,
@@ -164,61 +169,16 @@ export function createColonyLayout(model: SeedModel): ColonyLayout {
         type,
       });
 
-      const offset = index * 4;
+      const offset = index * 8;
       moduleData[offset] = type;
       moduleData[offset + 1] = height;
       moduleData[offset + 2] = conn;
-      moduleData[offset + 3] = Math.floor(cellSeed * 1000);
+      moduleData[offset + 3] = cellSeed;
+      moduleData[offset + 4] = buildDelay;
+      moduleData[offset + 5] = topology.finderIndex[index]!;
+      moduleData[offset + 6] = dna.rimVariation;
+      moduleData[offset + 7] = dna.winding;
     }
-  }
-
-  // Fallback: if no modules were generated (e.g. empty model.modules), create a basic QR code
-  // so the colony visualization still shows something when the view is switched to QR.
-  if (units.length === 0) {
-    const fallbackMatrix = createQRMatrix("https://example.com", 1);
-    const size = fallbackMatrix.size;
-    const activeCells = new Uint8Array(size * size);
-    for (let i = 0; i < fallbackMatrix.cells.length; i++) {
-      activeCells[i] = fallbackMatrix.cells[i];
-    }
-    const topology = analyzeQRTopology({ cells: activeCells, size });
-    const dna = createColonyDNA({ morphSeed: 1, generatorVersion: 1 } as unknown as SeedModel);
-    const fallbackUnits: ColonyUnit[] = [];
-    const fallbackModuleData = new Float32Array(size * size * 4);
-    for (let row = 0; row < size; row++) {
-      for (let col = 0; col < size; col++) {
-        const idx = row * size + col;
-        const isDark = activeCells[idx] === 1;
-        let type: ColonyModuleType = COLONY_MODULE_TYPES.cultureMedium;
-        let height = 0.0;
-        if (!isDark) {
-          type = COLONY_MODULE_TYPES.cultureMedium;
-          height = 0.04;
-        }
-        const cellSeed = 0.5;
-        fallbackUnits.push({
-          column: col,
-          connections: 0,
-          height,
-          index: idx,
-          row,
-          seed: cellSeed,
-          type,
-        });
-        const off = idx * 4;
-        fallbackModuleData[off] = type;
-        fallbackModuleData[off + 1] = height;
-        fallbackModuleData[off + 2] = 0;
-        fallbackModuleData[off + 3] = Math.floor(cellSeed * 1000);
-      }
-    }
-    return {
-      dna,
-      moduleData: fallbackModuleData,
-      qrSize: size,
-      topology,
-      units: fallbackUnits as readonly ColonyUnit[],
-    };
   }
 
   return { dna, moduleData, qrSize: size, topology, units };

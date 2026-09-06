@@ -986,12 +986,24 @@ it("lets Link DNA choose curated fantasy flower and leaf palettes", async () => 
   ).toBeGreaterThan(0.06);
 });
 
-it("fixes the microscopic Colony into a scan-safe QR endpoint", () => {
-  expect(COLONY_SHADER).toContain("fn cultureMediumRelief");
-  expect(COLONY_SHADER).toContain("input.moduleType >= 5u");
-  expect(COLONY_SHADER).toContain("let squareLock = smoothstep(0.92, 0.995, progress)");
-  expect(COLONY_SHADER).toContain("let scanPulse = sin(");
-  expect(COLONY_SHADER).toContain("scanPulse * pulseInterior * squareLock");
-  expect(COLONY_SHADER).not.toMatch(/ant|termite|queen|loam|worker/i);
-  expect(COLONY_SHADER).not.toMatch(/\b(?:let|var|const)\s+active\b/);
+it("keeps Colony's QR surface in the chamber mesh", () => {
+  expect(COLONY_SHADER).toContain("Eight sectors, four profile bands");
+  expect(COLONY_SHADER).toContain("opaque quiet-zone slab");
+  expect(COLONY_SHADER).not.toContain("scanPulse");
+  expect(COLONY_SHADER).not.toContain("prismStage");
+});
+
+it("locks Circuit and Reef QR materials before the final transition instant", () => {
+  expect(CIRCUIT_BOARD_SHADER).toContain("let materialLock = stage(0.60, 0.93);");
+  expect(CIRCUIT_QR_SHADER).toContain("solderMaterial() * 1.08");
+  expect(CIRCUIT_QR_SHADER).not.toContain("vec3f(1.0, 0.86, 0.48)");
+  expect(REEF_SHELF_SHADER).toContain("let scan = reefStage(0.60, 0.93);");
+  expect(REEF_QR_SHADER).toContain(
+    "let polypColor = mix(coralPrimary() * 0.94, coralAccent() * 1.05",
+  );
+  expect(REEF_SHELF_SHADER).toContain("let lagoonSand = reefSandColor()");
+  expect(REEF_WATER_SHADER).toContain(
+    "let surfaceAqua = mix(waterColor(), coralSecondary(), 0.32);",
+  );
+  expect(REEF_FISH_SHADER).not.toContain("stripeCol = vec3f(0.98, 0.98, 0.98)");
 });

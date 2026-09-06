@@ -38,15 +38,16 @@ struct Uniforms {
 @group(0) @binding(6) var materialSampler: sampler;
 
 fn pcbBase() -> vec3f {
-  return mix(uniforms.themePrimary.rgb, vec3f(0.04, 0.08, 0.06), 0.25);
+  let boardTone = mix(uniforms.themePrimary.rgb, uniforms.themeThird.rgb, 0.18);
+  return boardTone * 0.58;
 }
 
 fn pcbEdge() -> vec3f {
-  return mix(uniforms.themePrimary.rgb, vec3f(0.12, 0.16, 0.14), 0.35);
+  return mix(pcbBase(), uniforms.themeSecondary.rgb, 0.16);
 }
 
 fn goldPad() -> vec3f {
-  return mix(uniforms.themeSecondary.rgb, vec3f(0.98, 0.82, 0.28), 0.55);
+  return mix(uniforms.themeSecondary.rgb, uniforms.themeFourth.rgb, 0.58);
 }
 
 fn traceMetal() -> vec3f {
@@ -58,19 +59,19 @@ fn traceBright() -> vec3f {
 }
 
 fn ceramicMaterial() -> vec3f {
-  return mix(uniforms.themeFifth.rgb, vec3f(0.92, 0.91, 0.86), 0.22);
+  return mix(uniforms.themeFifth.rgb, uniforms.themeThird.rgb, 0.32);
 }
 
 fn plasticMaterial() -> vec3f {
-  return mix(uniforms.themePrimary.rgb, vec3f(0.08, 0.09, 0.10), 0.85);
+  return mix(pcbBase(), uniforms.themeThird.rgb, 0.16);
 }
 
 fn hardwareMetal() -> vec3f {
-  return mix(uniforms.themeThird.rgb, vec3f(0.72, 0.75, 0.78), 0.55);
+  return mix(uniforms.themeThird.rgb, uniforms.themeFifth.rgb, 0.42);
 }
 
 fn solderMaterial() -> vec3f {
-  return mix(uniforms.themeFifth.rgb, vec3f(0.82, 0.85, 0.88), 0.72);
+  return mix(uniforms.themeFourth.rgb, uniforms.themeFifth.rgb, 0.34);
 }
 
 fn signalColor() -> vec3f {
@@ -78,12 +79,13 @@ fn signalColor() -> vec3f {
 }
 
 fn circuitQrSubstrate() -> vec3f {
-  return mix(uniforms.themeFifth.rgb, vec3f(0.96, 0.95, 0.91), 0.28);
+  let paperTone = mix(uniforms.themeFifth.rgb, uniforms.themeThird.rgb, 0.16);
+  return mix(paperTone, uniforms.themeFourth.rgb, 0.08);
 }
 
 fn circuitQrInk() -> vec3f {
-  let paletteInk = mix(uniforms.themePrimary.rgb, uniforms.themeThird.rgb, 0.10);
-  return mix(paletteInk, vec3f(0.018, 0.026, 0.024), 0.48);
+  let paletteInk = mix(uniforms.themePrimary.rgb, uniforms.themeThird.rgb, 0.16);
+  return paletteInk * 0.52;
 }
 
 fn circuitFinderInk(role: u32) -> vec3f {
@@ -93,17 +95,19 @@ fn circuitFinderInk(role: u32) -> vec3f {
 }
 
 fn circuitQrColor(blockType: u32, noise: f32) -> vec3f {
-  var color = uniforms.themePrimary.rgb;
-  if (blockType == 3u) {
-    color = uniforms.themeSecondary.rgb;
+  let ink = circuitQrInk();
+  var color = ink;
+  if (blockType == 1u) {
+    color = mix(ink, uniforms.themePrimary.rgb, 0.35);
+  } else if (blockType == 3u) {
+    color = mix(ink, uniforms.themeThird.rgb, 0.40);
   } else if (blockType == 4u) {
-    color = mix(uniforms.themeThird.rgb, uniforms.themeFourth.rgb, 0.58);
+    color = mix(ink, uniforms.themeSecondary.rgb, 0.30);
   } else if (blockType == 2u || blockType == 5u) {
-    color = uniforms.themeFourth.rgb;
+    color = mix(ink, uniforms.themeFourth.rgb, 0.28);
   }
-  let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
-  let contrast = mix(color, circuitQrInk(), smoothstep(0.76, 0.96, luma) * 0.2);
-  return contrast * (0.92 + noise * 0.08);
+  let shade = 0.92 + fract(noise * 5.53) * 0.12;
+  return color * shade;
 }
 
 fn finderRole(column: f32, row: f32) -> u32 {
@@ -289,7 +293,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   if (input.layer == 0u) {
     let baseLighting = studioLight(input.normal, 0.45);
     let scanBase = mix(circuitQrSubstrate(), pcbBase(), 0.08);
-    let baseColor = mix(vec3f(0.08, 0.09, 0.10), scanBase, scan) * baseLighting;
+    let baseColor = mix(pcbBase() * 0.72, scanBase, scan) * baseLighting;
     return vec4f(acesToneMap(baseColor), 1.0);
   }
 
@@ -309,7 +313,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
     let minHoleDist = min(min(distTL, distTR), min(distBL, distBR));
     if (minHoleDist < 0.038) {
       if (minHoleDist < 0.016) {
-        worldColor = vec3f(0.02, 0.02, 0.03);
+        worldColor = pcbBase() * 0.18;
       } else {
         worldColor = solderMaterial() * 1.35;
       }
@@ -325,7 +329,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
     let borderTick = (boardUv.x < 0.035 || boardUv.x > 0.965 || boardUv.y < 0.035 || boardUv.y > 0.965);
     let tickPattern = fract((boardUv.x + boardUv.y) * gridCols * 0.5);
     if (borderTick && tickPattern < 0.2) {
-      worldColor = mix(worldColor, vec3f(0.92, 0.94, 0.90), 0.75);
+      worldColor = mix(worldColor, ceramicMaterial(), 0.75);
     }
 
     let lineX = fract(boardUv.x * gridCols);
@@ -342,7 +346,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
     let minProc = min(min(p1, p2), p3);
     let procBoxDist = minProc * gridCols;
     if (procBoxDist > 3.6 && procBoxDist < 3.85) {
-      worldColor = mix(worldColor, vec3f(0.95, 0.96, 0.92), 0.85);
+      worldColor = mix(worldColor, ceramicMaterial(), 0.85);
     }
 
     let testCell = floor(boardUv * (gridCols * 0.5));
@@ -351,14 +355,15 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
       let testUv = fract(boardUv * (gridCols * 0.5));
       let testDist = distance(testUv, vec2f(0.5, 0.5));
       if (testDist < 0.24) {
-        worldColor = select(goldPad() * 1.3, vec3f(0.04), testDist < 0.08);
+        worldColor = select(goldPad() * 1.3, pcbBase() * 0.35, testDist < 0.08);
       }
     }
   }
 
   let lighting = studioLight(input.normal, grain.a * 0.7);
   let litColor = worldColor * lighting;
-  let finalColor = mix(litColor, circuitQrSubstrate(), scan);
+  let materialLock = stage(0.60, 0.93);
+  let finalColor = mix(litColor, circuitQrSubstrate(), materialLock);
   return vec4f(acesToneMap(finalColor), 1.0);
 }
 `;
@@ -423,7 +428,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   if (endDist < 0.18) {
     let viaRadius = distance(vec2f(endDist * 5.5, (input.uv.y - 0.5) * 2.0), vec2f(0.5, 0.0));
     if (viaRadius < 0.65) {
-      copper = select(solderMaterial() * 1.3, vec3f(0.03), viaRadius < 0.22);
+      copper = select(solderMaterial() * 1.3, pcbBase() * 0.34, viaRadius < 0.22);
     }
   }
 
@@ -499,7 +504,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let mappingWave = 0.5 + 0.5 * sin(input.along * 1.8 - time * 6.0);
 
   let alpha = max(beam * sparkJitter * (1.0 - stage(0.24, 0.42)), mapping * mappingWave * 0.85);
-  let glowColor = mix(signalColor(), vec3f(1.0, 0.98, 0.85), clamp(combinedPackets * 1.2, 0.0, 1.0));
+  let glowColor = mix(signalColor(), solderMaterial() * 1.12, clamp(combinedPackets * 1.2, 0.0, 1.0));
   let emissive = glowColor * (1.6 + alpha * 1.8);
   return vec4f(acesToneMap(emissive), alpha * 0.95);
 }
@@ -740,7 +745,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
       tile = 5.0;
       roughness = 0.22;
     } else {
-      base = mix(ceramicMaterial(), vec3f(0.72, 0.58, 0.42), 0.5);
+      base = mix(ceramicMaterial(), mix(traceMetal(), pcbEdge(), 0.5), 0.5);
       tile = 4.0;
       roughness = 0.55;
     }
@@ -750,7 +755,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
       tile = 5.0;
       roughness = 0.22;
     } else {
-      base = vec3f(0.06, 0.08, 0.12);
+      base = pcbBase() * 0.72;
       tile = 1.0;
       roughness = 0.65;
     }
@@ -763,8 +768,8 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
       let burst = step(0.65, burstCycle);
       let ledIntensity = max(heartbeat * 0.8, burst * 1.5);
       let ledColor = select(
-        mix(uniforms.themeSecondary.rgb, vec3f(0.2, 1.0, 0.3), 0.6),
-        mix(uniforms.themeFourth.rgb, vec3f(1.0, 0.6, 0.1), 0.7),
+        mix(uniforms.themeSecondary.rgb, uniforms.themeThird.rgb, 0.52),
+        mix(uniforms.themeFourth.rgb, uniforms.themeSecondary.rgb, 0.58),
         ledSeed > 0.5
       );
       ledEmission = ledColor * ledIntensity * 2.8;
@@ -822,9 +827,9 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let center = uniforms.gridSize * 0.5;
   let radial = distance(vec2f(position.x, position.y), vec2f(center, center)) / max(uniforms.gridSize * 0.71, 1.0);
   let jitter = fract(sin((position.x * 12.9898 + position.y * 78.233) * 43.7585) * 43758.5453);
-  let delay = clamp(radial * 0.20 + jitter * 0.10 - select(0.0, 0.08, role > 0u), 0.0, 0.30);
-  let rise = stage(0.14 + delay, 0.52 + delay);
-  let settle = stage(0.60 + delay, 0.90 + delay);
+  let delay = clamp(radial * 0.14 + jitter * 0.08 - select(0.0, 0.06, role > 0u), 0.0, 0.20);
+  let rise = stage(0.12 + delay, 0.48 + delay);
+  let settle = stage(0.52 + delay, 0.76 + delay);
   let molten = rise * (1.0 - settle);
   // Tall molten bump that cools down into the shallow scan module profile.
   let height = (0.052 + max(0.38 * rise - 0.052, 0.0) * (1.0 - settle)) * uniforms.blockSize;
@@ -862,18 +867,15 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
     discard;
   }
 
-  var roleInk = circuitQrColor(input.blockType, input.tint);
-  if (input.finderRole > 0u) {
-    roleInk = mix(roleInk, circuitFinderInk(input.finderRole), 0.35);
-  }
+  let roleInk = select(circuitQrColor(input.blockType, input.tint), circuitFinderInk(input.finderRole), input.finderRole > 0u);
   let edgeDistance = min(min(input.uv.x, 1.0 - input.uv.x), min(input.uv.y, 1.0 - input.uv.y));
   let platedInset = 1.0 - smoothstep(0.045, 0.13, edgeDistance);
   let contactInk = mix(roleInk, goldPad(), platedInset * 0.075);
   let scanMaterial = select(contactInk * 0.82, contactInk, input.normal.y > 0.5);
   // Locked modules keep per-module brightness variation like the tree QR.
   let cooled = scanMaterial * (0.94 + input.tint * 0.09);
-  let moltenColor = mix(goldPad(), vec3f(1.0, 0.86, 0.48), 0.4 * input.molten)
-    * (1.25 + input.molten * 1.0);
+  let moltenColor = mix(goldPad(), solderMaterial() * 1.08, 0.4 * input.molten)
+    * (1.05 + input.molten * 0.48);
   let finalColor = mix(cooled, moltenColor, input.molten);
   return vec4f(acesToneMap(finalColor), 1.0);
 }

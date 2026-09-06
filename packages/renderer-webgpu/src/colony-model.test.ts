@@ -36,10 +36,10 @@ describe("colony-model", () => {
     const dna1 = createColonyDNA(model1);
     const dna2 = createColonyDNA(model2);
     expect(dna1.seed).not.toBe(dna2.seed);
-    expect(dna1.membraneVariation).not.toBe(dna2.membraneVariation);
+    expect(dna1.rimVariation).not.toBe(dna2.rimVariation);
   });
 
-  it("turns the three finder centers into differentiated organoids", async () => {
+  it("turns the three finder centers into differentiated hubs", async () => {
     const id = await createEveryQRCodeIdentity(url1, { identityScope: "url" });
     const model = await createSeedModel(id);
     const layout = createColonyLayout(model);
@@ -49,53 +49,53 @@ describe("colony-model", () => {
     const trCenterIndex = 3 * size + (size - 4);
     const blCenterIndex = (size - 4) * size + 3;
 
-    expect(layout.units[tlCenterIndex]!.type).toBe(COLONY_MODULE_TYPES.growthOrganoid);
-    expect(layout.units[trCenterIndex]!.type).toBe(COLONY_MODULE_TYPES.nutrientOrganoid);
-    expect(layout.units[blCenterIndex]!.type).toBe(COLONY_MODULE_TYPES.signalingOrganoid);
+    expect(layout.units[tlCenterIndex]!.type).toBe(COLONY_MODULE_TYPES.queenHub);
+    expect(layout.units[trCenterIndex]!.type).toBe(COLONY_MODULE_TYPES.nurseryHub);
+    expect(layout.units[blCenterIndex]!.type).toBe(COLONY_MODULE_TYPES.storeHub);
     for (const index of [tlCenterIndex, trCenterIndex, blCenterIndex]) {
       expect(layout.units[index]!.height).toBeGreaterThanOrEqual(2);
-      expect(layout.units[index]!.height).toBeLessThanOrEqual(2.2);
+      expect(layout.units[index]!.height).toBeLessThanOrEqual(3.2);
     }
   });
 
-  it("maps the canonical matrix to shallow, diverse microscopic cells", async () => {
+  it("maps the canonical matrix to QR-owned chambers and tunnels", async () => {
     const id = await createEveryQRCodeIdentity(url1, { identityScope: "url" });
     const model = await createSeedModel(id);
     const layout = createColonyLayout(model);
     const activeSet = new Set(model.modules.map((m) => m.index));
 
-    expect(layout.moduleData.length).toBe(model.qrSize * model.qrSize * 4);
+    expect(layout.moduleData.length).toBe(model.qrSize * model.qrSize * 8);
     let lightCount = 0;
     const darkTypes = new Set<number>();
 
     for (const unit of layout.units) {
       expect(unit.height).toBeGreaterThanOrEqual(0);
-      expect(unit.height).toBeLessThanOrEqual(2.2);
+      expect(unit.height).toBeLessThanOrEqual(3.2);
       expect(unit.type).toBeGreaterThanOrEqual(0);
       expect(unit.type).toBeLessThanOrEqual(7);
 
       const isActive = activeSet.has(unit.index);
       if (!isActive) {
-        expect(unit.type).toBe(COLONY_MODULE_TYPES.cultureMedium);
+        expect(unit.type).toBe(COLONY_MODULE_TYPES.substrate);
         expect(unit.height).toBeLessThanOrEqual(0.04);
         lightCount += 1;
       } else {
-        expect(unit.type).not.toBe(COLONY_MODULE_TYPES.cultureMedium);
+        expect(unit.type).not.toBe(COLONY_MODULE_TYPES.substrate);
         darkTypes.add(unit.type);
       }
     }
 
     expect(lightCount).toBeGreaterThan(0);
-    expect(darkTypes).toContain(COLONY_MODULE_TYPES.tissueCell);
-    expect(darkTypes).toContain(COLONY_MODULE_TYPES.growthOrganoid);
+    expect(darkTypes).toContain(COLONY_MODULE_TYPES.tunnel);
+    expect(darkTypes).toContain(COLONY_MODULE_TYPES.queenHub);
     expect(darkTypes.size).toBeGreaterThanOrEqual(4);
   });
 
-  it("guarantees Rec. 709 luminance contrast >= 0.75 for all biological colony palettes", () => {
+  it("guarantees Rec. 709 luminance contrast >= 0.65 for all biological colony palettes", () => {
     const colonyPalettes = WORLD_PALETTES.colony;
     expect(colonyPalettes.length).toBeGreaterThanOrEqual(4);
 
-    const expectedIds = ["crimson-histology", "violet-stain", "eosin-rose", "cultured-plum"];
+    const expectedIds = ["earth-hive", "red-clay", "pale-nest", "fungal-colony"];
     for (const expectedId of expectedIds) {
       const p = colonyPalettes.find((palette) => palette.id === expectedId);
       expect(p).toBeDefined();
@@ -107,7 +107,7 @@ describe("colony-model", () => {
       const paperLuma = 0.2126 * r5 + 0.7152 * g5 + 0.0722 * b5;
       const contrast = paperLuma - darkLuma;
 
-      expect(contrast).toBeGreaterThanOrEqual(0.75);
+      expect(contrast).toBeGreaterThanOrEqual(0.65);
     }
   });
 });

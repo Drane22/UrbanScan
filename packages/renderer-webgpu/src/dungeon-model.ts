@@ -144,7 +144,10 @@ export function createDungeonLayout(model: SeedModel): DungeonLayout {
           height = 11.0;
         }
       } else if (isDark) {
-        if (cluster >= 6) {
+        if (neighbors === 2 && (conn === 5 || conn === 10)) {
+          type = DUNGEON_TILE_TYPES.archwayCorridor;
+          height = (2.5 + cellSeed) * dna.wallHeightBias;
+        } else if (cluster >= 6) {
           // High cluster size (>= 6) -> vaultedChamber / great hall with high vaulted ceilings
           type = DUNGEON_TILE_TYPES.vaultedChamber;
           height = (5.5 + cellSeed * 3.5) * dna.wallHeightBias;

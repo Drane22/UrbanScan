@@ -1,3 +1,4 @@
+import { COLONY_PALETTES } from "./colony-palette.js";
 import type { SeedScenePalette } from "./renderer.js";
 import type { SeedForm } from "./seed-model.js";
 
@@ -109,56 +110,7 @@ export const WORLD_PALETTES: Readonly<Record<SeedForm, readonly WorldPalettePres
       swatches: ["#1f2126", "#737a85", "#a6adb8"],
     },
   ],
-  colony: [
-    {
-      id: "crimson-histology",
-      name: "Crimson Histology",
-      palette: [
-        [0.24, 0.03, 0.08], // Deep burgundy cell ink
-        [0.86, 0.22, 0.32], // Coral membrane stain
-        [0.56, 0.08, 0.18], // Dense tissue rose
-        [0.46, 0.2, 0.7], // Violet reagent
-        [0.98, 0.95, 0.88], // Warm ivory culture medium
-      ],
-      swatches: ["#3d0814", "#db3852", "#7533b3"],
-    },
-    {
-      id: "violet-stain",
-      name: "Violet Stain",
-      palette: [
-        [0.13, 0.03, 0.2], // Dark nuclear violet
-        [0.74, 0.24, 0.48], // Magenta membrane stain
-        [0.38, 0.12, 0.5], // Purple tissue body
-        [0.9, 0.36, 0.5], // Eosin reagent accent
-        [0.97, 0.95, 0.91], // Pale glass-slide medium
-      ],
-      swatches: ["#210833", "#bd3d7a", "#e65c80"],
-    },
-    {
-      id: "eosin-rose",
-      name: "Eosin Rose",
-      palette: [
-        [0.26, 0.04, 0.12], // Dark carmine nuclei
-        [0.92, 0.36, 0.48], // Eosin membrane pink
-        [0.62, 0.14, 0.3], // Cultured tissue crimson
-        [0.5, 0.26, 0.72], // Hematoxylin accent
-        [0.99, 0.95, 0.92], // Blushed ivory medium
-      ],
-      swatches: ["#420a1f", "#eb5c7a", "#8042b8"],
-    },
-    {
-      id: "cultured-plum",
-      name: "Cultured Plum",
-      palette: [
-        [0.16, 0.025, 0.1], // Plum-black cell ink
-        [0.78, 0.18, 0.4], // Raspberry membrane
-        [0.44, 0.08, 0.3], // Mature tissue plum
-        [0.36, 0.34, 0.76], // Cool reagent violet
-        [0.96, 0.95, 0.9], // Sterile cream medium
-      ],
-      swatches: ["#29061a", "#c72e66", "#5c57c2"],
-    },
-  ],
+  colony: COLONY_PALETTES,
   constellation: [
     {
       id: "deep-nebula",

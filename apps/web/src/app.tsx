@@ -2,6 +2,9 @@ import { createEveryQRCodeIdentity, type EveryQRCodeIdentity } from "@every-qrco
 import { EveryQRCode, type EveryQRCodeModel } from "@every-qrcode/react";
 import {
   getDefaultPaletteForModel,
+  createSeedModel,
+  selectWorldPalette,
+  isStagedWorld,
   getPalettesForModel,
   type WorldPalettePreset,
 } from "@every-qrcode/renderer-webgpu";
@@ -31,7 +34,7 @@ const MODEL_INFO: Readonly<
 > = {
   city: { desc: "Skyscrapers & plazas", icon: "🏙️", label: "City" },
   circuit: { desc: "Motherboard & IC chips", icon: "⚡", label: "Circuit" },
-  colony: { desc: "Microscopic cell culture", icon: "🧫", label: "Colony" },
+  colony: { desc: "Underground chambers & tunnels", icon: "🧫", label: "Colony" },
   constellation: { desc: "Deep space star map", icon: "✨", label: "Constellation" },
   dungeon: { desc: "Isometric stone labyrinth", icon: "🗝️", label: "Dungeon" },
   mycelium: { desc: "Bioluminescent fungal forest", icon: "🍄", label: "Mycelium" },
@@ -55,6 +58,8 @@ export function App(): React.JSX.Element {
   const [input, setInput] = useState(DEFAULT_LINK);
   const [model, setModel] = useState<EveryQRCodeModel>("circuit");
   const [paletteId, setPaletteId] = useState<string>(() => getDefaultPaletteForModel("circuit").id);
+  const [seededDefault, setSeededDefault] = useState<WorldPalettePreset | null>(null);
+  const [replay, setReplay] = useState(0);
   const [identity, setIdentity] = useState<EveryQRCodeIdentity | null>(null);
   const [error, setError] = useState<string | null>(null);
   const deferredInput = useDeferredValue(input);
@@ -62,19 +67,24 @@ export function App(): React.JSX.Element {
 
   const currentPalettes = getPalettesForModel(model);
   const currentPalette: WorldPalettePreset =
-    currentPalettes.find((p) => p.id === paletteId) ?? currentPalettes[0]!;
+    currentPalettes.find((p) => p.id === paletteId) ??
+    (isStagedWorld(model) ? seededDefault : null) ??
+    currentPalettes[0]!;
 
   const handleSelectModel = (nextModel: EveryQRCodeModel) => {
     setModel(nextModel);
     const defaultForNext = getDefaultPaletteForModel(nextModel);
-    setPaletteId(defaultForNext.id);
+    setPaletteId(isStagedWorld(nextModel) ? "seeded" : defaultForNext.id);
   };
 
   useEffect(() => {
     let cancelled = false;
     void createEveryQRCodeIdentity(resolvedInput)
-      .then((nextIdentity) => {
+      .then(async (nextIdentity) => {
         if (cancelled) return;
+        const seed = await createSeedModel(nextIdentity);
+        if (cancelled) return;
+        setSeededDefault(selectWorldPalette(model, seed.morphSeed));
         setIdentity(nextIdentity);
         setError(null);
       })
@@ -85,7 +95,7 @@ export function App(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [resolvedInput]);
+  }, [resolvedInput, model]);
 
   return (
     <main className="demo-shell">
@@ -118,15 +128,39 @@ export function App(): React.JSX.Element {
         </nav>
 
         <EveryQRCode
+          key={replay}
           className="scene-button"
           model={model}
           onError={(rendererError) => setError(rendererError.message)}
-          scene={{ palette: currentPalette.palette }}
+          scene={
+            isStagedWorld(model) && paletteId === "seeded"
+              ? {}
+              : { palette: currentPalette.palette }
+          }
           url={resolvedInput}
         />
       </section>
 
       <div className="input-region">
+        {isStagedWorld(model) && (
+          <div className="preset-chips">
+            <button
+              className="preset-chip"
+              type="button"
+              onClick={() => setReplay((value) => value + 1)}
+            >
+              Replay construction
+            </button>
+            <button
+              className="preset-chip"
+              type="button"
+              aria-pressed={paletteId === "seeded"}
+              onClick={() => setPaletteId("seeded")}
+            >
+              Seed palette
+            </button>
+          </div>
+        )}
         <section className="palette-region" aria-label="Color Palette">
           <div className="palette-header">
             <span className="palette-title">{MODEL_INFO[model].label} Palette:</span>

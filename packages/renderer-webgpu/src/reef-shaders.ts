@@ -127,7 +127,7 @@ fn underwaterLighting(normal: vec3f, worldPos: vec3f, albedo: vec3f, roughness: 
   let caustics = pow(max(c1 * c2, 0.0), 1.6) * 0.55 * (1.0 - reefStage(0.65, 0.95));
 
   // Underwater light scattering
-  let waterAmbient = mix(vec3f(0.08, 0.32, 0.45), vec3f(0.18, 0.55, 0.62), up * 0.5);
+  let waterAmbient = mix(reefAmbientWater() * 0.52, reefAmbientWater() * 1.08, up * 0.5);
   let direct = key * 0.95 + caustics;
   let sss = backLight * sssAmount * sssColor * 0.65;
 
@@ -138,17 +138,19 @@ fn underwaterLighting(normal: vec3f, worldPos: vec3f, albedo: vec3f, roughness: 
 fn coralPrimary() -> vec3f { return uniforms.themeSecondary.rgb; }
 fn coralSecondary() -> vec3f { return uniforms.themeThird.rgb; }
 fn coralAccent() -> vec3f { return uniforms.themeFourth.rgb; }
-fn waterColor() -> vec3f { return mix(uniforms.themeThird.rgb, vec3f(0.08, 0.68, 0.78), 0.35); }
-fn limestoneColor() -> vec3f { return uniforms.themeFifth.rgb; }
+fn waterColor() -> vec3f { return mix(uniforms.themePrimary.rgb, uniforms.themeThird.rgb, 0.62); }
+fn reefAmbientWater() -> vec3f { return mix(uniforms.themePrimary.rgb, waterColor(), 0.48); }
+fn limestoneColor() -> vec3f { return mix(uniforms.themeFifth.rgb, uniforms.themeThird.rgb, 0.18); }
+fn reefSandColor() -> vec3f { return mix(limestoneColor(), waterColor(), 0.22); }
 
 fn reefQrSubstrate() -> vec3f {
-  let paleSand = mix(limestoneColor(), vec3f(0.96, 0.95, 0.91), 0.22);
-  return mix(paleSand, waterColor(), 0.055);
+  let sandTone = mix(reefSandColor(), coralSecondary(), 0.10);
+  return mix(sandTone, waterColor(), 0.14);
 }
 
 fn reefQrInk() -> vec3f {
   let reefTint = mix(uniforms.themePrimary.rgb, coralPrimary(), 0.12);
-  return mix(reefTint, vec3f(0.025, 0.055, 0.060), 0.36);
+  return reefTint * 0.56;
 }
 
 fn reefFinderInk(role: u32) -> vec3f {
@@ -158,17 +160,19 @@ fn reefFinderInk(role: u32) -> vec3f {
 }
 
 fn reefQrColor(blockType: u32, noise: f32) -> vec3f {
-  var color = uniforms.themePrimary.rgb;
-  if (blockType == 3u) {
-    color = uniforms.themeSecondary.rgb;
+  let ink = reefQrInk();
+  var color = ink;
+  if (blockType == 1u) {
+    color = mix(ink, uniforms.themePrimary.rgb, 0.35);
+  } else if (blockType == 3u) {
+    color = mix(ink, uniforms.themeSecondary.rgb, 0.35);
   } else if (blockType == 4u) {
-    color = mix(uniforms.themeThird.rgb, uniforms.themeFourth.rgb, 0.58);
+    color = mix(ink, uniforms.themeThird.rgb, 0.38);
   } else if (blockType == 2u || blockType == 5u) {
-    color = uniforms.themeFourth.rgb;
+    color = mix(ink, uniforms.themeFourth.rgb, 0.30);
   }
-  let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
-  let contrast = mix(color, reefQrInk(), smoothstep(0.76, 0.96, luma) * 0.2);
-  return contrast * (0.92 + noise * 0.08);
+  let shade = 0.92 + fract(noise * 5.53) * 0.12;
+  return color * shade;
 }
 
 fn finderRole(column: f32, row: f32) -> u32 {
@@ -262,11 +266,10 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let biolum = textureSampleLevel(reefAtlas, reefSampler, atlasUv(7.0, input.uv, 1.8), 0.0);
 
   // Warm golden lagoon sand with subtle turquoise water depth absorption
-  let warmSand = vec3f(0.76, 0.68, 0.52);
-  let lagoonSand = mix(warmSand, waterColor(), 0.18) * (0.86 + sandDetail.r * 0.24);
+  let lagoonSand = reefSandColor() * (0.86 + sandDetail.r * 0.24);
 
   // Rich coralline limestone with purple/pink crustose algae
-  let corallineAlgae = mix(coralPrimary() * 0.65, vec3f(0.48, 0.25, 0.38), 0.45);
+  let corallineAlgae = mix(coralPrimary() * 0.65, mix(uniforms.themePrimary.rgb, coralAccent(), 0.5) * 0.58, 0.45);
   let reefRock = mix(limestoneColor() * 0.62, corallineAlgae, 0.55) * (0.80 + rockDetail.r * 0.35);
 
   let shelfMix = smoothstep(0.15, 0.42, input.height) * (1.0 - input.channel * 0.85);
@@ -279,7 +282,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
 
   let normal = normalize(input.normal);
   let lit = underwaterLighting(normal, input.world, color, 0.40, color, 0.12);
-  let scan = reefStage(0.84, 1.0);
+  let scan = reefStage(0.60, 0.93);
   let finalColor = mix(lit, reefQrSubstrate(), scan);
   return vec4f(acesToneMap(finalColor), 1.0);
 }
@@ -506,7 +509,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
     tile = 6.0;
     color = coralAccent() * 1.25;
     sssAmount = 0.48;
-    sssTint = vec3f(1.0, 0.85, 0.42);
+    sssTint = mix(coralAccent(), limestoneColor(), 0.34);
     if (input.normal.y > 0.6 && distance(input.uv, vec2f(0.5, 0.5)) < 0.32) {
       color = vec3f(0.03, 0.04, 0.06);
     }
@@ -514,7 +517,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
     // Sea Anemone & Soft Coral: Glowing translucent tentacles
     tile = 5.0;
     let tentacleBase = coralPrimary();
-    let tentacleTip = mix(coralAccent(), vec3f(1.0, 0.98, 0.88), 0.55);
+    let tentacleTip = mix(coralAccent(), limestoneColor(), 0.42);
     color = mix(tentacleBase, tentacleTip, input.paramT);
     sssAmount = 0.85;
     sssTint = tentacleTip;
@@ -527,7 +530,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   } else {
     // Seagrass: Emerald ribbon
     tile = 4.0;
-    color = mix(vec3f(0.12, 0.78, 0.48), coralSecondary(), 0.30);
+    color = mix(coralPrimary(), coralSecondary(), 0.30);
     sssAmount = 0.48;
   }
 
@@ -573,7 +576,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let withdraw = reefStage(0.10, 0.44);
   let rim = pow(abs(input.wave) * 4.5, 1.3);
   let sunGlint = pow(max(sin((input.uv.x + input.uv.y) * 14.0 + uniforms.time * 1.6), 0.0), 5.0) * 0.35;
-  let surfaceAqua = mix(waterColor(), vec3f(0.18, 0.78, 0.90), 0.5);
+  let surfaceAqua = mix(waterColor(), coralSecondary(), 0.32);
   let finalColor = surfaceAqua * (0.90 + rim * 0.30 + sunGlint);
   let alpha = (0.07 + rim * 0.05) * input.edgeFade * (1.0 - withdraw);
   return vec4f(acesToneMap(finalColor), alpha);
@@ -697,23 +700,23 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
 
   // Tropical Fish Coloration
   var bodyCol = coralPrimary();
-  var stripeCol = vec3f(1.0, 1.0, 1.0);
+  var stripeCol = limestoneColor();
   var finCol = coralAccent();
 
   if (tier > 0.65) {
     // Clownfish: Orange body with white bars
-    bodyCol = mix(coralAccent(), vec3f(1.0, 0.42, 0.12), 0.7);
-    stripeCol = vec3f(0.98, 0.98, 0.98);
-    finCol = vec3f(0.08, 0.08, 0.12);
+    bodyCol = mix(coralAccent(), coralPrimary(), 0.7);
+    stripeCol = limestoneColor() * 0.94;
+    finCol = reefQrInk();
   } else if (tier > 0.32) {
     // Blue Tang: Royal blue body with golden tail
-    bodyCol = mix(coralSecondary(), vec3f(0.12, 0.35, 0.92), 0.6);
-    stripeCol = vec3f(0.06, 0.08, 0.12);
-    finCol = mix(coralAccent(), vec3f(1.0, 0.88, 0.15), 0.8);
+    bodyCol = mix(coralSecondary(), waterColor(), 0.6);
+    stripeCol = reefQrInk();
+    finCol = mix(coralAccent(), limestoneColor(), 0.8);
   } else {
     // Butterflyfish: Pale yellow with dark accents
     bodyCol = mix(limestoneColor(), coralAccent(), 0.4);
-    stripeCol = mix(coralPrimary(), vec3f(0.06, 0.08, 0.12), 0.8);
+    stripeCol = mix(coralPrimary(), reefQrInk(), 0.8);
     finCol = coralAccent();
   }
 
@@ -762,9 +765,9 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let center = uniforms.gridSize * 0.5;
   let radial = distance(vec2f(position.x, position.y), vec2f(center, center)) / max(uniforms.gridSize * 0.71, 1.0);
   let jitter = fract(sin((position.x * 12.9898 + position.y * 78.233 + 5.13) * 43.7585) * 43758.5453);
-  let delay = clamp(radial * 0.20 + jitter * 0.10 - select(0.0, 0.08, role > 0u), 0.0, 0.30);
-  let rise = reefStage(0.18 + delay, 0.56 + delay);
-  let settle = reefStage(0.62 + delay, 0.92 + delay);
+  let delay = clamp(radial * 0.14 + jitter * 0.08 - select(0.0, 0.06, role > 0u), 0.0, 0.20);
+  let rise = reefStage(0.14 + delay, 0.50 + delay);
+  let settle = reefStage(0.54 + delay, 0.76 + delay);
   let molten = rise * (1.0 - settle);
   let height = (0.052 + max(0.34 * rise - 0.052, 0.0) * (1.0 - settle)) * uniforms.blockSize;
   let footprint = mix(0.84, 1.0, settle) * uniforms.blockSize;
@@ -802,10 +805,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
     discard;
   }
 
-  var roleInk = reefQrColor(input.blockType, input.tint);
-  if (input.finderRole > 0u) {
-    roleInk = mix(roleInk, reefFinderInk(input.finderRole), 0.35);
-  }
+  let roleInk = select(reefQrColor(input.blockType, input.tint), reefFinderInk(input.finderRole), input.finderRole > 0u);
   let edgeDistance = min(min(input.uv.x, 1.0 - input.uv.x), min(input.uv.y, 1.0 - input.uv.y));
   let membrane = 1.0 - smoothstep(0.055, 0.16, edgeDistance);
   let reefDetail = textureSampleLevel(reefAtlas, reefSampler, atlasUv(2.0, input.uv, 1.6), 0.0);
@@ -814,8 +814,8 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let scanMaterial = select(plaqueInk * 0.84, plaqueInk, input.normal.y > 0.5);
   // Per-module tint variation survives scan lock like the tree QR.
   let cooled = scanMaterial * (0.94 + input.tint * 0.09);
-  let polypColor = mix(coralPrimary() * 1.1, coralAccent() * 1.4, 0.5 * input.molten)
-    * (1.15 + input.molten * 0.85);
+  let polypColor = mix(coralPrimary() * 0.94, coralAccent() * 1.05, 0.5 * input.molten)
+    * (0.98 + input.molten * 0.48);
   let finalColor = mix(cooled, polypColor, input.molten);
   return vec4f(acesToneMap(finalColor), 1.0);
 }

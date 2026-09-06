@@ -1,3 +1,4 @@
+import { STAGED_PROJECTION_WGSL } from "./staged-world-shaders.js";
 const STAINED_GLASS_UNIFORMS_WGSL = /* wgsl */ `
 struct Uniforms {
   aspectRatio: f32,
@@ -52,29 +53,9 @@ fn glassStage(start: f32, end: f32) -> f32 {
   return smoothstep(start, end, uniforms.progress);
 }
 
-fn glassProject(localPos: vec3f) -> vec4f {
-  let camera = glassStage(0.5, 1.0);
-  let angleY = mix(0.79, 0.0, camera);
-  let angleX = mix(-0.58, -1.570796, camera);
-  let cy = cos(angleY);
-  let sy = sin(angleY);
-  let cx = cos(angleX);
-  let sx = sin(angleX);
+${STAGED_PROJECTION_WGSL}
+fn glassProject(localPos: vec3f) -> vec4f { return worldProject(localPos,1.48,0.025); }
 
-  let rotX = localPos.x * cy - localPos.z * sy;
-  let rotZ = localPos.x * sy + localPos.z * cy;
-  let rotY = localPos.y * cx - rotZ * sx;
-  let depth = localPos.y * sx + rotZ * cx;
-
-  let portrait = select(1.0, 1.18, uniforms.aspectRatio < 0.8);
-  let pulse = 1.0 + sin(camera * 3.14159265) * 0.025;
-  let scale = mix(40.0, 46.4, camera) / uniforms.gridSize * portrait * pulse * uniforms.camera.x;
-  let scaleX = scale / max(uniforms.aspectRatio, 1.0);
-  let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
-  let yOffset = mix(-0.18, 0.08, camera) + uniforms.cameraBobY;
-
-  return vec4f(rotX * scaleX + uniforms.cameraBobX, (rotY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
-}
 `;
 
 export const STAINED_GLASS_SHADER = /* wgsl */ `
@@ -142,7 +123,7 @@ struct GlassPiece {
 fn createGlassPiece(part: u32, pType: u32, isDark: bool, seed: f32) -> GlassPiece {
   let propStage = 1.0 - glassStage(0.0, 0.18);
   let detailStage = 1.0 - glassStage(0.12, 0.35);
-  let heightStage = 1.0 - glassStage(0.22, 0.65);
+  let heightStage = 1.0 - glassStage(0.34+seed*0.10, 0.94);
   let footStage = glassStage(0.55, 0.90);
 
   var piece: GlassPiece;
@@ -154,7 +135,7 @@ fn createGlassPiece(part: u32, pType: u32, isDark: bool, seed: f32) -> GlassPiec
 
   if (part == 0u) {
     // Frosted clear glass base plate with lead outline
-    let baseH = select(0.02, 0.05, isDark);
+    let baseH = mix(0.02,0.0,glassStage(0.45,0.94));
     piece.size = vec3f(footprint, baseH, footprint);
     piece.offset = vec3f(0.0, 0.0, 0.0);
     piece.visible = 1.0;
@@ -170,11 +151,11 @@ fn createGlassPiece(part: u32, pType: u32, isDark: bool, seed: f32) -> GlassPiec
       return piece;
     }
     // Beveled jewel prism - tapered, each jewel slightly different in shape
-    let bodyW = footprint * select(0.80, select(0.70, 0.90, seed > 0.6), seed < 0.35);
-    let bodyH = totalHeight * 0.75 * heightStage;
+    let bodyW = mix(0.86,1.0,footStage);
+    let bodyH = mix(0.01,0.18+seed*0.15,heightStage);
     piece.size = vec3f(bodyW, bodyH, bodyW);
     piece.offset = vec3f(0.0, 0.05, 0.0);
-    piece.visible = heightStage;
+    piece.visible = 1.0;
     return piece;
   }
 
@@ -186,10 +167,10 @@ fn createGlassPiece(part: u32, pType: u32, isDark: bool, seed: f32) -> GlassPiec
       piece.offset = vec3f(0.0);
       return piece;
     }
-    let cameFootprint = footprint * select(0.65, 0.88, pType == 3u);
-    let cameH = select(0.08, 0.16, pType == 3u) * detailStage;
+    let cameFootprint = 1.0;
+    let cameH = 0.10 * detailStage;
     piece.size = vec3f(cameFootprint, cameH, cameFootprint);
-    piece.offset = vec3f(0.0, 0.05 + totalHeight * 0.70 * heightStage, 0.0);
+    piece.offset = vec3f(0.0, 0.05 + (0.18+seed*0.15)*heightStage, 0.0);
     piece.visible = detailStage;
     return piece;
   }
@@ -239,8 +220,11 @@ fn vertexMain(
   let seed = raw.w / 1000.0;
   let isDark = blockTypes[cellIndex] != 0u;
 
-  let piece = createGlassPiece(part, pType, isDark, seed);
-  if (piece.visible < 0.01) {
+  var piece = createGlassPiece(part, pType, isDark, seed);
+  let delay = select(0.55+seed*0.45,0.20+seed*0.1,pType==2u || pType==3u);
+  let assemble = mix(smoothstep(delay,delay+0.8,uniforms.camera.z),1.0,glassStage(0.0,0.3));
+  if (part==1u || part==3u) {piece.size.y*=assemble;}
+  if (piece.visible < 0.01 || ((part==1u || part==3u) && assemble==0.0)) {
     output.position = vec4f(2.0, 2.0, 2.0, 1.0);
     return output;
   }
@@ -254,7 +238,25 @@ fn vertexMain(
     (posData.y + 0.5) * blockSize - halfGrid
   );
 
-  let worldPos = center + piece.offset * blockSize + geom[0];
+  var local=geom[0];
+  if(part==1u && faceIndex==0u) {local.xz *= mix(0.92,1.0,glassStage(0.4,0.9));}
+  var worldPos = center + piece.offset * blockSize + local;
+  let life=1.0-glassStage(0.35,0.94);
+  if(part==1u) {worldPos.x += (seed-0.5)*blockSize*2.0*(1.0-assemble)*life;}
+  let cell=posData.xy;
+  let far=uniforms.gridSize-7.0;
+  var hub=vec2f(-100.0);
+  if(cell.x<7.0 && cell.y<7.0) {hub=vec2f(3.5);}
+  if(cell.x>=far && cell.y<7.0) {hub=vec2f(uniforms.gridSize-3.5,3.5);}
+  if(cell.x<7.0 && cell.y>=far) {hub=vec2f(3.5,uniforms.gridSize-3.5);}
+  if(hub.x>0.0) {
+    let hubCenter=(hub-vec2f(uniforms.gridSize*0.5))*blockSize;
+    let delta=(worldPos.xz-hubCenter)/blockSize;
+    let q=clamp(delta/3.5,vec2f(-1.0),vec2f(1.0));
+    let round=delta*sqrt(vec2f(1.0)-0.5*q.yx*q.yx);
+    worldPos.xz=hubCenter+mix(delta,round,life)*blockSize;
+    worldPos.y+=(1.8-length(round)*0.20)*life*assemble*blockSize;
+  }
   let normal = normalize(geom[1]);
   // Glass: strong overhead light, minimal fill (glass transmits, doesn’t absorb)
   let lightDir = normalize(vec3f(-0.35, 0.92, -0.18));
@@ -361,6 +363,7 @@ fn fragmentMain(input: GlassOutput) -> @location(0) vec4f {
     let refraction = sin(input.uv.x * 12.0) * cos(input.uv.y * 12.0);
     color = mix(jewelGlass, jewelGlass * 1.3, max(refraction * 0.3, 0.0));
   } else if (input.part == 2u) {
+    if(input.faceIndex<2u && all(input.uv>vec2f(0.07)) && all(input.uv<vec2f(0.93))) {discard;}
     // Inner lead came filigree
     color = leadCame * 1.2;
   } else {
@@ -377,9 +380,9 @@ fn fragmentMain(input: GlassOutput) -> @location(0) vec4f {
   var shaded = color * clamp(input.shade, 0.0, 1.6);
 
   let qrNoise = glassHash(input.uv + vec2f(f32(input.blockType) * 0.37));
-  let mask = stainedGlassQrMask(input.uv, input.connections);
+  let mask = mix(stainedGlassQrMask(input.uv, input.connections),1.0,glassStage(0.88,0.98));
   let isActive = select(0.0, 1.0, isDark);
-  let qrColor = mix(paper, stainedGlassQrColor(input.colorIndex, input.paneType, qrNoise), isActive * mask);
+  let qrColor = mix(paper, mix(stainedGlassQrColor(input.colorIndex, input.paneType, qrNoise),uniforms.themePrimary.rgb*0.50,glassStage(0.60,0.96)), isActive * mask);
 
   var result = mix(shaded, qrColor, inkStage);
   result += (noise - 0.5) * 0.015 * (1.0 - inkStage);

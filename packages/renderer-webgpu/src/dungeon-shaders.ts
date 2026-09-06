@@ -61,7 +61,7 @@ fn dungStage(start: f32, end: f32) -> f32 {
 }
 
 fn dungProject(localPos: vec3f) -> vec4f {
-  let camera = dungStage(0.50, 1.00);
+  let camera = uniforms.progress;
   let angleY = mix(0.785398, 0.0, camera);
   let angleX = mix(-0.610865, -1.570796, camera);
   let cy = cos(angleY);
@@ -76,12 +76,12 @@ fn dungProject(localPos: vec3f) -> vec4f {
 
   let portrait = select(1.0, 1.18, uniforms.aspectRatio < 0.8);
   let pulse = 1.0 + sin(camera * 3.14159265) * 0.025;
-  let scale = mix(38.0, 46.4, camera) / uniforms.gridSize * portrait * pulse * uniforms.camera.x;
+  let scale = mix(1.40, 1.90, camera) / ((uniforms.gridSize+10.0)*uniforms.blockSize) * mix(uniforms.camera.x,min(uniforms.camera.x,1.0),camera);
   let scaleX = scale / max(uniforms.aspectRatio, 1.0);
   let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
-  let yOffset = mix(-0.18, 0.08, camera) + uniforms.cameraBobY;
+  let yOffset = mix(-0.05, 0.0, camera);
 
-  return vec4f(rotX * scaleX + uniforms.cameraBobX, (rotY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
+  return vec4f(rotX * scaleX, (rotY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
 }
 `;
 
@@ -191,30 +191,30 @@ fn createDungeonPiece(
 ) -> DungeonPiece {
   let torchStage = 1.0 - dungStage(0.00, 0.18);
   let detailStage = 1.0 - dungStage(0.12, 0.35);
-  let elevationStage = 1.0 - dungStage(0.22, 0.65);
+  let elevationStage = 1.0 - dungStage(0.30 + seed*0.08, 0.92);
   let footStage = dungStage(0.55, 0.90);
 
   var piece: DungeonPiece;
   piece.visible = 1.0;
 
-  var heightScale = 1.6;
+  var heightScale = 0.34;
   if (featType == 5u) {
-    heightScale = 2.8; // Boss keep & central tower
+    heightScale = 0.45; // Boss keep & central tower
   } else if (featType == 2u) {
-    heightScale = 2.0; // Vaulted Great Hall
+    heightScale = 0.34; // Vaulted Great Hall
   } else if (featType == 4u) {
-    heightScale = 1.8; // Structural pillar
+    heightScale = 0.40; // Structural pillar
   } else if (featType == 3u) {
-    heightScale = 1.6; // Archway corridor
+    heightScale = 0.30; // Archway corridor
   } else if (featType == 1u) {
-    heightScale = 1.7; // Thick stone wall
+    heightScale = 0.32; // Thick stone wall
   }
 
   let totalHeight = mix(0.04, max(featHeight * heightScale, 0.18), elevationStage);
 
   if (part == 0u) {
     // Part 0: Continuous paved flagstone floor covering full 1.0 module size (zero gaps)
-    let baseH = select(0.04, 0.08, isDark);
+    let baseH = mix(select(0.04, 0.08, isDark),0.0,dungStage(0.55,0.95));
     piece.size = vec3f(1.0, baseH, 1.0);
     piece.offset = vec3f(0.0, 0.0, 0.0);
     piece.visible = 1.0;
@@ -235,10 +235,10 @@ fn createDungeonPiece(
       bodyW = mix(0.68, 1.0, footStage);
       bodyD = mix(0.68, 1.0, footStage);
     }
-    let bodyH = totalHeight * 0.78 * elevationStage;
+    let bodyH = mix(0.012, totalHeight * 0.78, elevationStage);
     piece.size = vec3f(bodyW, bodyH, bodyD);
-    piece.offset = vec3f(0.0, 0.08, 0.0);
-    piece.visible = elevationStage;
+    piece.offset = vec3f(0.0, mix(0.04,0.08,elevationStage), 0.0);
+    piece.visible = 1.0;
     return piece;
   }
 
@@ -271,7 +271,7 @@ fn createDungeonPiece(
   }
 
   // Part 3: Wall Torches, Fire Braziers & Altar Flames
-  let hasFlame = featType == 7u || featType == 5u || (featType == 2u && seed > 0.35) || (featType == 3u && seed > 0.45);
+  let hasFlame = featType == 7u || (featType == 5u && seed > 0.86) || (featType == 2u && seed > 0.88) || (featType == 3u && seed > 0.92);
   if (!isDark || !hasFlame) {
     piece.visible = 0.0; piece.size = vec3f(0.0); piece.offset = vec3f(0.0);
     return piece;
@@ -328,8 +328,14 @@ fn vertexMain(
   let seed = raw.w / 1000.0;
   let isDark = blockTypes[cellIndex] != 0u;
 
-  let piece = createDungeonPiece(part, featType, featHeight, isDark, seed, conn);
-  if (piece.visible < 0.01) {
+  var piece = createDungeonPiece(part, featType, featHeight, isDark, seed, conn);
+  let buildStart = select(0.55 + seed*0.45,0.18+seed*0.10,featType==5u) + f32(part)*0.28;
+  let build = mix(smoothstep(buildStart,buildStart+0.65,uniforms.camera.z),1.0,dungStage(0.0,0.35));
+  if (part>0u) {
+    piece.size.y *= build;
+    piece.offset.y *= build;
+  }
+  if (piece.visible < 0.01 || (part>0u && build==0.0)) {
     output.position = vec4f(2.0, 2.0, 2.0, 1.0);
     return output;
   }
@@ -368,7 +374,7 @@ fn vertexMain(
 
     // Wall batter: stone masonry walls taper slightly inward toward the top
     let heightT = clamp(localVert.y / (piece.size.y * blockSize), 0.0, 1.0);
-    let batter = (1.0 - heightT * 0.08) * archFactor;
+    let batter = 1.0 - heightT * 0.08 * archFactor;
     localVert.x *= batter;
     localVert.z *= batter;
   } else if (part == 2u && isDark) {
@@ -552,9 +558,9 @@ fn fragmentMain(input: DungeonOutput) -> @location(0) vec4f {
 
   // High-contrast scannable QR generation
   let qrNoise = dungeonHash(input.uv + vec2f(f32(input.blockType) * 0.43));
-  let mask = dungeonQrMask(input.uv, input.connections);
+  let mask = mix(dungeonQrMask(input.uv, input.connections),1.0,dungStage(0.90,0.98));
   let isActive = select(0.0, 1.0, isDark);
-  let qrInk = dungeonQrColor(input.blockType, input.featType, qrNoise);
+  let qrInk = mix(dungeonQrColor(input.blockType, input.featType, qrNoise),uniforms.themePrimary.rgb*0.60,dungStage(0.64,0.98));
   let qrColor = mix(paper, qrInk, isActive * mask);
 
   var result = mix(lit, qrColor, inkStage);

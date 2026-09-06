@@ -32,3 +32,7 @@ export type * from "./origami-model.js";
 export type * from "./reef-model.js";
 export type * from "./stained-glass-model.js";
 export type * from "./toy-block-model.js";
+
+export { selectColonyPalette } from "./colony-palette.js";
+
+export { isStagedWorld, selectWorldPalette } from "./staged-world.js";
