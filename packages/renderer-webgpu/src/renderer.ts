@@ -6,7 +6,7 @@ import {
 
 import { createSeedGpuScene, type SeedGpuScene } from "./gpu-scene.js";
 import { isStagedWorld, selectWorldPalette } from "./staged-world.js";
-import { COLONY_INSTANCES_PER_CELL, COLONY_VERTICES_PER_PART } from "./colony-model.js";
+import { SCULPTURE_PARTS, SCULPTURE_VERTICES } from "./sculptural-world-shaders.js";
 import {
   createSeedBlockField,
   type SeedBlockField,
@@ -495,6 +495,7 @@ function createPalette(scene: SeedSceneConfig): SeedScenePalette {
 
 type RendererState = {
   closed: boolean;
+  visible: boolean;
   readyTime: number;
   frame: number;
   from: number;
@@ -1337,12 +1338,10 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
       pass.setBindGroup(0, gpu.bindGroups.fallingPetals);
       pass.draw(gpu.scene.fallingPetalCount * 24);
     }
-  } else if (gpu.pipelines.form === "colony") {
-    pass.setPipeline(gpu.pipelines.colony);
-    pass.draw(
-      COLONY_VERTICES_PER_PART,
-      gpu.blockField.blocks.length * COLONY_INSTANCES_PER_CELL + 1,
-    );
+  } else if (isStagedWorld(gpu.pipelines.form)) {
+    const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
+    pass.setPipeline(pipeline);
+    pass.draw(SCULPTURE_VERTICES, gpu.blockField.blocks.length * SCULPTURE_PARTS + 1);
   } else {
     const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
     pass.setPipeline(pipeline);
@@ -1544,6 +1543,11 @@ function updateGpuScene(gpu: SeedGpuResources, scene: SeedSceneConfig): void {
 function animate(canvas: HTMLCanvasElement, state: RendererState, now: number): void {
   const gpu = state.gpu;
   if (!gpu || state.closed) return;
+  if (isStagedWorld(gpu.form) && (!state.visible || document.hidden)) {
+    state.lastFrameTime = now;
+    state.frame = requestAnimationFrame((next) => animate(canvas, state, next));
+    return;
+  }
   if (gpu.form === "terrain") {
     const elapsedSeconds = Math.min(0.05, Math.max(0, now - state.lastFrameTime) / 1000);
     const [progress, velocity] = stepTerrainSpring(
@@ -1588,6 +1592,7 @@ function createInitialState(): RendererState {
   const now = performance.now();
   return {
     closed: false,
+    visible: true,
     readyTime: now,
     frame: 0,
     from: 0,
@@ -1612,6 +1617,13 @@ export function mountSeed(
   options: SeedRendererOptions = {},
 ): SeedRenderer {
   const state = createInitialState();
+  const visibilityObserver =
+    isStagedWorld(form) && typeof IntersectionObserver !== "undefined"
+      ? new IntersectionObserver(([entry]) => {
+          state.visible = entry?.isIntersecting ?? true;
+        })
+      : undefined;
+  visibilityObserver?.observe(canvas);
   const resolveScene = (value: SeedSceneConfig): SeedSceneConfig =>
     isStagedWorld(form)
       ? { ...value, palette: value.palette ?? selectWorldPalette(form, model.morphSeed).palette }
@@ -1643,6 +1655,7 @@ export function mountSeed(
   return {
     dispose: () => {
       state.closed = true;
+      visibilityObserver?.disconnect();
       cancelAnimationFrame(state.frame);
       destroyGpuResources(state.gpu);
       state.gpu = undefined;
