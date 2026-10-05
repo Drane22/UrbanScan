@@ -6,7 +6,11 @@ import {
 
 import { createSeedGpuScene, type SeedGpuScene } from "./gpu-scene.js";
 import { isStagedWorld, selectWorldPalette } from "./staged-world.js";
-import { SCULPTURE_PARTS, SCULPTURE_VERTICES } from "./sculptural-world-shaders.js";
+import {
+  SCULPTURE_AMBIENT_INSTANCES,
+  SCULPTURE_PARTS,
+  SCULPTURE_VERTICES,
+} from "./sculptural-world-shaders.js";
 import {
   createSeedBlockField,
   type SeedBlockField,
@@ -1349,7 +1353,10 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
   } else if (isStagedWorld(gpu.pipelines.form)) {
     const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
     pass.setPipeline(pipeline);
-    pass.draw(SCULPTURE_VERTICES, gpu.blockField.blocks.length * SCULPTURE_PARTS + 1);
+    pass.draw(
+      SCULPTURE_VERTICES,
+      gpu.blockField.blocks.length * SCULPTURE_PARTS + 1 + SCULPTURE_AMBIENT_INSTANCES,
+    );
   } else {
     const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
     pass.setPipeline(pipeline);
@@ -1443,34 +1450,9 @@ async function initializeGpu(
       circuitTraceData = circuit.traceData;
       circuitComponentCount = circuit.components.length;
       circuitTraceCount = circuit.traces.length;
-    } else if (form === "constellation") {
-      const m = await import("./constellation-model.js");
-      modelData = m.createConstellationLayout(model).starData;
-      cityPartCount = 2;
-    } else if (form === "origami") {
-      const m = await import("./origami-model.js");
-      modelData = m.createOrigamiLayout(model).panelData;
-      cityPartCount = 1;
-    } else if (form === "stained-glass") {
-      const m = await import("./stained-glass-model.js");
-      modelData = m.createGlassLayout(model).paneData;
-      cityPartCount = 1;
-    } else if (form === "colony") {
-      const m = await import("./colony-model.js");
-      modelData = m.createColonyLayout(model).moduleData;
-      cityPartCount = 2;
-    } else if (form === "dungeon") {
-      const m = await import("./dungeon-model.js");
-      modelData = m.createDungeonLayout(model).tileData;
-      cityPartCount = 2;
-    } else if (form === "toy-block") {
-      const m = await import("./toy-block-model.js");
-      modelData = m.createToyBlockLayout(model).blockData;
-      cityPartCount = 2;
-    } else if (form === "mycelium") {
-      const m = await import("./mycelium-model.js");
-      modelData = m.createMyceliumLayout(model).fungalData;
-      cityPartCount = 2;
+    } else if (isStagedWorld(form)) {
+      const { createDioramaLayout } = await import("./diorama-layout.js");
+      modelData = createDioramaLayout(model, form);
     } else if (form === "reef") {
       const m = await import("./reef-model.js");
       const reef = m.createReefLayout(model);

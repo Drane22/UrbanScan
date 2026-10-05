@@ -1,36 +1,123 @@
 import { createSculpturalWorldShader } from "./sculptural-world-shaders.js";
 
-export const TOY_BLOCK_SHADER = createSculpturalWorldShader(/* wgsl */ `
-fn worldCount()->u32 {return 120u;}
+export const TOY_BLOCK_SHADER = createSculpturalWorldShader(
+  /* wgsl */ `
+fn worldCount()->u32 {return 136u;}
+fn worldAmbientCount()->u32 {return 384u;}
+fn towerCenter(i:u32)->vec3f {
+  let corners=array<vec2f,4>(vec2f(-4.6,-4.6),vec2f(4.6,-4.6),vec2f(-4.6,4.6),vec2f(4.6,4.6));
+  let p=corners[i%4u]*uniforms.gridSize/25.0;return vec3f(p.x,0,p.y);
+}
 fn worldAnchor(i:u32)->vec3f {
-  // Interlocked courses make a stepped castle, with four taller corner towers.
-  let course=i/24u;let slot=i%24u;
-  let side=slot/6u;let along=f32(slot%6u)-2.5;
-  let span=select(3.0,2.0,course>=3u);
-  let p=rotate(vec3f(along,0.0,span),f32(side)*PI*0.5);
-  return vec3f(p.x*1.65,f32(course)*0.72,p.z*1.65);
+  let s=uniforms.gridSize/25.0;
+  if(i<96u){
+    let course=i/32u;let slot=i%32u;let side=slot/8u;
+    let p=rotate(vec3f((f32(slot%8u)-3.5)*1.15,f32(course)*0.72,4.6),f32(side)*PI*0.5);
+    return p*s;
+  }
+  if(i<128u){return towerCenter(i-96u)+vec3f(0,f32((i-96u)/4u)*0.72*s,0);}
+  return rotate(vec3f(2.2,0.08,0),f32(i-128u)*PI*0.25)*s;
 }
 fn worldFoundation(v:u32)->Surface {
-  let d=disk(v);let a=atan2(d.y,d.x);
-  let r=uniforms.gridSize*(0.46+0.025*cos(a*8.0));
-  return surface(vec3f(d.x*r,-0.35,d.y*r),mix(palette(2),uniforms.themeFifth.rgb,0.55),0.0);
+  return tile(v,mix(uniforms.themeFifth.rgb,palette(3),0.14),mix(palette(0),palette(2),0.35),0.8,6.0);
 }
 fn worldSurface(v:u32,i:u32,part:u32)->Surface {
-  let c=worldAnchor(i);let seed=random(f32(i)+1.0);
-  let heading=f32((i%24u)/6u)*PI*0.5;
-  let color=palette(f32((i/24u+i%3u)%4u));
-  if(part==0u) {
-    return surface(c+rotate(box(v,vec3f(1.60,0.65,1.5)),heading),color,0.0);
+  let c=worldAnchor(i);let s=uniforms.gridSize/25.0;
+  let side=(i%32u)/8u;let heading=select(f32(side)*PI*0.5,0.0,i>=96u);
+  let color=palette(f32(1u+(i/32u+side)%3u));
+  let width=select(1.11,1.75,i>=96u && i<128u);
+  let depth=select(0.90,1.75,i>=96u && i<128u);
+  let doorway=i<64u && side==0u && (i%8u==3u || i%8u==4u);
+  if(part==0u){
+    let h=select(0.66,0.015,doorway);
+    return surface(c+rotate(box(v,vec3f(width,h,depth))*s,heading),color,0.18);
   }
-  if(part==1u || part==2u) {
-    let p=cylinder(v,0.23,0.16)+vec3f(select(-0.4,0.4,part==2u),0.65,0.0);
-    return surface(c+rotate(p,heading),color*1.08,0.0);
+  if(part==1u || part==2u){
+    if(doorway){return surface(c,color,0.0);}
+    let p=cylinder(v,0.21,0.14)+vec3f(select(-0.28,0.28,part==2u),0.66,0);
+    return surface(c+rotate(p*s,heading),color*1.06,0.28);
   }
-  // A few small wheeled toys circle the castle; other accessories remain folded away.
-  if(i>5u) {return surface(c,color,0.0);}
-  let a=uniforms.time*0.12+f32(i)*0.17;
-  let path=vec3f(cos(a),0.0,sin(a))*uniforms.gridSize*0.42;
-  let p=rotate(box(v,vec3f(0.7,0.38,0.40)),a+PI*0.5);
-  return surface(path+p,palette(f32(i)),0.0);
+  if(i<128u){return surface(c,color,0.0);}
+  // A turning gear mounted inside the courtyard.
+  let a=uniforms.time*0.65*alive()+f32(i)*0.5;
+  let p=gear(v,a);
+  return surface(c+(p+vec3f(0,0.75,0))*s,palette(1),0.25);
 }
-`);
+fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
+  let g=gene(i+110u);let s=uniforms.gridSize/25.0;
+  if(i<4u){
+    let c=towerCenter(i)+vec3f(0,5.75*s,0);
+    if(part==4u){return surface(c,palette(0),0.0);}
+    if(part==0u){return surface(c+cylinder(v,0.045*s,1.6*s),palette(0),0.35);}
+    if(part==1u){
+      let q=squarePoint(v)+vec2f(0.5);
+      let wave=sin(uniforms.time*1.4+q.x*4.0+g.w*6.28)*0.17*q.x*alive();
+      let p=vec3f(q.x*1.1,1.55-q.y*0.6,wave)*s;
+      return surface(c+p,palette(f32(1u+i%3u)),0.0);
+    }
+    if(part==2u){return surface(c+vec3f(0,1.65*s,0)+sphere(v,vec3f(0.075*s)),palette(1),0.35);}
+    return surface(c,palette(0),0.0);
+  }
+  var ground=squarePatch(select(0u,i-14u,i>=14u),18u);
+  if(i>=338u){
+    let n=i-338u;
+    if(n<16u){ground=vec3f(8.5,0.12,(f32(n)-7.5)*0.88)*s;}
+    else if(n<30u){ground=vec3f((f32(n-16u)-6.5)*0.72,0.12,8.8)*s;}
+    else{ground=vec3f(-8.7,0.12,(f32(n-30u)-7.5)*1.05)*s;}
+  }
+  if(part==4u){return surface(ground,palette(0),0.0);}
+  if(i<14u){
+    let a=uniforms.time*(0.10+g.w*0.08)+g.w*6.28;
+    let r=uniforms.gridSize*0.36;let path=vec3f(cos(a)*r,0.12,sin(a)*r);
+    let heading=a+PI*0.5;
+    if(part==0u){return surface(path+rotate(box(v,vec3f(0.9,0.32,0.46))*s,heading),palette(f32(1u+i%3u)),0.25);}
+    if(part<3u){
+      let tire=cylinder(v,0.15,0.08);
+      let wheelAngle=uniforms.time*(0.10+g.w*0.08)*r/0.15*alive();
+      let spoke=select(0.82,1.0,sin(atan2(tire.z,tire.x)*6.0-wheelAngle)>0.0);
+      let p=vec3f(tire.x, tire.z+0.04, tire.y+select(-0.29,0.21,part==2u));
+      return surface(path+rotate(p*s,heading),palette(0)*spoke,0.15);
+    }
+    return surface(path+rotate(box(v,vec3f(0.38,0.20,0.35))*s+vec3f(0,0.32*s,0),heading),mix(palette(3),uniforms.themeFifth.rgb,0.28),0.3);
+  }
+  if(i<338u){
+    let cell=uniforms.gridSize/18.0;
+    let region=select(select(1.0,2.0,ground.x>0.0),3.0,ground.z>uniforms.gridSize*0.16);
+    let r=length(ground.xz)/uniforms.gridSize;
+    let road=1.0-smoothstep(0.025,0.065,abs(r-0.36));
+    let color=mix(mix(palette(region),uniforms.themeFifth.rgb,0.13+g.w*0.08),mix(palette(0),palette(2),0.36),road*0.84);
+    if(part==0u){return surface(ground+box(v,vec3f(cell*0.94,(0.10+g.w*0.14)*s,cell*0.94)),mix(color,uniforms.themeFifth.rgb,0.16),0.20);}
+    if(part==1u){return surface(ground+vec3f(0,(0.10+g.w*0.14)*s,0)+cylinder(v,cell*0.18,0.07*s),color,0.20);}
+    if(part==2u && i%8u==0u){return surface(ground+box(v,vec3f(cell*0.8,0.40*s,cell*0.8)),color,0.18);}
+    return surface(ground,palette(0),0.0);
+  }
+  let n=i-338u;let color=palette(f32(1u+(n/4u)%3u));
+  if(n<16u){
+    // A stepped climbing bridge spans the entire east playground.
+    let h=(0.3+sin((f32(n)+0.5)/16.0*PI)*2.6)*s;
+    if(part==0u){return surface(ground+box(v,vec3f(1.7*s,h,0.78*s)),color,0.18);}
+    if(part==1u){return surface(ground+vec3f(0,h,0)+cylinder(v,0.27*s,0.11*s),color,0.20);}
+    if(part==2u){return surface(ground+vec3f(0.78*s,h,0)+cylinder(v,0.055*s,0.65*s),palette(3),0.2);}
+    return surface(ground+vec3f(0.78*s,h+0.65*s,0)+box(v,vec3f(0.11*s,0.10*s,0.9*s)),palette(3),0.2);
+  }
+  if(n<30u){
+    // An articulated conveyor of gears animates the foreground workshop.
+    let height=select(0.36,0.8,n%3u==0u)*s;
+    if(part==0u){return surface(ground+box(v,vec3f(0.62*s,height,1.0*s)),color,0.2);}
+    if(part==1u){return surface(ground+vec3f(0,height+0.05*s,0)+gear(v,uniforms.time*select(-0.65,0.65,n%2u==0u)*alive())*s,palette(3),0.28);}
+    return surface(ground,color,0.0);
+  }
+  let h=(0.8+sin(f32(n)*0.85)*0.35)*s;
+  if(part==0u){return surface(ground+cylinder(v,0.10*s,h),palette(2),0.15);}
+  if(part==1u){
+    let bladePart=v/96u;let q=quad(v);let a=f32(bladePart)*PI*0.5+uniforms.time*0.55*alive()+g.w*6.28;
+    let p=vec3f((q.x-0.5)*0.33,q.y*0.73,0.04*sin(q.y*PI))*s;
+    let turn=vec3f(p.x*cos(a)-p.y*sin(a),p.x*sin(a)+p.y*cos(a),p.z);
+    return surface(ground+vec3f(0,h,0)+turn,color,0.25);
+  }
+  if(part==2u){return surface(ground+vec3f(0,h,0.06*s)+sphere(v,vec3f(0.12*s)),palette(3),0.3);}
+  return surface(ground+box(v,vec3f(0.6*s,0.2*s,0.6*s)),palette(1),0.15);
+}
+`,
+  6,
+);
