@@ -144,18 +144,25 @@ fn limestoneColor() -> vec3f { return mix(uniforms.themeFifth.rgb, uniforms.them
 fn reefSandColor() -> vec3f { return mix(limestoneColor(), waterColor(), 0.22); }
 
 fn reefQrSubstrate() -> vec3f {
-  let sandTone = mix(reefSandColor(), coralSecondary(), 0.10);
-  return mix(sandTone, waterColor(), 0.14);
+  return mix(vec3f(0.97), uniforms.themeFifth.rgb, 0.08);
+}
+
+// Final scan colors are display-referred: preserve each palette hue while
+// bounding its brightest channel, rather than lifting dark ink through ACES.
+fn reefDarkMaterial(color: vec3f) -> vec3f {
+  let bounded = clamp(color, vec3f(0.0), vec3f(1.0));
+  let peak = max(max(bounded.r, bounded.g), max(bounded.b, 0.001));
+  return vec3f(0.025) + bounded / peak * 0.205;
 }
 
 fn reefQrInk() -> vec3f {
   let reefTint = mix(uniforms.themePrimary.rgb, coralPrimary(), 0.12);
-  return reefTint * 0.56;
+  return reefDarkMaterial(reefTint);
 }
 
 fn reefFinderInk(role: u32) -> vec3f {
   let base = reefQrInk();
-  let colonyRing = mix(base, coralPrimary(), 0.09);
+  let colonyRing = mix(base, reefDarkMaterial(coralPrimary()), 0.24);
   return select(colonyRing, base * 0.70, role == 2u);
 }
 
@@ -172,7 +179,7 @@ fn reefQrColor(blockType: u32, noise: f32) -> vec3f {
     color = mix(ink, uniforms.themeFourth.rgb, 0.30);
   }
   let shade = 0.92 + fract(noise * 5.53) * 0.12;
-  return color * shade;
+  return reefDarkMaterial(color) * shade;
 }
 
 fn finderRole(column: f32, row: f32) -> u32 {
@@ -226,6 +233,8 @@ struct Output {
   @location(3) height: f32,
   @location(4) channel: f32,
   @location(5) seed: f32,
+  @location(6) @interpolate(flat) face: u32,
+  @location(7) @interpolate(flat) visible: u32,
 }
 
 @vertex
@@ -234,9 +243,20 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let uv = quadUv(vertexIndex);
   let position = blockPositions[instanceIndex];
   let shelf = shelfData[instanceIndex];
-
-  let gridX = position.x + uv.x - 0.5;
-  let gridZ = position.y + uv.y - 0.5;
+  let face = vertexIndex / 6u;
+  // A solid tile: top, underside, and only the four outside sediment edges.
+  // Internal faces never reach rasterization, so the shelf stays one enclosure.
+  let geometry = boxGeometry(face, uv, vec3f(uniforms.blockSize, 1.0, uniforms.blockSize));
+  let cellUv = geometry[0].xz / uniforms.blockSize + vec2f(0.5);
+  // The same perimeter stretches into an opaque four-module quiet zone as
+  // the shelf flattens. The canonical QR destinations remain fixed inside it.
+  let quietZone = 4.0 * reefStage(0.55, 0.95);
+  let extendX = select(0.0, -(1.0 - cellUv.x) * quietZone, position.x < 0.5)
+    + select(0.0, cellUv.x * quietZone, position.x >= uniforms.gridSize - 1.0);
+  let extendZ = select(0.0, -(1.0 - cellUv.y) * quietZone, position.y < 0.5)
+    + select(0.0, cellUv.y * quietZone, position.y >= uniforms.gridSize - 1.0);
+  let gridX = position.x + geometry[0].x / uniforms.blockSize + extendX;
+  let gridZ = position.y + geometry[0].z / uniforms.blockSize + extendZ;
 
   // Gentle undulating natural seabed relief
   let sandWave = sin(gridX * 0.38 + gridZ * 0.28) * 0.12 + sin(gridX * 0.82 - gridZ * 0.65) * 0.06;
@@ -244,23 +264,36 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let baseRelief = shelf.x * 0.95 + 0.10 + sandWave + ripple;
   let flatten = reefStage(0.34, 0.86);
   let relief = mix(baseRelief, 0.035, flatten);
-
-  let world = reefPoint(gridX, gridZ, relief);
+  let retract = reefStage(0.30, 0.86);
+  let underside = mix(-1.05, 0.035, retract);
+  var height = relief;
+  if (face == 1u) { height = underside; }
+  if (face >= 2u) { height = mix(underside, relief, uv.y); }
+  let outside = face < 2u
+    || (face == 2u && position.y >= uniforms.gridSize - 1.0)
+    || (face == 3u && position.y < 0.5)
+    || (face == 4u && position.x >= uniforms.gridSize - 1.0)
+    || (face == 5u && position.x < 0.5);
+  let visible = outside && (face == 0u || retract < 1.0);
+  let world = reefPoint(gridX, gridZ, height);
   output.position = reefProject(world);
   output.uv = uv;
   output.world = world;
   output.height = shelf.x;
   output.channel = shelf.z;
   output.seed = shelf.w;
-
-  let dHdx = (cos(gridX * 0.38 + gridZ * 0.28) * 0.045 + cos(gridX * 0.82 - gridZ * 0.65) * 0.049) * 1.5;
-  let dHdz = (cos(gridX * 0.38 + gridZ * 0.28) * 0.033 - cos(gridX * 0.82 - gridZ * 0.65) * 0.039) * 1.5;
-  output.normal = normalize(vec3f(-dHdx, 1.0, -dHdz));
+  output.face = face;
+  output.visible = select(0u, 1u, visible);
+  let dHdx = (cos(gridX * 0.38 + gridZ * 0.28) * 0.0456 + cos(gridX * 0.82 - gridZ * 0.65) * 0.0492 + cos(gridX * 3.6 + gridZ * 2.4) * 0.0648) * (1.0 - flatten);
+  let dHdz = (cos(gridX * 0.38 + gridZ * 0.28) * 0.0336 - cos(gridX * 0.82 - gridZ * 0.65) * 0.039 + cos(gridX * 3.6 + gridZ * 2.4) * 0.0432) * (1.0 - flatten);
+  output.normal = select(geometry[1], normalize(vec3f(-dHdx, 1.0, -dHdz)), face == 0u);
+  if (!visible) { output.position = vec4f(2.0, 2.0, 2.0, 1.0); }
   return output;
 }
 
 @fragment
 fn fragmentMain(input: Output) -> @location(0) vec4f {
+  if (input.visible == 0u) { discard; }
   let sandDetail = textureSampleLevel(reefAtlas, reefSampler, atlasUv(4.0, input.uv, 3.2), 0.0);
   let rockDetail = textureSampleLevel(reefAtlas, reefSampler, atlasUv(3.0, input.uv, 2.5), 0.0);
   let biolum = textureSampleLevel(reefAtlas, reefSampler, atlasUv(7.0, input.uv, 1.8), 0.0);
@@ -274,17 +307,47 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
 
   let shelfMix = smoothstep(0.15, 0.42, input.height) * (1.0 - input.channel * 0.85);
   var color = mix(lagoonSand, reefRock, shelfMix);
+  // Keep sand grains and coralline rock legible under the bright underwater light.
+  let sedimentTint = mix(uniforms.themeFifth.rgb, coralAccent(), 0.28);
+  let mineralGrain = 0.68 + sandDetail.r * 0.42;
+  color = mix(color, sedimentTint * mineralGrain, (1.0 - shelfMix) * 0.36) * 0.60;
 
   // Glowing bioluminescent flecks in deeper crevices
   if (input.height < 0.22 && biolum.g > 0.62) {
     color = mix(color, coralSecondary() * 1.8, (biolum.g - 0.62) * 1.2);
   }
 
+  if (input.face != 0u) {
+    // Continuous geological layers cross cell boundaries. The topmost band is
+    // loose sand; compact limestone and irregular inclusions appear underneath.
+    let cellWorld = input.world / uniforms.blockSize;
+    let along = select(cellWorld.x, cellWorld.z, input.face >= 4u);
+    let sedimentUv = select(vec2f(along, cellWorld.y), cellWorld.xz, input.face == 1u);
+    let grains = textureSampleLevel(reefAtlas, reefSampler, atlasUv(4.0, sedimentUv, 1.6), 0.0).r;
+    let pores = textureSampleLevel(reefAtlas, reefSampler, atlasUv(3.0, sedimentUv, 1.3), 0.0).r;
+    let bend = sin(along * 0.63) * 0.035 + sin(along * 1.7) * 0.017;
+    let stratum = sin((cellWorld.y + bend) * 19.0);
+    let seam = 1.0 - smoothstep(0.06, 0.21, abs(stratum));
+    let layer = smoothstep(-0.35, 0.35, stratum);
+    let compactSand = reefSandColor() * (0.52 + grains * 0.24);
+    let limestone = mix(limestoneColor(), waterColor(), 0.28) * (0.46 + pores * 0.22);
+    color = mix(compactSand, limestone, layer * 0.70) * (1.0 - seam * 0.24);
+    let rockCoord = vec2f(along * 1.7, cellWorld.y * 3.3);
+    let rockCell = floor(rockCoord);
+    let rockSeed = fract(sin(dot(rockCell, vec2f(127.1, 311.7))) * 43758.5453);
+    let rockDistance = length((fract(rockCoord) - vec2f(0.5)) * vec2f(1.0, 1.45));
+    let inclusion = (1.0 - smoothstep(0.13, 0.23, rockDistance)) * step(0.62, rockSeed);
+    color = mix(color, limestoneColor() * (0.34 + pores * 0.16), inclusion);
+    let sandCap = smoothstep(-0.06, 0.24, cellWorld.y);
+    color = mix(color, lagoonSand * 0.86, sandCap * 0.78);
+    if (input.face == 1u) { color *= 0.62; }
+  }
+
   let normal = normalize(input.normal);
   let lit = underwaterLighting(normal, input.world, color, 0.40, color, 0.12);
   let scan = reefStage(0.60, 0.93);
-  let finalColor = mix(lit, reefQrSubstrate(), scan);
-  return vec4f(acesToneMap(finalColor), 1.0);
+  let finalColor = mix(acesToneMap(lit), reefQrSubstrate(), scan);
+  return vec4f(finalColor, 1.0);
 }
 `;
 
@@ -538,7 +601,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let albedo = color * (0.80 + detail.r * 0.32);
   let normal = normalize(input.normal);
   let lit = underwaterLighting(normal, input.world, albedo, 0.42, sssTint, sssAmount);
-  let fade = 1.0 - reefStage(0.60 + input.delay, 0.86 + input.delay);
+  let fade = 1.0 - reefStage(0.60 + input.delay, min(0.86 + input.delay, 0.98));
   return vec4f(acesToneMap(lit), fade);
 }
 `;
@@ -809,14 +872,14 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let edgeDistance = min(min(input.uv.x, 1.0 - input.uv.x), min(input.uv.y, 1.0 - input.uv.y));
   let membrane = 1.0 - smoothstep(0.055, 0.16, edgeDistance);
   let reefDetail = textureSampleLevel(reefAtlas, reefSampler, atlasUv(2.0, input.uv, 1.6), 0.0);
-  var plaqueInk = mix(roleInk, coralPrimary(), membrane * 0.065);
+  var plaqueInk = mix(roleInk, reefDarkMaterial(coralPrimary()), membrane * 0.065);
   plaqueInk *= 0.97 + reefDetail.r * 0.035;
   let scanMaterial = select(plaqueInk * 0.84, plaqueInk, input.normal.y > 0.5);
   // Per-module tint variation survives scan lock like the tree QR.
   let cooled = scanMaterial * (0.94 + input.tint * 0.09);
   let polypColor = mix(coralPrimary() * 0.94, coralAccent() * 1.05, 0.5 * input.molten)
     * (0.98 + input.molten * 0.48);
-  let finalColor = mix(cooled, polypColor, input.molten);
-  return vec4f(acesToneMap(finalColor), 1.0);
+  let finalColor = mix(cooled, acesToneMap(polypColor), input.molten);
+  return vec4f(finalColor, 1.0);
 }
 `;
