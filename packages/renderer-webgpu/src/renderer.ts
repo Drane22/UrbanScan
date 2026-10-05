@@ -1257,6 +1257,14 @@ function writeUniforms(
     }
     if (reduced) values[1] = 0;
   }
+  if (gpu.form === "reef") {
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    if (progress === 1 || reduced) {
+      values[5] = 0;
+      values[6] = 0;
+    }
+    if (reduced) values[1] = 0;
+  }
   gpu.device.queue.writeBuffer(gpu.buffers.uniforms, 0, values);
 }
 
@@ -1303,7 +1311,7 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
     if (!reefBindGroup) throw new Error("Reef bind group was not initialized");
     pass.setBindGroup(0, reefBindGroup);
     pass.setPipeline(gpu.pipelines.reefShelf);
-    pass.draw(6, gpu.blockField.blocks.length);
+    pass.draw(36, gpu.blockField.blocks.length);
     pass.setPipeline(gpu.pipelines.reefCorals);
     pass.draw(36, gpu.reefCoralCount * 12);
     pass.setPipeline(gpu.pipelines.reefWater);
@@ -1672,7 +1680,7 @@ export function mountSeed(
       state.transitionDuration =
         MORPH_DURATION_MS * Math.max(0.25, Math.abs(state.target - state.from));
       if (
-        isStagedWorld(form) &&
+        (isStagedWorld(form) || form === "reef") &&
         (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false)
       ) {
         state.transitionDuration = 0;
