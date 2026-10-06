@@ -13,6 +13,7 @@ export function createSculpturalWorldShader(
   scene: string,
   materialKind = 0,
   cutaway = false,
+  transformLayout = false,
 ): string {
   return /* wgsl */ `
 ${SEED_UNIFORMS_WGSL}
@@ -68,6 +69,7 @@ fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32
     let visibility=(1.0-phase(0.05,0.62))*mix(build,1.0,phase(0.0,0.15));
     let anchor=worldAmbient(v,i,4u).p;
     var p=mix(anchor,settled.p,visibility);
+    ${transformLayout ? "p=seededFrame(p);" : ""}
     p.x=clamp(p.x,-uniforms.gridSize*0.5,uniforms.gridSize*0.5);
     p.z=clamp(p.z,-uniforms.gridSize*0.5,uniforms.gridSize*0.5);
     o.world=p*size;o.position=worldProject(o.world,1.68,uniforms.gridSize*size*0.045);
@@ -96,6 +98,7 @@ fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32
   let presence=select(scan,1.0,owner<population);
   let scale=build*presence*select(1.0,detail,part>0u);
   var p=mix(anchor,settled.p,scale);let q=squarePoint(v);
+  ${transformLayout ? "p=seededFrame(p);" : ""}
   if(part==0u){
     let cell=blockPositions[owner].xy+vec2f(0.5)-vec2f(uniforms.gridSize*0.5);
     p=mix(p,vec3f(cell.x+q.x,0.0,cell.y+q.y),scan);

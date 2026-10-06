@@ -2,82 +2,81 @@ import { createSculpturalWorldShader } from "./sculptural-world-shaders.js";
 
 export const CONSTELLATION_SHADER = createSculpturalWorldShader(
   /* wgsl */ `
-fn worldCount()->u32 {return 111u;}
+fn constellationClusters()->u32 {return 5u+u32(gene(700u).w*5.0);}
+fn constellationNodes()->u32 {return 7u+u32(gene(701u).w*4.0);}
+fn worldCount()->u32 {return constellationClusters()*constellationNodes();}
 fn worldAmbientCount()->u32 {return 320u;}
+// Five graph families, each with a seeded pose, elevation, size and location.
 fn worldAnchor(i:u32)->vec3f {
-  if(i<3u){
-    let c=array<vec3f,3>(vec3f(0,6,0),vec3f(-0.24*uniforms.gridSize,3.9,0.12*uniforms.gridSize),vec3f(0.22*uniforms.gridSize,4.2,0.10*uniforms.gridSize));
-    return c[i];
-  }
-  let cluster=(i-3u)/12u;let node=(i-3u)%12u;let g=gene(i);
-  let center=squarePatch(cluster,3u);
-  let angle=f32(node)*0.58+gene(cluster).w*6.28;
-  let radius=(1.05+sin(f32(node)*1.7)*0.5)*uniforms.gridSize/25.0;
-  return center+vec3f(cos(angle)*radius,(1.5+g.w*2.0)*uniforms.gridSize/25.0,sin(angle)*radius);
+  let count=constellationNodes();let cluster=i/count;let node=i%count;
+  let dna=gene(710u+cluster);let variant=u32(gene(702u).w*4.0);
+  let t=f32(node)/f32(count-1u);let a=t*PI*1.7;
+  var p=vec3f((t-0.5)*4.4,sin(t*PI)*1.1,0);
+  let family=(u32(dna.w*5.0)+variant)%5u;
+  if(family==0u){p=vec3f((t-0.5)*4.3,0.45*sin(t*7.0),select(-1.0,1.0,node%2u==0u)*t*1.65);}
+  if(family==1u){p=vec3f(cos(a)*2.0,0.8*sin(a),sin(a)*1.6);}
+  if(family==2u){p=vec3f((t-0.5)*4.8,sin(t*PI*2.0)*0.8,sin(t*PI*2.5)*1.1);}
+  if(family==3u){let r=select(1.9,0.65,node%2u==0u);p=vec3f(cos(a)*r,sin(a)*0.9,sin(a)*r);}
+  if(family==4u){p=vec3f(cos(a*1.4)*(0.3+t*1.8),t*1.7,sin(a*1.4)*(0.3+t*1.8));}
+  p=rotate(p,dna.w*PI*2.0)*(0.8+dna.z*0.32);
+  var center=squarePatch(cluster,3u)*0.80;
+  // Ring, staggered rows and diagonal rivers have different silhouettes.
+  if(variant==1u){let angle=f32(cluster)/f32(constellationClusters())*PI*2.0+gene(703u).w*PI;center=vec3f(cos(angle),0,sin(angle))*uniforms.gridSize*(0.21+0.10*dna.w);}
+  if(variant==2u){center=vec3f((f32(cluster%2u)-0.5)*0.49,0,(f32(cluster/2u)/4.0-0.4)*0.76)*uniforms.gridSize;}
+  if(variant==3u){let u=f32(cluster)/f32(constellationClusters()-1u)-0.5;center=vec3f(u*0.76,0,sin(u*5.0)*0.26)*uniforms.gridSize;}
+  center+=vec3f(dna.x,0,dna.y)*uniforms.gridSize*0.11;
+  center.y=(2.0+dna.w*4.4+gene(704u).w*1.5)*uniforms.gridSize/25.0;
+  return center+p*uniforms.gridSize/25.0;
 }
-fn worldFoundation(v:u32)->Surface {
-  return tile(v,palette(0)*1.1,mix(palette(0),palette(2),0.22),0.85,5.0);
+fn constellationParent(i:u32)->u32 {
+  let count=constellationNodes();let node=i%count;
+  let family=(u32(gene(710u+i/count).w*5.0)+u32(gene(702u).w*4.0))%5u;
+  if(node==0u){return i;}
+  if(family==0u || family==3u){return i-node+(node-1u)/2u;}
+  return i-1u;
 }
+fn starGem(v:u32,r:f32)->vec3f {
+  let p=sphere(v,vec3f(1));return p/max(abs(p.x)+abs(p.y)+abs(p.z),0.001)*vec3f(r,r*1.65,r);
+}
+fn worldFoundation(v:u32)->Surface {return tile(v,palette(0)*0.8,mix(palette(0),palette(2),0.16),0.19,5.0);}
 fn worldSurface(v:u32,i:u32,part:u32)->Surface {
-  let c=worldAnchor(i);let g=gene(i);let radius=select(0.07+g.w*0.09,1.15+g.w*0.6,i<3u)*uniforms.gridSize/25.0;
-  let star=mix(palette(f32(1u+i%3u)),uniforms.themeFifth.rgb,0.35);
-  if(part==0u){
-    let pulse=1.0+sin(uniforms.time*(0.6+g.w*0.5)+g.w*19.0)*0.035*alive();
-    let p=sphere(v,vec3f(radius*pulse));
-    let band=0.5+0.5*sin(p.y/radius*19.0+sin(p.x*3.0)*0.6);
-    let pigment=select(star,mix(star,palette(f32(1u+i%3u))*0.72,band*0.6),i<3u);
-    return surface(c+p,pigment*(0.94+sin(uniforms.time*0.8+g.w*17.0)*0.06*alive()),0.75);
-  }
+  let c=worldAnchor(i);let g=gene(i);let s=uniforms.gridSize/25.0;
+  let color=mix(palette(f32(1u+(i/constellationNodes())%3u)),uniforms.themeFifth.rgb,0.35);
+  let pulse=1.0+sin(uniforms.time*(0.8+g.w)+g.w*19.0)*0.12*alive();
+  let radius=(0.26+g.w*0.24)*s*pulse;
+  if(part==0u){return surface(c+starGem(v,radius),color,0.95);}
   if(part==1u){
-    if(i<3u || (i-3u)%12u==0u){return surface(c,star,0.0);}
-    let next=worldAnchor(i-1u);
-    let p=bridge(v,c,next,0.016);
-    let shimmer=0.90+sin(uniforms.time*0.6+p.x*0.7+p.z*0.4)*0.10*alive();
-    return surface(p,mix(palette(1),palette(2),0.4)*shimmer,0.65);
+    if(i%constellationNodes()==0u){return surface(c,color,0);}
+    return surface(bridge(v,c,worldAnchor(constellationParent(i)),0.042*s),mix(color,palette(1),0.5),0.85);
   }
-  if(part==2u && i<3u){
-    let p=ring(v,radius*1.8,0.025);
-    let tilt=0.3+sin(uniforms.time*0.25+g.w*6.28)*0.08*alive();
-    return surface(c+vec3f(p.x,p.y+p.z*tilt,p.z),palette(3),0.75);
+  if(part==2u){
+    let ray=select(vec3f(radius*1.55,0,0),vec3f(0,0,radius*1.55),v>=192u);
+    return surface(bridge(v,c-ray,c+ray,0.025*s),uniforms.themeFifth.rgb,1.0);
   }
-  if(part==3u && i<3u){
-    let p=ring(v,radius*2.35,0.018);
-    return surface(c+vec3f(p.x,p.z*0.6+p.y,p.z*0.8),palette(1),0.7);
-  }
-  return surface(c,star,0.0);
+  let next=worldAnchor(constellationParent(i));
+  let travel=fract(uniforms.time*(0.24+g.w*0.18)+g.w)*alive();
+  let path=mix(c,next,travel)+vec3f(0,0.055*s,0);
+  return surface(path+starGem(v,0.11*s),uniforms.themeFifth.rgb,1.0);
 }
 fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
-  let g=gene(i+80u);let ground=squarePatch(i,18u);
-  if(part==4u){return surface(ground,palette(0),0.0);}
-  if(i==0u){
-    let pivot=vec3f(0,1.0,0);let aim=vec3f(cos(0.8),0.6,sin(0.8))*1.7;
-    if(part==0u){return surface(cylinder(v,1.45,0.25),mix(palette(0),palette(3),0.3),0.25);}
-    if(part==1u){return surface(bridge(v,pivot-aim*0.4,pivot+aim,0.26),palette(2),0.4);}
-    if(part==2u){return surface(bridge(v,vec3f(0,0.25,0),pivot,0.13),palette(3),0.3);}
-    return surface(pivot+aim+sphere(v,vec3f(0.28)),palette(1),0.8);
+  let g=gene(i+100u);let s=uniforms.gridSize/25.0;let ground=squarePatch(i,16u);
+  if(part==4u){return surface(ground,palette(0),0);}
+  if(i<256u){
+    if(part==0u){return surface(ground+starGem(v,(0.05+g.w*0.10)*s),mix(palette(1),palette(3),g.w),0.65);}
+    return surface(ground,palette(0),0);
   }
-  if(i<226u){
-    if(part>0u){return surface(ground,palette(0),0.0);}
-    return surface(ground+sphere(v,vec3f(0.04+g.w*0.065)),mix(palette(1),palette(3),g.w),0.65);
+  if(i<304u){
+    let a=uniforms.time*0.22+g.w*PI*2.0;
+    let p=vec3f(g.x*uniforms.gridSize, (1.1+g.z*2.7+sin(a)*0.35)*s,g.y*uniforms.gridSize);
+    if(part==0u){return surface(p+starGem(v,(0.07+g.w*0.07)*s),mix(palette(3),uniforms.themeFifth.rgb,0.6),0.9);}
+    return surface(p,palette(0),0);
   }
-  if(i<272u){
-    if(part>0u){return surface(ground,palette(0),0.0);}
-    let a=uniforms.time*0.15+g.w*6.28;
-    let p=ground+vec3f(sin(a)*0.5,1.3+g.z+sin(a*0.6)*0.5,cos(a)*0.4);
-    return surface(p+sphere(v,vec3f(0.035)),palette(1),0.85);
-  }
-  if(i<309u){
-    let center=worldAnchor((i-272u)%3u);let a=uniforms.time*(0.20+g.w*0.15)+g.w*6.28;
-    let r=1.5+g.z*0.7;let path=center+vec3f(cos(a)*r,sin(a)*0.42,sin(a)*r);
-    if(part==0u){return surface(path+sphere(v,vec3f(0.075*g.z)),palette(3),0.9);}
-    if(part==1u){return surface(path+rotate(box(v,vec3f(0.30,0.018,0.09)),a+PI*0.5),palette(1),0.7);}
-    return surface(path,palette(0),0.0);
-  }
-  let cycle=fract(uniforms.time*0.06+g.w);let envelope=sin(cycle*PI);
-  let path=vec3f((cycle-0.5)*uniforms.gridSize*0.6,4.8+g.z, g.y*uniforms.gridSize*0.6);
-  if(part==0u){return surface(path+sphere(v,vec3f(0.075*envelope)),palette(1),0.95);}
-  if(part==1u){return surface(bridge(v,path,path-vec3f(0.9*envelope,0.18*envelope,0),0.015*envelope),palette(3),0.75);}
-  return surface(path,palette(0),0.0);
+  let cycle=fract(uniforms.time*(0.08+g.w*0.04)+g.w);let envelope=sin(cycle*PI);
+  let path=rotate(vec3f((cycle-0.5)*uniforms.gridSize*0.85,(4.0+g.z*2.0)*s,g.y*uniforms.gridSize*0.75),gene(707u).w*PI);
+  let tail=rotate(vec3f(-1.7*envelope*s,0.25*envelope*s,0),gene(707u).w*PI);
+  if(part==0u){return surface(path+starGem(v,0.18*envelope*s),uniforms.themeFifth.rgb,1);}
+  if(part==1u){return surface(bridge(v,path,path+tail,0.04*envelope*s),palette(3),0.9);}
+  return surface(path,palette(0),0);
 }
 `,
   5,

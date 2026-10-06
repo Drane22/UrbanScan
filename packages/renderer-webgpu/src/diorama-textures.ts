@@ -183,6 +183,7 @@ fn dioramaTexture(color:vec3f,p:vec3f,n:vec3f,uv:vec2f,part:u32)->vec3f {
   let an=abs(n);var q=p.xz;
   if(an.x>an.y && an.x>an.z){q=p.zy;}
   else if(an.z>an.y){q=p.xy;}
+  q+=worldDNA(10u).xy*53.0;
   // Derivatives run before material/part branches (part is flat but nonuniform).
   let pixel=max(length(dpdx(q)),length(dpdy(q)));
   let up=smoothstep(0.35,0.85,an.y);let foundation=part==9u;

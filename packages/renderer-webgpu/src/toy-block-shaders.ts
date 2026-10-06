@@ -4,12 +4,33 @@ export const TOY_BLOCK_SHADER = createSculpturalWorldShader(
   /* wgsl */ `
 fn worldCount()->u32 {return 136u;}
 fn worldAmbientCount()->u32 {return 384u;}
+fn toyDistrict(i:u32)->vec3f {
+  let g=gene(i+270u);let s=uniforms.gridSize/25.0;
+  if(sceneVariant(3u)==1u){return spiral(i,8.0,uniforms.gridSize*0.30)+vec3f(g.x,0,g.y)*s;}
+  let corners=array<vec2f,4>(vec2f(-5,-5),vec2f(5,-5),vec2f(-5,5),vec2f(5,5));
+  let p=(corners[i%4u]+g.xy*3.0)*s;return vec3f(p.x,0,p.y);
+}
+fn towerHeight(i:u32)->f32 {
+  if(sceneVariant(3u)==0u){return 5.75;}
+  if(sceneVariant(3u)==1u){return 5.75*(0.55+gene(i+280u).w*0.65);}
+  return 3.9;
+}
 fn towerCenter(i:u32)->vec3f {
+  if(sceneVariant(3u)>0u){return toyDistrict(i);}
   let corners=array<vec2f,4>(vec2f(-4.6,-4.6),vec2f(4.6,-4.6),vec2f(-4.6,4.6),vec2f(4.6,4.6));
   let p=corners[i%4u]*uniforms.gridSize/25.0;return vec3f(p.x,0,p.y);
 }
 fn worldAnchor(i:u32)->vec3f {
   let s=uniforms.gridSize/25.0;
+  let style=sceneVariant(3u);
+  if(style==1u && i<128u){
+    let district=i/16u;let slot=i%16u;
+    return toyDistrict(district)+vec3f((f32(slot%2u)-0.5)*1.13,f32(slot/2u)*0.72*(0.55+gene(district+280u).w*0.65),0)*s;
+  }
+  if(style==2u && i<128u){
+    let slot=i%32u;let steps=f32((slot/4u)%4u);
+    return toyDistrict(i/32u)+rotate(vec3f((f32(slot%4u)-1.5)*1.12,steps*0.72+f32(slot/16u)*0.72,(steps-1.5)*0.9),f32(i/32u)*PI*0.5)*s;
+  }
   if(i<96u){
     let course=i/32u;let slot=i%32u;let side=slot/8u;
     let p=rotate(vec3f((f32(slot%8u)-3.5)*1.15,f32(course)*0.72,4.6),f32(side)*PI*0.5);
@@ -23,11 +44,13 @@ fn worldFoundation(v:u32)->Surface {
 }
 fn worldSurface(v:u32,i:u32,part:u32)->Surface {
   let c=worldAnchor(i);let s=uniforms.gridSize/25.0;
-  let side=(i%32u)/8u;let heading=select(f32(side)*PI*0.5,0.0,i>=96u);
-  let color=palette(f32(1u+(i/32u+side)%3u));
-  let width=select(1.11,1.75,i>=96u && i<128u);
-  let depth=select(0.90,1.75,i>=96u && i<128u);
-  let doorway=i<64u && side==0u && (i%8u==3u || i%8u==4u);
+  let style=sceneVariant(3u);let side=(i%32u)/8u;
+  var heading=select(f32(side)*PI*0.5,0.0,i>=96u);
+  if(style==1u){heading=0.0;}else if(style==2u && i<128u){heading=f32(i/32u)*PI*0.5;}
+  let color=palette(f32(1u+(i/(16u+u32(worldDNA(7u).w*24.0))+side)%3u));
+  let width=select(1.11,1.75,i>=96u && i<128u && style==0u);
+  let depth=select(0.90,1.75,i>=96u && i<128u && style==0u);
+  let doorway=style==0u && i<64u && side==0u && (i%8u==3u || i%8u==4u);
   if(part==0u){
     let h=select(0.66,0.015,doorway);
     return surface(c+rotate(box(v,vec3f(width,h,depth))*s,heading),color,0.18);
@@ -46,7 +69,7 @@ fn worldSurface(v:u32,i:u32,part:u32)->Surface {
 fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
   let g=gene(i+110u);let s=uniforms.gridSize/25.0;
   if(i<4u){
-    let c=towerCenter(i)+vec3f(0,5.75*s,0);
+    let c=towerCenter(i)+vec3f(0,towerHeight(i)*s,0);
     if(part==4u){return surface(c,palette(0),0.0);}
     if(part==0u){return surface(c+cylinder(v,0.045*s,1.6*s),palette(0),0.35);}
     if(part==1u){
@@ -67,18 +90,24 @@ fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
   }
   if(part==4u){return surface(ground,palette(0),0.0);}
   if(i<14u){
-    let a=uniforms.time*(0.10+g.w*0.08)+g.w*6.28;
-    let r=uniforms.gridSize*0.36;let path=vec3f(cos(a)*r,0.12,sin(a)*r);
+    if(i>=10u+u32(worldDNA(5u).w*4.0)){return surface(ground,palette(0),0.0);}
+    let a=uniforms.time*(0.16+g.w*0.12)+g.w*6.28;
+    let carScale=s*2.5;
+    let r=uniforms.gridSize*0.37;let path=vec3f(cos(a)*r,0.30*s,sin(a)*r);
     let heading=a+PI*0.5;
-    if(part==0u){return surface(path+rotate(box(v,vec3f(0.9,0.32,0.46))*s,heading),palette(f32(1u+i%3u)),0.25);}
+    if(part==0u){return surface(path+rotate(box(v,vec3f(0.95,0.30,0.48))*carScale,heading),palette(f32(1u+i%3u)),0.25);}
     if(part<3u){
-      let tire=cylinder(v,0.15,0.08);
-      let wheelAngle=uniforms.time*(0.10+g.w*0.08)*r/0.15*alive();
+      let wheel=v/192u;let local=v%192u;let uv=quad(local);
+      let wa=(f32((local/6u)%8u)+uv.x)*PI*0.25;let band=local/48u;
+      let rs=array<f32,5>(0,1,1,0,0);let ys=array<f32,5>(1,1,0,0,0);
+      let wr=mix(rs[band],rs[band+1u],uv.y)*0.17;
+      let tire=vec3f(cos(wa)*wr,mix(ys[band],ys[band+1u],uv.y)*0.09,sin(wa)*wr);
+      let wheelAngle=uniforms.time*(0.16+g.w*0.12)*r/0.17*alive();
       let spoke=select(0.82,1.0,sin(atan2(tire.z,tire.x)*6.0-wheelAngle)>0.0);
-      let p=vec3f(tire.x, tire.z+0.04, tire.y+select(-0.29,0.21,part==2u));
-      return surface(path+rotate(p*s,heading),palette(0)*spoke,0.15);
+      let p=vec3f(tire.x+select(-0.29,0.29,wheel==1u), tire.z+0.04, tire.y+select(-0.32,0.23,part==2u));
+      return surface(path+rotate(p*carScale,heading),palette(0)*spoke,0.15);
     }
-    return surface(path+rotate(box(v,vec3f(0.38,0.20,0.35))*s+vec3f(0,0.32*s,0),heading),mix(palette(3),uniforms.themeFifth.rgb,0.28),0.3);
+    return surface(path+rotate((box(v,vec3f(0.44,0.24,0.36))+vec3f(-0.05,0.3,0))*carScale,heading),mix(palette(3),uniforms.themeFifth.rgb,0.28),0.3);
   }
   if(i<338u){
     let cell=uniforms.gridSize/18.0;
@@ -120,4 +149,6 @@ fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
 }
 `,
   6,
+  false,
+  true,
 );
