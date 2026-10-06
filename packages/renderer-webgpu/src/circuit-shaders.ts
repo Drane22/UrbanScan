@@ -1,3 +1,6 @@
+import { DIORAMA_MATERIALS_WGSL } from "./diorama-materials.js";
+import { STAGED_PROJECTION_WGSL } from "./staged-world-shaders.js";
+
 const CIRCUIT_COMMON = /* wgsl */ `
 struct Uniforms {
   aspectRatio: f32,
@@ -36,6 +39,8 @@ struct Uniforms {
 @group(0) @binding(4) var<storage, read> traceData: array<vec4f>;
 @group(0) @binding(5) var materialAtlas: texture_2d<f32>;
 @group(0) @binding(6) var materialSampler: sampler;
+${DIORAMA_MATERIALS_WGSL}
+${STAGED_PROJECTION_WGSL}
 
 fn pcbBase() -> vec3f {
   let boardTone = mix(uniforms.themePrimary.rgb, uniforms.themeThird.rgb, 0.18);
@@ -79,35 +84,11 @@ fn signalColor() -> vec3f {
 }
 
 fn circuitQrSubstrate() -> vec3f {
-  let paperTone = mix(uniforms.themeFifth.rgb, uniforms.themeThird.rgb, 0.16);
-  return mix(paperTone, uniforms.themeFourth.rgb, 0.08);
+  return qrPaper();
 }
 
 fn circuitQrInk() -> vec3f {
-  let paletteInk = mix(uniforms.themePrimary.rgb, uniforms.themeThird.rgb, 0.16);
-  return paletteInk * 0.52;
-}
-
-fn circuitFinderInk(role: u32) -> vec3f {
-  let base = circuitQrInk();
-  let plated = mix(base, goldPad(), 0.10);
-  return select(plated, base * 0.72, role == 2u);
-}
-
-fn circuitQrColor(blockType: u32, noise: f32) -> vec3f {
-  let ink = circuitQrInk();
-  var color = ink;
-  if (blockType == 1u) {
-    color = mix(ink, uniforms.themePrimary.rgb, 0.35);
-  } else if (blockType == 3u) {
-    color = mix(ink, uniforms.themeThird.rgb, 0.40);
-  } else if (blockType == 4u) {
-    color = mix(ink, uniforms.themeSecondary.rgb, 0.30);
-  } else if (blockType == 2u || blockType == 5u) {
-    color = mix(ink, uniforms.themeFourth.rgb, 0.28);
-  }
-  let shade = 0.92 + fract(noise * 5.53) * 0.12;
-  return color * shade;
+  return qrMaterial(0u, 0.5);
 }
 
 fn finderRole(column: f32, row: f32) -> u32 {
@@ -159,7 +140,9 @@ fn circuitProject(localPos: vec3f) -> vec4f {
   let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
   let yOffset = mix(-0.13, 0.07, uniforms.progress);
   let xOffset = mix(0.0, 0.015, uniforms.progress);
-  return vec4f((rotX + xOffset) * scaleX, (rotY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
+  let living = vec4f((rotX + xOffset) * scaleX, (rotY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
+  let scan = worldProject(localPos, 1.68, uniforms.gridSize * uniforms.blockSize * 0.045);
+  return mix(living, scan, stage(0.28, 0.96));
 }
 
 fn boardPoint(column: f32, row: f32, height: f32) -> vec3f {
@@ -232,27 +215,6 @@ fn studioLight(normal: vec3f, roughness: f32) -> f32 {
   return 0.38 + key * 0.72 + fill * 0.22 + up * 0.15 + spec;
 }
 
-fn qrModuleMask(uv: vec2f, neighborMask: u32) -> f32 {
-  let up = (neighborMask & 1u) != 0u;
-  let right = (neighborMask & 2u) != 0u;
-  let down = (neighborMask & 4u) != 0u;
-  let left = (neighborMask & 8u) != 0u;
-  let radius = 0.46;
-  var mask = 1.0;
-  if (!left && !up && uv.x < radius && uv.y < radius) {
-    mask *= 1.0 - step(radius, distance(uv, vec2f(radius, radius)));
-  }
-  if (!right && !up && uv.x > 1.0 - radius && uv.y < radius) {
-    mask *= 1.0 - step(radius, distance(uv, vec2f(1.0 - radius, radius)));
-  }
-  if (!left && !down && uv.x < radius && uv.y > 1.0 - radius) {
-    mask *= 1.0 - step(radius, distance(uv, vec2f(radius, 1.0 - radius)));
-  }
-  if (!right && !down && uv.x > 1.0 - radius && uv.y > 1.0 - radius) {
-    mask *= 1.0 - step(radius, distance(uv, vec2f(1.0 - radius, 1.0 - radius)));
-  }
-  return mask;
-}
 `;
 
 export const CIRCUIT_BOARD_SHADER = /* wgsl */ `
@@ -273,7 +235,8 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let uv = quadUv(vertexIndex);
   let isBoard = instanceIndex == 1u;
   let flatten = stage(0.72, 0.94);
-  let width = (uniforms.gridSize + select(3.2, 0.55, isBoard)) * uniforms.blockSize;
+  let worldWidth = (uniforms.gridSize + select(3.2, 0.55, isBoard)) * uniforms.blockSize;
+  let width = mix(worldWidth, (uniforms.gridSize + 8.0) * uniforms.blockSize, stage(0.28, 0.96));
   let heightCells = select(0.30, 0.18, isBoard);
   let height = mix(heightCells, 0.055, flatten) * uniforms.blockSize;
   let geometry = boxGeometry(face, uv, vec3f(width, height, width));
@@ -292,9 +255,8 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let scan = stage(0.86, 1.0);
   if (input.layer == 0u) {
     let baseLighting = studioLight(input.normal, 0.45);
-    let scanBase = mix(circuitQrSubstrate(), pcbBase(), 0.08);
-    let baseColor = mix(pcbBase() * 0.72, scanBase, scan) * baseLighting;
-    return vec4f(acesToneMap(baseColor), 1.0);
+    let baseColor = acesToneMap(pcbBase() * 0.72 * baseLighting);
+    return vec4f(mix(baseColor, circuitQrSubstrate(), scan), 1.0);
   }
 
   let weave = textureSampleLevel(materialAtlas, materialSampler, atlasUv(0.0, input.uv, 14.0), 0.0);
@@ -363,8 +325,8 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let lighting = studioLight(input.normal, grain.a * 0.7);
   let litColor = worldColor * lighting;
   let materialLock = stage(0.60, 0.93);
-  let finalColor = mix(litColor, circuitQrSubstrate(), materialLock);
-  return vec4f(acesToneMap(finalColor), 1.0);
+  let finalColor = mix(acesToneMap(litColor), circuitQrSubstrate(), materialLock);
+  return vec4f(finalColor, 1.0);
 }
 `;
 
@@ -811,6 +773,7 @@ struct Output {
   @location(5) @interpolate(flat) neighborMask: u32,
   @location(6) @interpolate(flat) finderRole: u32,
   @location(7) @interpolate(flat) blockType: u32,
+  @location(8) @interpolate(flat) cell: vec2f,
 }
 
 @vertex
@@ -846,13 +809,15 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let moduleCenter = boardPoint(position.x, position.y, 0.12);
   output.position = circuitProject(moduleCenter + local + vec3f(wobble, 0.0, -wobble));
   output.normal = geometry[1];
-  output.uv = uv;
+  // The underside quad reverses its Z axis; mask both caps in grid coordinates.
+  output.uv = select(uv, vec2f(uv.x, 1.0 - uv.y), face == 1u);
   output.molten = molten;
   output.tint = fract(sin(position.x * 17.3 + position.y * 31.1) * 43758.5);
   output.visible = select(0u, 1u, activeModule && rise > 0.002);
   output.neighborMask = u32(position.w);
   output.finderRole = role;
   output.blockType = blockType;
+  output.cell = position.xy;
   if (output.visible == 0u) { output.position = vec4f(2.0, 2.0, 2.0, 1.0); }
   return output;
 }
@@ -861,22 +826,24 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
 fn fragmentMain(input: Output) -> @location(0) vec4f {
   if (input.visible == 0u) { discard; }
 
-  let lock = stage(0.88, 1.0);
+  let lock = stage(0.58, 0.98);
   let organicMask = qrModuleMask(input.uv, input.neighborMask);
   if (abs(input.normal.y) > 0.5 && organicMask < 0.5) {
     discard;
   }
 
-  let roleInk = select(circuitQrColor(input.blockType, input.tint), circuitFinderInk(input.finderRole), input.finderRole > 0u);
+  let roleInk = circuitQrInk();
   let edgeDistance = min(min(input.uv.x, 1.0 - input.uv.x), min(input.uv.y, 1.0 - input.uv.y));
   let platedInset = 1.0 - smoothstep(0.045, 0.13, edgeDistance);
   let contactInk = mix(roleInk, goldPad(), platedInset * 0.075);
   let scanMaterial = select(contactInk * 0.82, contactInk, input.normal.y > 0.5);
-  // Locked modules keep per-module brightness variation like the tree QR.
+  // Keep the solder detail during the reveal, then lock to the shared ink.
   let cooled = scanMaterial * (0.94 + input.tint * 0.09);
   let moltenColor = mix(goldPad(), solderMaterial() * 1.08, 0.4 * input.molten)
     * (1.05 + input.molten * 0.48);
-  let finalColor = mix(cooled, moltenColor, input.molten);
-  return vec4f(acesToneMap(finalColor), 1.0);
+  let livingColor = acesToneMap(mix(cooled, moltenColor, input.molten));
+  let ink = qrModuleMaterial(input.blockType, input.cell);
+  let scanColor = select(ink * 0.82, ink, input.normal.y > 0.5);
+  return vec4f(mix(livingColor, scanColor, lock), 1.0);
 }
 `;

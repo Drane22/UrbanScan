@@ -47,13 +47,9 @@ fn darkAt(x:i32,y:i32)->bool {
 // City/Terrain's exposed-corner rule; connected modules have no gaps.
 fn roundedModule(uv:vec2f,owner:u32)->f32 {
   let cell=blockPositions[owner].xy;let x=i32(cell.x);let y=i32(cell.y);
-  let up=darkAt(x,y-1);let right=darkAt(x+1,y);let down=darkAt(x,y+1);let left=darkAt(x-1,y);
-  let radius=0.46;var center=uv;
-  if(!left && !up && uv.x<radius && uv.y<radius){center=vec2f(radius);}
-  if(!right && !up && uv.x>1.0-radius && uv.y<radius){center=vec2f(1.0-radius,radius);}
-  if(!left && !down && uv.x<radius && uv.y>1.0-radius){center=vec2f(radius,1.0-radius);}
-  if(!right && !down && uv.x>1.0-radius && uv.y>1.0-radius){center=vec2f(1.0-radius);}
-  return 1.0-step(radius,distance(uv,center));
+  let neighbors=select(0u,1u,darkAt(x,y-1))|select(0u,2u,darkAt(x+1,y))
+    |select(0u,4u,darkAt(x,y+1))|select(0u,8u,darkAt(x-1,y));
+  return qrModuleMask(uv,neighbors);
 }
 @vertex
 fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32)->WorldOutput {
@@ -132,8 +128,7 @@ fn fragmentMain(o:WorldOutput)->@location(0) vec4f {
   else if(o.part==0u){
     let coverage=f32(blockTypes[o.owner]!=0u)*roundedModule(o.uv,o.owner);
     let cell=blockPositions[o.owner].xy;
-    let role=(blockTypes[o.owner]+u32(floor(cell.x/5.0)+floor(cell.y/7.0)))%4u;
-    let ink=qrMaterial(role,fract(sin(dot(cell,vec2f(17.3,31.1)))*43758.5));
+    let ink=qrModuleMaterial(blockTypes[o.owner],cell);
     color=mix(color,mix(paper,ink,coverage),scan);
   }
   return vec4f(clamp(color,vec3f(0),vec3f(1)),1.0);
