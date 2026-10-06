@@ -310,8 +310,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let normal = normalize(input.normal);
   let lit = underwaterLighting(normal, input.world, color, 0.40, color, 0.12);
   let scan = reefStage(0.60, 0.93);
-  let finalColor = mix(acesToneMap(lit), reefQrSubstrate(), scan);
-  return vec4f(finalColor, 1.0);
+  return vec4f(acesToneMap(lit), 1.0 - scan);
 }
 `;
 

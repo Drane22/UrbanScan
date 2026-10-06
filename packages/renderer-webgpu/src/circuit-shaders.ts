@@ -88,9 +88,22 @@ fn circuitQrSubstrate() -> vec3f {
 }
 
 fn circuitQrInk() -> vec3f {
-  return qrMaterial(0u, 0.5);
+  return mix(uniforms.themePrimary.rgb, uniforms.themeThird.rgb, 0.16) * 0.52;
 }
-
+// Preserve Circuit's original bright, tone-mapped materials rather than using
+// the normalized dark inks of the other worlds.
+fn circuitQrColor(blockType: u32, noise: f32) -> vec3f {
+  let ink=circuitQrInk();var color=ink;
+  if(blockType==1u){color=mix(ink,uniforms.themePrimary.rgb,0.35);}
+  else if(blockType==3u){color=mix(ink,uniforms.themeThird.rgb,0.40);}
+  else if(blockType==4u){color=mix(ink,uniforms.themeSecondary.rgb,0.30);}
+  else if(blockType==2u || blockType==5u){color=mix(ink,uniforms.themeFourth.rgb,0.28);}
+  return color*(0.92+fract(noise*5.53)*0.12);
+}
+fn circuitFinderInk(role: u32) -> vec3f {
+  let base=circuitQrInk();let plated=mix(base,goldPad(),0.10);
+  return select(plated,base*0.72,role==2u);
+}
 fn finderRole(column: f32, row: f32) -> u32 {
   let farOrigin = uniforms.gridSize - 7.0;
   var local = vec2f(-1.0);
@@ -256,7 +269,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   if (input.layer == 0u) {
     let baseLighting = studioLight(input.normal, 0.45);
     let baseColor = acesToneMap(pcbBase() * 0.72 * baseLighting);
-    return vec4f(mix(baseColor, circuitQrSubstrate(), scan), 1.0);
+    return vec4f(baseColor, 1.0 - scan);
   }
 
   let weave = textureSampleLevel(materialAtlas, materialSampler, atlasUv(0.0, input.uv, 14.0), 0.0);
@@ -325,8 +338,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let lighting = studioLight(input.normal, grain.a * 0.7);
   let litColor = worldColor * lighting;
   let materialLock = stage(0.60, 0.93);
-  let finalColor = mix(acesToneMap(litColor), circuitQrSubstrate(), materialLock);
-  return vec4f(finalColor, 1.0);
+  return vec4f(acesToneMap(litColor), 1.0 - materialLock);
 }
 `;
 
@@ -826,24 +838,20 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
 fn fragmentMain(input: Output) -> @location(0) vec4f {
   if (input.visible == 0u) { discard; }
 
-  let lock = stage(0.58, 0.98);
   let organicMask = qrModuleMask(input.uv, input.neighborMask);
   if (abs(input.normal.y) > 0.5 && organicMask < 0.5) {
     discard;
   }
 
-  let roleInk = circuitQrInk();
+  let roleInk = select(circuitQrColor(input.blockType, input.tint), circuitFinderInk(input.finderRole), input.finderRole > 0u);
   let edgeDistance = min(min(input.uv.x, 1.0 - input.uv.x), min(input.uv.y, 1.0 - input.uv.y));
   let platedInset = 1.0 - smoothstep(0.045, 0.13, edgeDistance);
   let contactInk = mix(roleInk, goldPad(), platedInset * 0.075);
   let scanMaterial = select(contactInk * 0.82, contactInk, input.normal.y > 0.5);
-  // Keep the solder detail during the reveal, then lock to the shared ink.
+  // Retain the original plated materials and brightness as solder cools.
   let cooled = scanMaterial * (0.94 + input.tint * 0.09);
   let moltenColor = mix(goldPad(), solderMaterial() * 1.08, 0.4 * input.molten)
     * (1.05 + input.molten * 0.48);
-  let livingColor = acesToneMap(mix(cooled, moltenColor, input.molten));
-  let ink = qrModuleMaterial(input.blockType, input.cell);
-  let scanColor = select(ink * 0.82, ink, input.normal.y > 0.5);
-  return vec4f(mix(livingColor, scanColor, lock), 1.0);
+  return vec4f(acesToneMap(mix(cooled, moltenColor, input.molten)), 1.0);
 }
 `;
