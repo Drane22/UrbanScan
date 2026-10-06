@@ -1,6 +1,19 @@
 /** Sixteen sectors and four profile bands (384 vertices) for curved silhouettes. */
 export const DIORAMA_PRIMITIVES_WGSL = /* wgsl */ `
 fn gene(i:u32)->vec4f { return worldData[i%arrayLength(&worldData)]; }
+// Reserved composition genes are independent of individual object records.
+fn worldDNA(slot:u32)->vec4f {return gene(700u+slot);}
+fn sceneVariant(count:u32)->u32 {return min(u32(worldDNA(0u).w*f32(count)),count-1u);}
+// Move the internal axes while retaining all four boundaries of the square.
+fn seededFrame(p:vec3f)->vec3f {
+  let dna=worldDNA(1u);let half=uniforms.gridSize*0.5;
+  var q=p;
+  q.x+=dna.x*uniforms.gridSize*0.40*max(0.0,1.0-abs(p.x)/half);
+  q.z+=dna.y*uniforms.gridSize*0.40*max(0.0,1.0-abs(p.z)/half);
+  q.y*=0.8+worldDNA(2u).w*0.45;
+  q.x*=select(-1.0,1.0,worldDNA(3u).w>0.5);
+  return rotate(q,f32(u32(worldDNA(4u).w*4.0))*PI*0.5);
+}
 fn phase(a:f32,b:f32)->f32 { return smoothstep(a,b,uniforms.progress); }
 fn alive()->f32 { return 1.0-phase(0.0,0.65); }
 fn random(n:f32)->f32 { return fract(sin(n*127.1+gene(0u).w*317.0)*43758.5453); }
@@ -86,7 +99,7 @@ fn spiral(i:u32,count:f32,radius:f32)->vec3f {
 // Stratified planting reaches every edge and corner; jitter avoids a rigid visual grid.
 fn squarePatch(i:u32,width:u32)->vec3f {
   let g=gene(i);
-  let cell=(vec2f(f32(i%width),f32((i/width)%width))+vec2f(0.5)+g.xy*0.32)/f32(width)-vec2f(0.5);
+  let cell=(vec2f(f32(i%width),f32((i/width)%width))+vec2f(0.5)+g.xy*1.1)/f32(width)-vec2f(0.5);
   return vec3f(cell.x*uniforms.gridSize,0.035,cell.y*uniforms.gridSize);
 }
 fn tuft(v:u32,height:f32,width:f32,seed:f32)->vec3f {
