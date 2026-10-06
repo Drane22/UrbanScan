@@ -2,158 +2,126 @@ import { createSculpturalWorldShader } from "./sculptural-world-shaders.js";
 
 export const STAINED_GLASS_SHADER = createSculpturalWorldShader(
   /* wgsl */ `
-fn glassWindows()->u32 {return 3u+u32(gene(700u).w*3.0);}
-fn worldCount()->u32 {return glassWindows()*32u;}
-fn worldAmbientCount()->u32 {return 345u;}
-fn glassCenter(window:u32)->vec3f {
-  let g=gene(710u+window);let variant=u32(gene(701u).w*3.0);
-  let t=f32(window)/f32(glassWindows()-1u);var p=vec3f((t-0.5)*16.0,4.0+g.w*1.7,-2.0+sin(t*PI)*4.0);
-  if(variant==1u){let a=t*PI*1.6+gene(702u).w*PI;p=vec3f(cos(a)*6.5,4.0+g.w*2.2,sin(a)*6.0);}
-  if(variant==2u){p=vec3f((f32(window%2u)-0.5)*10.0,3.4+g.w*3.0,(f32(window/2u)-1.0)*6.4);}
-  p+=vec3f(g.x*2.0,0,g.y*2.0);
-  return p*uniforms.gridSize/25.0;
+fn glassPanels()->u32 {return 5u+u32(worldDNA(5u).w*4.0);}
+fn worldCount()->u32 {return glassPanels()*24u+64u;}
+fn worldAmbientCount()->u32 {return 384u;}
+fn pavilionCenter()->vec3f {return vec3f(worldDNA(6u).x*0.16,0,worldDNA(6u).y*0.16)*uniforms.gridSize;}
+fn panelBase(i:u32)->vec3f {
+  let s=uniforms.gridSize/25.0;let t=f32(i)/f32(glassPanels());let mode=sceneVariant(3u);
+  let a=t*PI*2.0+worldDNA(7u).w*PI;var p=vec3f(cos(a),0,sin(a))*uniforms.gridSize*0.27;
+  if(mode==1u){p=vec3f((t-0.5)*17.0,0,sin(t*PI*2.0)*4.8)*s;}
+  if(mode==2u){let cluster=i%2u;let b=f32(i/2u)*PI*0.65+worldDNA(8u).w*PI;p=vec3f(select(-4.7,4.7,cluster==1u)+cos(b)*3.4,0,sin(b)*5.2)*s;}
+  return pavilionCenter()+p;
 }
-fn glassRadius(window:u32)->f32 {return (2.35+gene(720u+window).w*1.0+select(0.0,0.65,window==u32(gene(703u).w*f32(glassWindows()))))*uniforms.gridSize/25.0;}
-fn glassOrient(p:vec3f,window:u32)->vec3f {
-  let angle=-0.62+gene(730u+window).x*0.9+sin(uniforms.time*0.52+f32(window)*1.8)*0.24*alive();
-  return rotate(p,angle);
+fn panelHeading(i:u32)->f32 {
+  let t=f32(i)/f32(glassPanels());let mode=sceneVariant(3u);
+  if(mode==1u){return -0.35+gene(710u+i).x*0.6;}
+  return -t*PI*2.0-worldDNA(7u).w*PI+PI*0.5;
 }
-fn glassOutline(a:f32,window:u32)->vec2f {
-  let shape=u32(gene(740u+window).w*4.0);var p=vec2f(cos(a),sin(a));
-  if(shape==1u){p*=vec2f(0.73,1.18);}
-  if(shape==2u){p/=abs(p.x)+abs(p.y);p*=vec2f(1.18,1.18);}
-  if(shape==3u){p*=0.88+0.12*cos(a*6.0);}
-  return p;
+fn panePoint(i:u32,u:f32,w:f32)->vec3f {
+  let panel=i/24u;let slot=i%24u;let row=slot/4u;let column=slot%4u;let s=uniforms.gridSize/25.0;
+  let width=(3.1+gene(710u+panel).w*0.8)*s;let height=(3.6+gene(720u+panel).w*1.7)*s;
+  let x=(f32(column)+u)/4.0-0.5;let y=(f32(row)+w)/6.0;
+  let arch=sin((x+0.5)*PI)*1.3*s*y*y;
+  var p=vec3f(x*width,height*y+arch+0.45*s,0);
+  // Each louver pivots on a real vertical hinge; its lead frame follows it.
+  let hinge=vec3f((f32(column)/4.0-0.5)*width,p.y,0);
+  let opening=sin(uniforms.time*(0.48+gene(730u+panel).w*0.24)+f32(row)*0.65+f32(panel))*0.60*alive();
+  p=hinge+rotate(p-hinge,opening);
+  return panelBase(panel)+rotate(p,panelHeading(panel));
 }
-fn glassPoint(i:u32,u:f32,w:f32)->vec3f {
-  let window=i/32u;let slot=i%32u;let band=slot/16u;let sector=slot%16u;
-  let motif=u32(gene(750u+window).w*3.0);
-  let a=(f32(sector)+u)*PI/8.0+gene(720u+window).x;
-  let inner=0.09+gene(750u+window).w*0.13;
-  var middle=0.46+0.13*sin(u*PI);
-  if(motif==1u){middle=0.45+select(-0.10,0.15,sector%2u==0u)*sin(u*PI);}
-  if(motif==2u){middle=0.36+0.22*sin((f32(sector)+u)*PI/4.0)*sin(u*PI);}
-  let r=select(mix(inner,middle,w),mix(middle,0.98,w),band==1u)*glassRadius(window);
-  let outline=glassOutline(a,window);
-  let p=vec3f(outline*r,0.0);
-  // Petal panes hinge around their outer tips in a slow opening wave.
-  let hinge=vec3f(glassOutline((f32(sector)+0.5)*PI/8.0+gene(720u+window).x,window)*glassRadius(window),0);
-  let opening=(0.30+0.30*sin(uniforms.time*0.72+f32(sector/2u)*0.7+f32(window)))*alive();
-  return glassCenter(window)+glassOrient(hinge+rotate(p-hinge,opening),window);
+fn canopyPoint(i:u32,u:f32,w:f32)->vec3f {
+  let s=uniforms.gridSize/25.0;let a=(f32(i)+u)*PI/32.0+worldDNA(9u).w*PI;
+  let inner=(1.5+worldDNA(10u).w)*s;let outer=(5.0+worldDNA(11u).w*1.2)*s;
+  let radius=mix(inner,outer,w);let petals=6.0+floor(worldDNA(12u).w*5.0);
+  let breathe=sin(uniforms.time*0.60+a*3.0)*0.45*w*alive();
+  let h=(6.6+worldDNA(13u).w*1.4)*s+cos(w*PI*0.5)*1.3*s+sin(a*petals)*0.32*w*s+breathe*s;
+  return pavilionCenter()+vec3f(cos(a)*radius,h,sin(a)*radius);
 }
-fn worldAnchor(i:u32)->vec3f {return glassPoint(i,0.5,0.5);}
-fn worldFoundation(v:u32)->Surface {
-  return tile(v,mix(palette(0),palette(2),0.12),mix(palette(0),palette(3),0.1),0.19,3.0);
+fn worldAnchor(i:u32)->vec3f {
+  if(i<glassPanels()*24u){return panePoint(i,0.5,0.5);}
+  return canopyPoint(i-glassPanels()*24u,0.5,0.5);
 }
-fn glassFloorPoint(i:u32,u:f32,w:f32)->vec3f {
-  let band=i/32u;let sector=i%32u;
-  let radial=(f32(band)+w)/8.0;
-  let a=(f32(sector)+u)*PI/16.0+gene(704u).w*PI+sin(radial*PI)*gene(705u).x*1.4;
-  let petals=4.0+floor(gene(706u).w*5.0)*2.0;
-  let ripple=radial+sin(a*petals)*0.045*sin(radial*PI);
-  let direction=vec2f(cos(a),sin(a));
-  let center=gene(707u).xy*uniforms.gridSize*0.30;
-  let boundary=direction/max(abs(direction.x),abs(direction.y))*uniforms.gridSize*0.499;
-  let point=mix(center,boundary,ripple);
-  return vec3f(point.x,0.045,point.y);
+fn jewel(v:u32,r:f32)->vec3f {
+  let p=sphere(v,vec3f(1));return p/max(abs(p.x)+abs(p.y)+abs(p.z),0.001)*vec3f(r,r*1.75,r);
 }
+fn worldFoundation(v:u32)->Surface {return tile(v,mix(palette(0),palette(2),0.20),mix(palette(0),palette(3),0.24),0.8,3.0);}
 fn worldSurface(v:u32,i:u32,part:u32)->Surface {
-  let q=squarePoint(v)+vec2f(0.5);let window=i/32u;let sector=i%16u;let band=(i%32u)/16u;
-  let motif=u32(gene(750u+window).w*3.0);
-  let jewel=palette(f32(1u+(sector/(1u+motif)+band+window)%3u));
+  let s=uniforms.gridSize/25.0;let uv=squarePoint(v)+vec2f(0.5);
+  let wall=i<glassPanels()*24u;let slot=select(i-glassPanels()*24u,i,wall);
+  let band=select(slot/8u,(i%24u)/4u,wall);let panel=i/24u;
+  let color=palette(f32(1u+(band+panel+u32(worldDNA(14u).w*3.0))%3u));
   if(part==0u){
-    var p=glassPoint(i,q.x,q.y);let d=disk(v);p.z+=0.06+0.08*(1.0-length(d));
-    let shimmer=0.9+sin(uniforms.time*0.55+p.x*0.45+p.y*0.33)*0.10*alive();
-    return surface(p,jewel*shimmer,0.5);
+    var p=canopyPoint(slot,uv.x,uv.y);if(wall){p=panePoint(i,uv.x,uv.y);}
+    let hammered=0.90+0.10*sin(p.x*2.3+p.y*3.1+p.z*1.5+uniforms.time*0.32*alive());
+    return surface(p,color*hammered,0.48);
   }
-  if(part==1u){return surface(bridge(v,glassPoint(i,0,0),glassPoint(i,0,1),0.04),palette(0),0.2);}
+  if(part==1u){
+    var a=canopyPoint(slot,0,0);var b=canopyPoint(slot,0,1);
+    if(wall){a=panePoint(i,0,0);b=panePoint(i,0,1);}
+    return surface(bridge(v,a,b,0.045*s),mix(palette(0),palette(3),0.12),0.25);
+  }
   if(part==2u){
-    let uv=quad(v);let t=(f32(v/6u)+uv.x)/64.0;
-    let a=glassPoint(i,t,1.0);let b=glassPoint(i,min(t+0.016,1.0),1.0);
-    return surface(mix(a,b,uv.x)+vec3f(0,0,(uv.y-0.5)*0.085),palette(0),0.2);
+    let q=quad(v);let t=(f32(v/6u)+q.x)/64.0;var a=canopyPoint(slot,t,1.0);var b=canopyPoint(slot,min(t+0.016,1.0),1.0);
+    if(wall){a=panePoint(i,t,1.0);b=panePoint(i,min(t+0.016,1.0),1.0);}
+    return surface(mix(a,b,q.x)+vec3f(0,(q.y-0.5)*0.085*s,0.045*s),palette(0),0.25);
   }
-  let c=glassPoint(i,0,0)+vec3f(0,0,0.07);
-  return surface(c+sphere(v,vec3f(0.055)),mix(palette(3),uniforms.themeFifth.rgb,0.25),0.4);
+  var c=canopyPoint(slot,0,0);if(wall){c=panePoint(i,0,0);}
+  return surface(c+jewel(v,0.075*s),mix(palette(3),uniforms.themeFifth.rgb,0.2),0.55);
 }
-fn glassFlower(v:u32,radius:f32,seed:f32)->vec3f {
-  let petal=(v/48u)%8u;let local=v%48u;let uv=quad(local);
-  let t=(f32(local/6u)+uv.y)/8.0;let across=(uv.x-0.5)*2.0;
-  let p=vec3f(across*sin(t*PI)*radius*0.28,(0.1+t*t*0.52)*radius,t*radius);
-  return rotate(p,f32(petal)*PI/4.0+seed);
+fn floorPoint(i:u32,q:vec2f)->vec3f {
+  let cell=uniforms.gridSize/16.0;let uv=(vec2f(f32(i%16u),f32(i/16u))+q)/16.0-vec2f(0.5);
+  return vec3f(uv.x*uniforms.gridSize,0.045,uv.y*uniforms.gridSize);
 }
 fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
-  let g=gene(i+140u);let s=uniforms.gridSize/25.0;
-  if(i<5u){
-    if(i>=glassWindows()){return surface(vec3f(0),palette(0),0);}
-    let c=glassCenter(i);let radius=glassRadius(i);
-    if(part==4u){return surface(vec3f(c.x,0,c.z),palette(0),0.0);}
-    if(part==0u){let p=ring(v,radius,0.085*s);let a=atan2(p.z,p.x);let outline=glassOutline(a,i)*length(p.xz);return surface(c+glassOrient(vec3f(outline,p.y),i),mix(palette(0),palette(3),0.1),0.3);}
-    if(part==1u){
-      let side=select(-1.0,1.0,v>=192u);let foot=vec3f(c.x+side*radius*0.7,0,c.z);
-      return surface(bridge(v,foot,c+glassOrient(vec3f(side*radius*0.7,-radius*0.7,0),i),0.11*s),palette(0),0.15);
-    }
-    if(part==2u){return surface(vec3f(c.x,0,c.z)+box(v,vec3f(radius*1.7,0.19*s,0.65*s)),mix(palette(0),palette(3),0.16),0.2);}
-    return surface(c+sphere(v,vec3f(0.24*s)),palette(3),0.8);
+  let g=gene(i+160u);let s=uniforms.gridSize/25.0;let q=squarePoint(v)+vec2f(0.5);
+  if(i<256u){
+    let c=floorPoint(i,vec2f(0.5));if(part==4u){return surface(c,palette(0),0);}
+    let p=floorPoint(i,q);let local=p.xz-pavilionCenter().xz;let angle=atan2(local.y,local.x);
+    let motif=4.0+floor(worldDNA(15u).w*5.0);let petal=sin(angle*motif+length(local)*0.35);
+    let color=select(palette(2),palette(1),petal>0.0);
+    let light=0.5+0.5*sin(angle*3.0-uniforms.time*0.35*alive()+length(local)*0.24);
+    let mosaic=mix(color,palette(3),light*0.35)*(.78+light*0.24);
+    if(part==0u){return surface(p,mosaic,0.25+light*0.25);}
+    if(part==1u){let uv=quad(v);return surface(floorPoint(i,vec2f(uv.x,0))+vec3f(0,0.012,(uv.y-0.5)*0.055*s),palette(0),0.1);}
+    if(part==2u){let uv=quad(v);return surface(floorPoint(i,vec2f(0,uv.x))+vec3f((uv.y-0.5)*0.055*s,0.012,0),palette(0),0.1);}
+    if((i%16u+i/16u)%3u==0u){return surface(c+rotate(jewel(v,0.16*s),g.w*PI),mix(color,uniforms.themeFifth.rgb,0.20),0.4);}
+    return surface(c,palette(0),0);
   }
-  if(i<261u){
-    let slot=i-5u;let q=squarePoint(v)+vec2f(0.5);let center=glassFloorPoint(slot,0.5,0.5);
-    if(part==4u){return surface(center,palette(0),0.0);}
-    if(part==0u){
-      let p=glassFloorPoint(slot,q.x,q.y);let band=slot/32u;let sector=slot%32u;
-      let motif=1u+u32(gene(708u).w*4.0);
-      let petal=sin((f32(sector)+0.5)*PI/f32(motif+1u)+f32(band)*gene(709u).w*2.0);
-      let main=select(palette(2),palette(1),petal>0.0);
-      let color=select(mix(main,uniforms.themeFifth.rgb,0.22),mix(palette(3),uniforms.themeFifth.rgb,0.1),(band+motif)%4u==0u);
-      let glimmer=0.86+sin(uniforms.time*0.5+p.x*0.24+p.z*0.31)*0.10*alive();
-      return surface(p,color*glimmer,0.4);
-    }
-    if(part==1u){
-      let uv=quad(v);let t=(f32(v/6u)+uv.x)/64.0;
-      let a=f32(slot%32u)*PI/16.0;
-      let p=glassFloorPoint(slot,0,t)+vec3f(-sin(a)*(uv.y-0.5)*0.09*s,0.027,cos(a)*(uv.y-0.5)*0.09*s);
-      return surface(p,palette(0),0.1);
-    }
-    if(part==2u){
-      let uv=quad(v);let t=(f32(v/6u)+uv.x)/64.0;
-      let p=glassFloorPoint(slot,t,1.0);
-      let a=(f32(slot%32u)+t)*PI/16.0;
-      return surface(p+vec3f(cos(a)*(uv.y-0.5)*0.09*s,0.029,sin(a)*(uv.y-0.5)*0.09*s),palette(0),0.1);
-    }
-    return surface(center,palette(0),0.0);
+  if(i<304u){
+    let slot=i-256u;let a=f32(slot)/48.0*PI*2.0+worldDNA(9u).w*PI;let radius=(2.2+f32(slot%3u)*1.25)*s;
+    let anchor=pavilionCenter()+vec3f(cos(a)*radius,(6.5+worldDNA(13u).w)*s,sin(a)*radius);
+    let length=(0.7+g.w*1.8)*s;let sway=sin(uniforms.time*(0.65+g.w*0.25)+g.w*18.0)*0.55*alive();
+    let head=anchor+vec3f(sin(sway)*length,-cos(sway)*length,cos(sway*1.3)*0.25*s);
+    if(part==4u){return surface(anchor,palette(0),0);}
+    let size=select(0.28+g.w*0.18,0.62+g.w*0.22,slot%6u==0u)*s;
+    if(part==0u){return surface(head+rotate(jewel(v,size),uniforms.time*(0.25+g.w)*alive()),palette(f32(1u+slot%3u)),0.65);}
+    if(part==1u){return surface(bridge(v,anchor,head,0.018*s),mix(palette(0),palette(3),0.25),0.2);}
+    if(part==2u){return surface(head+ring(v,size*1.25,0.035*s),palette(3),0.6);}
+    return surface(head+sphere(v,vec3f(0.075*s)),uniforms.themeFifth.rgb,0.9);
   }
-  if(i<325u){
-    let slot=i-261u;let edge=slot/16u;let t=(f32(slot%16u)+0.5)/16.0;
-    let half=uniforms.gridSize*0.46;
-    var c=vec3f(mix(-half,half,t),0.08,-half);
-    if(edge==1u){c=vec3f(half,0.08,mix(-half,half,t));}
-    if(edge==2u){c=vec3f(mix(-half,half,t),0.08,half);}
-    if(edge==3u){c=vec3f(-half,0.08,mix(-half,half,t));}
-    if(part==4u){return surface(c,palette(0),0.0);}
-    let height=(0.35+g.w*0.6)*s;
-    let bend=vec3f(sin(uniforms.time*0.6+g.w*16.0)*0.07,0,cos(uniforms.time*0.5+g.w*13.0)*0.06)*alive();
-    let head=c+vec3f(0,height,0)+bend;
-    if(part==0u){return surface(head+glassFlower(v,(0.38+g.w*0.18)*s,g.w),mix(palette(3),uniforms.themeFifth.rgb,0.15),0.45);}
-    if(part==1u){return surface(bridge(v,c,head,0.028*s),palette(0),0.2);}
-    if(part==2u){return surface(head+sphere(v,vec3f(0.075*s)),palette(1),0.8);}
-    return surface(c+rotate(blade(v,height*0.7,0.12,g.w),g.w*6.28),palette(2),0.3);
+  if(i<336u){
+    let slot=i-304u;let panel=slot%glassPanels();let side=select(-1.0,1.0,(slot/glassPanels())%2u==0u);
+    let base=panelBase(panel)+rotate(vec3f(side*2.05*s,0,0),panelHeading(panel));
+    let height=(5.0+gene(720u+panel).w*1.7)*s;
+    if(part==4u){return surface(base,palette(0),0);}
+    if(part==0u){return surface(base+cylinder(v,0.15*s,height),mix(palette(0),palette(3),0.18),0.22);}
+    if(part==1u){return surface(base+box(v,vec3f(0.65*s,0.25*s,0.65*s)),palette(0),0.18);}
+    if(part==2u){return surface(base+vec3f(0,height-0.12*s,0)+ring(v,0.32*s,0.08*s),palette(3),0.3);}
+    return surface(base+vec3f(0,height+0.28*s,0)+jewel(v,0.24*s),palette(3),0.5);
   }
-  let c=vec3f(g.x*uniforms.gridSize*0.75,0,g.y*uniforms.gridSize*0.75);
+  if(i<360u){
+    let a=uniforms.time*(0.12+g.w*0.08)*alive()+g.w*PI*2.0;
+    let r=uniforms.gridSize*(0.32+g.x*0.12);let p=pavilionCenter()+vec3f(cos(a)*r,(1.3+g.z*1.3+sin(a*2.0)*0.3)*s,sin(a)*r);
+    if(part==4u){return surface(p,palette(0),0);}
+    if(part==0u){return surface(p+rotate(jewel(v,(0.18+g.w*0.14)*s),a*2.0),palette(f32(1u+i%3u)),0.55);}
+    return surface(p,palette(0),0);
+  }
+  let a=f32(i-360u)*PI/12.0+uniforms.time*0.28*alive();let r=uniforms.gridSize*0.39;
+  let c=pavilionCenter()+vec3f(cos(a)*r,0.06,sin(a)*r);
   if(part==4u){return surface(c,palette(0),0);}
-  let a=uniforms.time*(0.30+g.w*0.20)+g.w*PI*2.0;
-  let path=c+vec3f(sin(a)*2.1,2.2+g.z*2.1+sin(a*1.7)*0.75,cos(a)*1.8)*s;
-  let color=mix(palette(f32(1u+i%3u)),uniforms.themeFifth.rgb,0.30);
-  if(i<337u){
-    if(part==0u){return surface(path+rotate(butterfly(v,g.w,(0.65+g.w*0.40)*s),-a),color,0.65);}
-    if(part==1u){return surface(path+rotate(box(v,vec3f(0.065*s,0.07*s,0.4*s)),-a),palette(0),0.3);}
-    return surface(path,palette(0),0);
-  }
-  if(part==0u){
-    let uv=quad(v);let t=(f32(v/6u)+uv.x)/64.0;
-    let b=a-t*0.9;let p=c+vec3f(sin(b)*2.1,2.2+g.z*2.1+sin(b*1.7)*0.75,cos(b)*1.8)*s;
-    return surface(p+vec3f(0,(uv.y-0.5)*0.21*s*sin(t*PI),0),color,0.8);
-  }
-  if(part==1u){return surface(path+sphere(v,vec3f(0.12*s)),uniforms.themeFifth.rgb,0.9);}
-  return surface(path,palette(0),0);
+  if(part==0u){return surface(c+rotate(box(v,vec3f(0.85*s,0.008*s,0.22*s)),a),mix(palette(f32(1u+i%3u)),uniforms.themeFifth.rgb,0.35),0.8);}
+  return surface(c,palette(0),0);
 }
 `,
   3,
