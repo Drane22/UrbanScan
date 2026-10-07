@@ -10,6 +10,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      "@every-qrcode/renderer-webgpu/world-options": fileURLToPath(
+        new URL("../../packages/renderer-webgpu/src/world-options.ts", import.meta.url),
+      ),
       "@every-qrcode/renderer-webgpu": fileURLToPath(
         new URL("../../packages/renderer-webgpu/src/index.ts", import.meta.url),
       ),

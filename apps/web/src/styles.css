@@ -240,6 +240,11 @@ input {
   font-weight: 750;
   color: #1a1a1a;
 }
+.palette-description {
+  color: #6c766d;
+  font-size: 10px;
+  line-height: 1.3;
+}
 
 .palette-selector {
   display: flex;
