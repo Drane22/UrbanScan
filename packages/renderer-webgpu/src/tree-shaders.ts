@@ -263,7 +263,10 @@ fn fragmentMain(input: BlockOutput) -> @location(0) vec4f {
   }
   let snowCover = sceneSnow() * (1.0 - qrReveal) * step(0.5, normal.y) * snowPatch;
   color = mix(color, themeSnow(), snowCover);
-  return vec4f(color, 1.0);
+  let coverage = select(0.0, qrModuleMask(input.uv, input.neighborMask), input.blockType != 0u);
+  let alpha = mix(1.0, coverage, qrReveal);
+  if (alpha < 0.001) { discard; }
+  return vec4f(color, alpha);
 }
 `;
 

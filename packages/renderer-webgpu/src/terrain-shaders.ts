@@ -74,14 +74,49 @@ fn terrainSample(p:vec2f)->f32 {
  return mix(mix(blockHeights[u32(c.y*n+c.x)],blockHeights[u32(c.y*n+next.x)],f.x),
  mix(blockHeights[u32(next.y*n+c.x)],blockHeights[u32(next.y*n+next.x)],f.x),f.y);
 }
-fn terrainRiver(p:vec2f)->f32 {
+fn terrainRiverDistance(p:vec2f)->f32 {
  let n=uniforms.gridSize;let g=terrainGene(705u);let axis=select(p,p.yx,g.w>0.5);
  let bend=sin(axis.y/n*7.0+g.x*6.28)*n*(0.12+g.z*0.035)+g.y*n*0.35;
- return 1.0-smoothstep(n*0.027,n*0.051,abs(axis.x-bend));
+ return abs(axis.x-bend);
 }
+fn terrainRiver(p:vec2f)->f32 {
+ return 1.0-smoothstep(uniforms.gridSize*0.027,uniforms.gridSize*0.051,terrainRiverDistance(p));
+}
+// Smooth, link-seeded hills replace peaks copied from individual QR cells.
 fn terrainElevation(p:vec2f)->f32 {
- let value=terrainSample(p);let raw=terrainReliefProfile(value)*uniforms.gridSize/25.0;
- return mix(raw,0.30*uniforms.gridSize/25.0,terrainRiver(p));
+ let n=uniforms.gridSize;let q=p/n;var hills=0.0;
+ for(var i=0u;i<5u;i++){
+  let g=terrainGene(710u+i);let center=g.xy*0.90;
+  let d=(q-center)*vec2f(1.0,0.72+g.z*0.30);
+  hills+=exp(-dot(d,d)*(15.0+g.w*15.0))*(1.4+g.z*1.2);
+ }
+ let edge=1.0-smoothstep(0.32,0.53,max(abs(q.x),abs(q.y)));
+ let raw=(0.40+hills*(0.55+edge*0.45)+terrainReliefProfile(terrainSample(p))*0.010)*n/25.0;
+ // Wide, eased banks give the stream a rounded valley instead of a sheer trench.
+ let valley=1.0-smoothstep(n*0.030,n*0.145,terrainRiverDistance(p));
+ return mix(raw,0.24*n/25.0,valley);
+}
+// Foliage stays attached while the land turns into QR columns, in both directions.
+fn terrainTransitionElevation(p:vec2f)->f32 {
+ let growth=1.0-uniforms.progress;
+ let rise=smoothstep(0.02,0.28,growth)*(1.0-smoothstep(0.50,0.94,growth));
+ return mix(terrainElevation(p),0.11,smoothstep(0.28,0.90,uniforms.progress))
+  +rise*(0.8+terrainSample(p)*2.8);
+}
+fn terrainGrassColor()->vec3f {
+ let style=u32(uniforms.camera.w);
+ var grass=vec3f(0.29,0.49,0.25);
+ if(style==1u){grass=vec3f(0.69,0.49,0.20);}
+ if(style==2u){grass=vec3f(0.63,0.35,0.48);}
+ if(style==3u){grass=vec3f(0.23,0.48,0.48);}
+ return mix(grass,uniforms.terrainMeadow.rgb,0.18);
+}
+fn terrainStreamColor()->vec3f {
+ let style=u32(uniforms.camera.w);
+ var water=uniforms.themeFourth.rgb;
+ if(style==2u){water=uniforms.themeSecondary.rgb;}
+ if(style==3u){water=uniforms.themeThird.rgb;}
+ return mix(water,uniforms.terrainWater.rgb,0.10);
 }
 `;
 
@@ -117,7 +152,7 @@ fn terrainHeightAt(column: i32, row: i32) -> f32 {
   if (column < 0 || column >= size || row < 0 || row >= size) {
     return 0.0;
   }
-  return blockHeights[u32(row * size + column)];
+  return terrainElevation(vec2f(f32(column),f32(row))+vec2f(0.5-f32(size)*0.5))/10.0;
 }
 
 fn terrainValley(height: f32, column: i32, row: i32) -> f32 {
@@ -195,8 +230,8 @@ fn vertexMain(
   );
   let uv = quad[quadIndex];
   if(instanceIndex==u32(uniforms.gridSize*uniforms.gridSize)){
-    let n=uniforms.gridSize;let base=2.4*n/25.0*(1.0-uniforms.progress);
-    let extent=mix(n,n+8.0,uniforms.progress)*uniforms.blockSize;
+    let n=uniforms.gridSize;let base=1.05*n/25.0*(1.0-uniforms.progress);
+    let extent=n*uniforms.blockSize;
     let g=terrainGeometry(faceIndex,uv,extent,base*uniforms.blockSize,vec3f(0,1,0));
     output.world=g[0]-vec3f(0,(base+0.045)*uniforms.blockSize,0);
     output.position=terrainProject(output.world);output.normal=g[1];output.uv=uv;
@@ -211,20 +246,24 @@ fn vertexMain(
   let cell=positionData.xy+vec2f(0.5)-vec2f(uniforms.gridSize*0.5);
   let terrainHeight = blockSize * terrainElevation(cell);
   let flatHeight = blockSize * 0.11;
-  let height = mix(terrainHeight, flatHeight, uniforms.progress);
+  let scan=smoothstep(0.28,0.90,uniforms.progress);
+  let growth=1.0-uniforms.progress;
+  let rise=smoothstep(0.02,0.28,growth)*(1.0-smoothstep(0.50,0.94,growth));
+  let columnRise=rise*(0.8+heightValue*2.8)*blockSize;
+  let height = mix(terrainHeight, flatHeight, scan)+columnRise;
   let footprint = blockSize;
   let topNormal = vec3f(0.0, 1.0, 0.0);
   var geometry = terrainGeometry(faceIndex, uv, footprint, height, topNormal);
   var local=geometry[0];
   if(faceIndex!=1u){
     let corner=cell+local.xz/blockSize;
-    let top=mix(terrainElevation(corner)*blockSize,flatHeight,uniforms.progress);
+    let top=mix(terrainElevation(corner)*blockSize,flatHeight,scan)+columnRise;
     local.y=select(top*uv.y,top,faceIndex==0u);
     geometry[0]=local;
     if(faceIndex==0u){
       let dx=terrainElevation(corner+vec2f(0.35,0))-terrainElevation(corner-vec2f(0.35,0));
       let dz=terrainElevation(corner+vec2f(0,0.35))-terrainElevation(corner-vec2f(0,0.35));
-      geometry[1]=normalize(mix(vec3f(-dx,0.70,-dz),vec3f(0,1,0),uniforms.progress));
+      geometry[1]=normalize(mix(vec3f(-dx,0.70,-dz),vec3f(0,1,0),scan));
     }
   }
   let halfGrid = uniforms.gridSize * blockSize * 0.5;
@@ -246,11 +285,11 @@ fn vertexMain(
   output.position = terrainProject(worldPosition);
   output.normal = normal;
   output.uv = uv;
-  output.heightValue = heightValue;
+  output.heightValue = clamp(terrainElevation(cell)/6.0,0.0,1.0);
   output.heightFraction = clamp(geometry[0].y / max(height, 0.00001), 0.0, 1.0);
   output.shade = mix(shade, 1.0, uniforms.progress);
-  output.castShadow = terrainShadow(heightValue, column, row);
-  output.valleyOcclusion = terrainValley(heightValue, column, row);
+  output.castShadow = terrainShadow(terrainElevation(cell)/10.0, column, row);
+  output.valleyOcclusion = terrainValley(terrainElevation(cell)/10.0, column, row);
   output.rimLight = pow(1.0 - viewDot, 3.8);
   output.fresnel = pow(1.0 - viewDot, 2.4);
   output.blockType = blockTypes[instanceIndex];
@@ -321,27 +360,30 @@ fn fragmentMain(input: TerrainOutput) -> @location(0) vec4f {
     let layers=sin(coord.y*14.0+sin(coord.x*0.7)*1.3)*0.5+0.5;
     let pores=terrainHash(floor(coord.xz*18.0)+vec2f(floor(coord.y*21.0)));
     let stone=mix(uniforms.themePrimary.rgb,uniforms.themeThird.rgb,0.10+layers*0.25)*(0.84+pores*0.22)*input.shade;
-    return vec4f(mix(stone,paper,smoothstep(0.50,0.98,progress)),1);
+    let alpha=1.0-smoothstep(0.44,0.96,progress);
+    if(alpha<0.001){discard;}
+    return vec4f(stone,alpha);
   }
   var terrainColor = terrainBandColor(input.heightValue);
-  // Stable mineral bands use world coordinates, so faces share the same rock layers.
-  let h=input.heightValue;let river=terrainRiver(coord.xz);let style=u32(uniforms.camera.w);
-  let mineral=mix(uniforms.themeThird.rgb,uniforms.themeFourth.rgb,smoothstep(0.22,0.75,h)*0.55);
-  terrainColor=mix(terrainColor,mineral,0.86);
-  terrainColor=mix(terrainColor,uniforms.themeFifth.rgb,smoothstep(0.66,1.0,h)*0.5);
-  let veins=pow(0.5+0.5*sin(coord.x*2.2+coord.z*1.9+sin(coord.z*0.7)*2.0),15.0);
-  let strata=0.5+0.5*sin(coord.y*9.0+sin(coord.x*0.5)*2.0);
-  terrainColor=mix(terrainColor,uniforms.themePrimary.rgb,strata*select(0.12,0.30,input.faceIndex>1u));
-  terrainColor=mix(terrainColor,uniforms.themeSecondary.rgb,veins*0.30);
-  let flow=0.5+0.5*sin(coord.z*2.2+coord.x*1.3-uniforms.time*2.3);
-  let water=mix(uniforms.themeFourth.rgb,uniforms.themeSecondary.rgb,0.20+flow*0.20);
-  terrainColor=mix(terrainColor,water,river*0.88);
-  if(style==1u){terrainColor=mix(terrainColor,uniforms.themeSecondary.rgb,river*(0.7+flow*0.25));}
-  if(style==3u){terrainColor+=uniforms.themeSecondary.rgb*veins*pow(max(sin(coord.x*0.20-uniforms.time*0.9),0.0),12.0)*0.24;}
-  let grit=terrainHash(floor(coord.xz*15.0)+vec2f(floor(coord.y*19.0)));
-  let fissure=pow(max(sin(coord.x*2.7+sin(coord.z*2.2)*3.0+coord.y*0.8),0.0),40.0);
-  terrainColor*=0.94+grit*0.12;
-  terrainColor=mix(terrainColor,uniforms.themePrimary.rgb,fissure*0.12);
+  // Ground cover spans the whole square, including corners and river banks.
+  let river=terrainRiver(coord.xz);
+  let grain=terrainHash(floor(coord.xz*19.0));
+  let patches=0.5+0.5*sin(coord.x*0.67+sin(coord.z*0.54)*1.7);
+  let leafMarks=pow(max(sin(coord.x*24.0+sin(coord.z*21.0)*2.0),0.0),7.0);
+  let moss=mix(terrainGrassColor(),terrainColor,0.10);
+  terrainColor=mix(moss*0.79,mix(moss,uniforms.terrainShore.rgb,0.32),patches*0.65+grain*0.25);
+  terrainColor*=0.94+grain*0.12+leafMarks*0.10;
+  let bank=smoothstep(0.02,0.25,river)*(1.0-smoothstep(0.60,0.95,river));
+  terrainColor=mix(terrainColor,uniforms.terrainShore.rgb,bank*0.70);
+  let flow=0.5+0.5*sin(coord.z*5.0+coord.x*3.3-uniforms.time*2.1);
+  let crossFlow=pow(max(sin(coord.z*11.0-coord.x*3.0-uniforms.time*2.7),0.0),16.0);
+  let water=mix(terrainStreamColor()*0.68,terrainStreamColor(),flow*0.45+0.35);
+  terrainColor=mix(terrainColor,water+vec3f(crossFlow*0.12),river);
+  if(input.faceIndex>1u){
+    let strata=0.5+0.5*sin(coord.y*13.0+sin(coord.x*0.75+coord.z)*1.3);
+    let soil=mix(uniforms.themePrimary.rgb,uniforms.themeThird.rgb,0.20+strata*0.32);
+    terrainColor=mix(soil,terrainColor,smoothstep(0.82,0.98,input.heightFraction));
+  }
   terrainColor *= mix(0.72, 1.06, input.shade);
   let contact = mix(0.82, 1.0, smoothstep(0.0, 0.72, input.heightFraction));
   terrainColor *= mix(contact, 1.0, progress);
@@ -367,6 +409,8 @@ fn fragmentMain(input: TerrainOutput) -> @location(0) vec4f {
   }
   var color = mix(terrainColor, qrColor, smoothstep(0.58, 0.98, progress));
   color += (noise - 0.5) * 0.022 * (1.0 - progress);
-  return vec4f(clamp(color, vec3f(0.0), vec3f(1.0)), 1.0);
+  let alpha=mix(1.0,isActive*qrMask,smoothstep(0.64,0.96,progress));
+  if(alpha<0.001){discard;}
+  return vec4f(clamp(color, vec3f(0.0), vec3f(1.0)), alpha);
 }
 `;

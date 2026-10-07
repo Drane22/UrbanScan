@@ -59,13 +59,13 @@ fn roundedModule(uv:vec2f,owner:u32)->f32 {
 fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32)->WorldOutput {
   var o:WorldOutput;o.position=vec4f(2,2,2,1);
   let count=u32(uniforms.gridSize*uniforms.gridSize);
-  let size=uniforms.blockSize;let scan=phase(0.28,0.96);
+  let size=uniforms.blockSize;let scan=phase(0.28,0.82);
   let ambientStart=count*4u+1u;
   if(uniforms.progress>=1.0){
-    if(instance>count){return o;}
+    if(instance>=count || blockTypes[instance]==0u){return o;}
     let q=quad(v)-vec2f(0.5);o.owner=instance;
-    if(instance==count){o.world=vec3f(q.x*(uniforms.gridSize+8.0),-0.045,q.y*(uniforms.gridSize+8.0))*size;o.part=9u;}
-    else{let cell=blockPositions[instance].xy+vec2f(0.5)-vec2f(uniforms.gridSize*0.5);o.world=vec3f(cell.x+q.x,0,cell.y+q.y)*size;o.part=0u;}
+    let cell=blockPositions[instance].xy+vec2f(0.5)-vec2f(uniforms.gridSize*0.5);
+    o.world=vec3f(cell.x+q.x,0,cell.y+q.y)*size;o.part=0u;
     o.position=worldProject(o.world,1.68,uniforms.gridSize*size*0.045);o.uv=q+vec2f(0.5);return o;
   }
   if(instance>=ambientStart) {
@@ -84,9 +84,9 @@ fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32
     o.uv=squarePoint(v)+vec2f(0.5);return o;
   }
   if(instance==count*4u) {
-    // The opaque quiet-zone slab grows from the world's own square foundation.
+    // The textured foundation contracts in place and fades out of the QR.
     let foundation=worldFoundation(v);let q=squarePoint(v)*2.0;
-    let edge=box(v,vec3f(uniforms.gridSize+8.0,0.0,uniforms.gridSize+8.0));
+    let edge=box(v,vec3f(uniforms.gridSize,0.0,uniforms.gridSize));
     let destination=edge-vec3f(0,0.045,0);
     let build=smoothstep(0.0,0.5,uniforms.camera.z);
     let p=mix(foundation.p*mix(build,1.0,phase(0.0,0.15)),destination,scan);
@@ -108,21 +108,26 @@ fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32
   ${transformLayout ? "p=seededFrame(p);" : ""}
   if(part==0u){
     let cell=blockPositions[owner].xy+vec2f(0.5)-vec2f(uniforms.gridSize*0.5);
-    p=mix(p,vec3f(cell.x+q.x,0.0,cell.y+q.y),scan);
+    // Flat modules first rise into columns, then absorb into the living forms.
+    let growth=1.0-uniforms.progress;
+    let rise=smoothstep(0.02,0.30,growth)*(1.0-smoothstep(0.50,0.94,growth));
+    let height=rise*(0.8+blockHeights[owner]*3.8)*uniforms.gridSize/25.0;
+    let column=cube(v,vec3f(1.0,height,1.0));
+    p=mix(p,vec3f(cell.x,0,cell.y)+column,scan);
   }
   p.x=clamp(p.x,-uniforms.gridSize*0.5,uniforms.gridSize*0.5);
   p.z=clamp(p.z,-uniforms.gridSize*0.5,uniforms.gridSize*0.5);
   o.world=p*size;o.position=worldProject(o.world,1.68,uniforms.gridSize*size*0.045);
   o.color=settled.color;o.emission=settled.emission;
-  o.uv=q+vec2f(0.5);o.owner=owner;o.part=part;return o;
+  o.uv=mix(q+vec2f(0.5),quad(v),scan);o.owner=owner;o.part=part;return o;
 }
 @fragment
 fn fragmentMain(o:WorldOutput)->@location(0) vec4f {
-  let scan=phase(0.58,0.98);let paper=qrPaper();
+  let scan=phase(0.64,0.96);let paper=qrPaper();
   if(uniforms.progress>=1.0){
-    if(o.part==9u){return vec4f(paper,1);}
     let coverage=f32(blockTypes[o.owner]!=0u)*roundedModule(o.uv,o.owner);
-    return vec4f(mix(paper,qrModuleMaterial(blockTypes[o.owner],blockPositions[o.owner].xy),coverage),1);
+    if(coverage<0.5){discard;}
+    return vec4f(qrModuleMaterial(blockTypes[o.owner],blockPositions[o.owner].xy),1);
   } else {
   let n=normalize(cross(dpdx(o.world),dpdy(o.world))+vec3f(0.000001));
   let light=0.55+abs(dot(n,normalize(vec3f(-0.45,0.85,-0.35))))*0.45;
@@ -140,14 +145,17 @@ fn fragmentMain(o:WorldOutput)->@location(0) vec4f {
   }
   var color=material*mix(light*texture,1.10,clamp(o.emission,0.0,1.0));
   color+=vec3f(pow(max(abs(n.y),0.0),12.0)*o.emission*0.06);
-  if(o.part==9u){color=mix(color,paper,scan);}
+  var alpha=1.0;
+  if(o.part==9u){alpha=1.0-phase(0.44,0.96);}
   else if(o.part==0u){
     let coverage=f32(blockTypes[o.owner]!=0u)*roundedModule(o.uv,o.owner);
     let cell=blockPositions[o.owner].xy;
     let ink=qrModuleMaterial(blockTypes[o.owner],cell);
     color=mix(color,mix(paper,ink,coverage),scan);
+    alpha=mix(1.0,coverage,scan);
   }
-  return vec4f(clamp(color,vec3f(0),vec3f(1)),1.0);
+  if(alpha<0.001){discard;}
+  return vec4f(clamp(color,vec3f(0),vec3f(1)),alpha);
   }
 }
 `;

@@ -455,6 +455,8 @@ fn fragmentMain(input: CityOutput) -> @location(0) vec4f {
   }
   var result = mix(color, qrColor, inkStage);
   result += (noise - 0.5) * 0.02 * (1.0 - inkStage);
-  return vec4f(clamp(result, vec3f(0.0), vec3f(1.0)), 1.0);
+  let alpha = mix(1.0, isActive * qrMask, inkStage);
+  if (alpha < 0.001) { discard; }
+  return vec4f(clamp(result, vec3f(0.0), vec3f(1.0)), alpha);
 }
 `;
