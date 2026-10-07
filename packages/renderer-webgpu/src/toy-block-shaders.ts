@@ -6,9 +6,9 @@ fn worldCount()->u32 {return 136u;}
 fn worldAmbientCount()->u32 {return 384u;}
 fn toyDistrict(i:u32)->vec3f {
   let g=gene(i+270u);let s=uniforms.gridSize/25.0;
-  if(sceneVariant(3u)==1u){return spiral(i,8.0,uniforms.gridSize*0.30)+vec3f(g.x,0,g.y)*s;}
-  let corners=array<vec2f,4>(vec2f(-5,-5),vec2f(5,-5),vec2f(-5,5),vec2f(5,5));
-  let p=(corners[i%4u]+g.xy*3.0)*s;return vec3f(p.x,0,p.y);
+  if(sceneVariant(3u)==1u){return spiral(i,8.0,uniforms.gridSize*0.22)+vec3f(g.x,0,g.y)*s;}
+  let corners=array<vec2f,4>(vec2f(-3.8,-3.8),vec2f(3.8,-3.8),vec2f(-3.8,3.8),vec2f(3.8,3.8));
+  let p=(corners[i%4u]+g.xy*1.6)*s;return vec3f(p.x,0,p.y);
 }
 fn towerHeight(i:u32)->f32 {
   if(sceneVariant(3u)==0u){return 5.75;}
@@ -41,6 +41,26 @@ fn worldAnchor(i:u32)->vec3f {
 }
 fn worldFoundation(v:u32)->Surface {
   return tile(v,mix(uniforms.themeFifth.rgb,palette(3),0.14),mix(palette(0),palette(2),0.35),0.8,6.0);
+}
+// One continuous road profile is shared by the cars, bridge deck and rails.
+fn toyRoadHeight(a:f32)->f32 {
+  let wrapped=abs(atan2(sin(a),cos(a)));
+  return (0.15+3.0*(1.0-smoothstep(0.12,0.70,wrapped)))*uniforms.gridSize/25.0;
+}
+fn toyCarPoint(p:vec3f,a:f32)->vec3f {
+  let r=uniforms.gridSize*0.37;let s=uniforms.gridSize/25.0;
+  let pitch=atan2(toyRoadHeight(a+0.02)-toyRoadHeight(a-0.02),r*0.04);
+  var base=toyRoadHeight(a)+0.325*s;
+  // Fit the rigid chassis above all four tire contacts, including curved ramps.
+  for(var wheel=0u;wheel<4u;wheel++){
+    let x=select(-0.725,0.725,wheel%2u==0u)*s;
+    let z=select(-0.80,0.80,wheel>=2u)*s;let y=-0.325*s;
+    let foot=rotate(vec3f(x*cos(pitch)-y*sin(pitch),0,z),a+PI*0.5)+vec3f(cos(a)*r,0,sin(a)*r);
+    let contact=toyRoadHeight(atan2(foot.z,foot.x));
+    base=max(base,contact-x*sin(pitch)-y*cos(pitch)+0.025*s);
+  }
+  let tilted=vec3f(p.x*cos(pitch)-p.y*sin(pitch),p.x*sin(pitch)+p.y*cos(pitch),p.z);
+  return vec3f(cos(a)*r,base,sin(a)*r)+rotate(tilted,a+PI*0.5);
 }
 fn worldSurface(v:u32,i:u32,part:u32)->Surface {
   let c=worldAnchor(i);let s=uniforms.gridSize/25.0;
@@ -84,18 +104,17 @@ fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
   var ground=squarePatch(select(0u,i-14u,i>=14u),18u);
   if(i>=338u){
     let n=i-338u;
-    if(n<16u){ground=vec3f(8.5,0.12,(f32(n)-7.5)*0.88)*s;}
-    else if(n<30u){ground=vec3f((f32(n-16u)-6.5)*0.72,0.12,8.8)*s;}
-    else{ground=vec3f(-8.7,0.12,(f32(n-30u)-7.5)*1.05)*s;}
+    if(n<16u){let a=(f32(n)+0.5)/16.0*1.4-0.7;ground=vec3f(cos(a)*uniforms.gridSize*0.37,0,sin(a)*uniforms.gridSize*0.37);}
+    else if(n<30u){ground=vec3f((f32(n-16u)-6.5)*0.72,0.12,5.5)*s;}
+    else{ground=vec3f(-5.8,0.12,(f32(n-30u)-7.5)*0.58)*s;}
   }
   if(part==4u){return surface(ground,palette(0),0.0);}
   if(i<14u){
     if(i>=10u+u32(worldDNA(5u).w*4.0)){return surface(ground,palette(0),0.0);}
-    let a=uniforms.time*(0.16+g.w*0.12)+g.w*6.28;
+    let a=uniforms.time*(0.16+g.w*0.12)*alive()+g.w*6.28;
     let carScale=s*2.5;
-    let r=uniforms.gridSize*0.37;let path=vec3f(cos(a)*r,0.30*s,sin(a)*r);
-    let heading=a+PI*0.5;
-    if(part==0u){return surface(path+rotate(box(v,vec3f(0.95,0.30,0.48))*carScale,heading),palette(f32(1u+i%3u)),0.25);}
+    let r=uniforms.gridSize*0.37;
+    if(part==0u){return surface(toyCarPoint(box(v,vec3f(0.95,0.30,0.48))*carScale,a),palette(f32(1u+i%3u)),0.25);}
     if(part<3u){
       let wheel=v/192u;let local=v%192u;let uv=quad(local);
       let wa=(f32((local/6u)%8u)+uv.x)*PI*0.25;let band=local/48u;
@@ -105,9 +124,9 @@ fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
       let wheelAngle=uniforms.time*(0.16+g.w*0.12)*r/0.17*alive();
       let spoke=select(0.82,1.0,sin(atan2(tire.z,tire.x)*6.0-wheelAngle)>0.0);
       let p=vec3f(tire.x+select(-0.29,0.29,wheel==1u), tire.z+0.04, tire.y+select(-0.32,0.23,part==2u));
-      return surface(path+rotate(p*carScale,heading),palette(0)*spoke,0.15);
+      return surface(toyCarPoint(p*carScale,a),palette(0)*spoke,0.15);
     }
-    return surface(path+rotate((box(v,vec3f(0.44,0.24,0.36))+vec3f(-0.05,0.3,0))*carScale,heading),mix(palette(3),uniforms.themeFifth.rgb,0.28),0.3);
+    return surface(toyCarPoint((box(v,vec3f(0.44,0.24,0.36))+vec3f(-0.05,0.3,0))*carScale,a),mix(palette(3),uniforms.themeFifth.rgb,0.28),0.3);
   }
   if(i<338u){
     let cell=uniforms.gridSize/18.0;
@@ -115,19 +134,29 @@ fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
     let r=length(ground.xz)/uniforms.gridSize;
     let road=1.0-smoothstep(0.025,0.065,abs(r-0.36));
     let color=mix(mix(palette(region),uniforms.themeFifth.rgb,0.13+g.w*0.08),mix(palette(0),palette(2),0.36),road*0.84);
-    if(part==0u){return surface(ground+box(v,vec3f(cell*0.94,(0.10+g.w*0.14)*s,cell*0.94)),mix(color,uniforms.themeFifth.rgb,0.16),0.20);}
-    if(part==1u){return surface(ground+vec3f(0,(0.10+g.w*0.14)*s,0)+cylinder(v,cell*0.18,0.07*s),color,0.20);}
-    if(part==2u && i%8u==0u){return surface(ground+box(v,vec3f(cell*0.8,0.40*s,cell*0.8)),color,0.18);}
+    if(part==0u){return surface(ground+box(v,vec3f(cell*0.94,select(0.10+g.w*0.14,0.10,road>0.15)*s,cell*0.94)),mix(color,uniforms.themeFifth.rgb,0.16),0.20);}
+    if(part==1u && road<0.15){return surface(ground+vec3f(0,(0.10+g.w*0.14)*s,0)+cylinder(v,cell*0.18,0.07*s),color,0.20);}
+    if(part==2u && i%8u==0u && road<0.15){return surface(ground+box(v,vec3f(cell*0.8,0.40*s,cell*0.8)),color,0.18);}
     return surface(ground,palette(0),0.0);
   }
   let n=i-338u;let color=palette(f32(1u+(n/4u)%3u));
   if(n<16u){
-    // A stepped climbing bridge spans the entire east playground.
-    let h=(0.3+sin((f32(n)+0.5)/16.0*PI)*2.6)*s;
-    if(part==0u){return surface(ground+box(v,vec3f(1.7*s,h,0.78*s)),color,0.18);}
-    if(part==1u){return surface(ground+vec3f(0,h,0)+cylinder(v,0.27*s,0.11*s),color,0.20);}
-    if(part==2u){return surface(ground+vec3f(0.78*s,h,0)+cylinder(v,0.055*s,0.65*s),palette(3),0.2);}
-    return surface(ground+vec3f(0.78*s,h+0.65*s,0)+box(v,vec3f(0.11*s,0.10*s,0.9*s)),palette(3),0.2);
+    let a=(f32(n)+0.5)/16.0*1.4-0.7;let h=toyRoadHeight(a);
+    let heading=a+PI*0.5;let segment=uniforms.gridSize*0.37*1.4/16.0*1.08;
+    if(part==0u){
+      let local=box(v,vec3f(segment,0.18*s,3.4*s));var p=ground+rotate(local,heading);
+      p.y=toyRoadHeight(atan2(p.z,p.x))+local.y-0.18*s;
+      return surface(p,color,0.18);
+    }
+    let side=select(-1.0,1.0,v>=192u);let edge=ground+rotate(vec3f(0,0,side*1.58*s),heading);
+    if(part==1u){
+      if(n%4u!=0u){return surface(ground,color,0);}
+      return surface(edge+box(v,vec3f(0.22*s,max(0.1*s,h-0.18*s),0.22*s)),palette(2),0.15);
+    }
+    if(part==2u){return surface(edge+vec3f(0,h,0)+cylinder(v%192u,0.06*s,0.72*s),palette(3),0.2);}
+    let local=box(v,vec3f(segment,0.10*s,0.11*s));var p=edge+rotate(local,heading);
+    p.y=toyRoadHeight(atan2(p.z,p.x))+0.72*s+local.y;
+    return surface(p,palette(3),0.2);
   }
   if(n<30u){
     // An articulated conveyor of gears animates the foreground workshop.

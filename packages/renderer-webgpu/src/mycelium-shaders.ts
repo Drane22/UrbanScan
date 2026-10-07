@@ -63,11 +63,20 @@ fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
     let drift=vec3f(sin(uniforms.time*0.5+g.w*19.0)*0.65,1.0+cycle*4.1,cos(uniforms.time*0.3+g.w*7.0)*0.55);
     return surface(c+drift+sphere(v,vec3f(0.13*g.z*sin(cycle*PI))*uniforms.gridSize/25.0),palette(1),0.85);
   }
-  let a=uniforms.time*(0.19+g.w*0.14)+g.w*6.28;
+  let a=uniforms.time*(0.12+g.w*0.10)*alive()+g.w*6.28;
   let s=uniforms.gridSize/25.0;
-  let path=vec3f(cos(a),0,sin(a))*uniforms.gridSize*(0.15+g.w*0.22)+vec3f(0,(2.0+g.z+sin(a*1.7)*0.75)*s,0);
-  if(part==0u){return surface(path+rotate(butterfly(v,g.w,(0.7+g.w*0.4)*s),a),palette(1),0.3);}
-  if(part==1u){return surface(path+rotate(sphere(v,vec3f(0.065,0.065,0.25)*s),a),palette(0),0.0);}
+  let path=vec3f(cos(a),0,sin(a))*uniforms.gridSize*(0.17+g.w*0.20)+vec3f(0,0.42*s,0);
+  // Jewel beetles crawl through the undergrowth; spores handle the flying motion.
+  if(part==0u){return surface(path+rotate(sphere(v,vec3f(0.42,0.22,0.62)*s),a),mix(palette(2),palette(1),0.30),0.22);}
+  if(part==1u){return surface(path+rotate(sphere(v,vec3f(0.22,0.18,0.24)*s)+vec3f(0,0,0.63*s),a),palette(0),0.05);}
+  if(part==2u){
+    let leg=v/64u;let local=v%64u;let side=select(-1.0,1.0,leg%2u==0u);
+    let z=(f32(leg/2u)-1.0)*0.36*s;let step=sin(uniforms.time*4.0+f32(leg)*PI)*0.12*alive();
+    let start=path+rotate(vec3f(side*0.25*s,0,z),a);
+    let end=path+rotate(vec3f(side*0.65*s,-0.28*s+max(step,0.0)*s,z+step*s),a);
+    let uv=quad(local);
+    return surface(mix(start,end,uv.x)+vec3f(0,(uv.y-0.5)*0.06*s,0),palette(0),0);
+  }
   return surface(path,palette(0),0.0);
 }
 `,

@@ -423,6 +423,8 @@ type SeedGpuResources = {
   readonly circuitMaterial: GPUTexture | undefined;
   readonly circuitTraceCount: number;
   clearColor: GPUColor;
+  worldClearColor: { r: number; g: number; b: number; a: number };
+  scanClearColor: { r: number; g: number; b: number; a: number };
   readonly context: GPUCanvasContext;
   readonly device: GPUDevice;
   readonly format: GPUTextureFormat;
@@ -441,7 +443,7 @@ type SeedGpuResources = {
   zoom: number;
 };
 
-function createClearColor(scene: SeedSceneConfig): GPUColor {
+function createClearColor(scene: SeedSceneConfig): { r: number; g: number; b: number; a: number } {
   if (!scene.background) return { a: 0, b: 0, g: 0, r: 0 };
   const [r, g, b] = scene.background;
   return {
@@ -452,7 +454,10 @@ function createClearColor(scene: SeedSceneConfig): GPUColor {
   };
 }
 
-function createFormClearColor(scene: SeedSceneConfig, form: SeedForm): GPUColor {
+function createFormClearColor(
+  scene: SeedSceneConfig,
+  form: SeedForm,
+): { r: number; g: number; b: number; a: number } {
   if (form === "stained-glass" && scene.palette) {
     const [r, g, b] = scene.palette[4].map((c) => c * 0.45 + 0.98 * 0.55);
     return { r: r!, g: g!, b: b!, a: 1 };
@@ -791,6 +796,7 @@ async function createCircuitPipelines(
   return {
     ...shared,
     circuitBoard: createScenePipeline(device, format, {
+      blend: ALPHA_BLEND,
       label: "every-qrcode-circuit-board-pipeline",
       layout: layouts.circuit,
       module: board,
@@ -849,7 +855,12 @@ async function createReefPipelines(
     reefCorals: create("every-qrcode-reef-coral-pipeline", corals, true),
     reefFish: create("every-qrcode-reef-fish-pipeline", fish, true),
     reefQr: create("every-qrcode-reef-qr-pipeline", qr),
-    reefShelf: create("every-qrcode-reef-shelf-pipeline", shelf),
+    reefShelf: createScenePipeline(device, format, {
+      blend: ALPHA_BLEND,
+      label: "every-qrcode-reef-shelf-pipeline",
+      layout: layouts.reef,
+      module: shelf,
+    }),
     reefWater: create("every-qrcode-reef-water-pipeline", water, true),
   };
 }
@@ -1213,6 +1224,20 @@ function writeUniforms(
   sceneAge: number,
 ): void {
   const idle = 1 - progress;
+  if (gpu.form === "reef" || gpu.form === "circuit") {
+    // Fade the world's backdrop into the caller's background (transparent by
+    // default), so the final QR has no separate rectangular paper card.
+    const phase = Math.max(0, Math.min(1, (progress - 0.58) / 0.4));
+    const scan = phase * phase * (3 - 2 * phase);
+    const world = gpu.worldClearColor;
+    const flat = gpu.scanClearColor;
+    gpu.clearColor = {
+      r: world.r * world.a * (1 - scan) + flat.r * flat.a * scan,
+      g: world.g * world.a * (1 - scan) + flat.g * flat.a * scan,
+      b: world.b * world.a * (1 - scan) + flat.b * flat.a * scan,
+      a: world.a * (1 - scan) + flat.a * scan,
+    };
+  }
   const bounce = Math.exp(-6 * toggleAge) * Math.sin(12 * toggleAge) * 0.012;
   const values = new Float32Array(UNIFORM_FLOATS);
   const effectMotion = gpu.sceneEffect === 0 ? 1 : gpu.sceneEffect === 1 ? 0.15 : 0;
@@ -1261,7 +1286,7 @@ function writeUniforms(
     }
     if (reduced) values[1] = 0;
   }
-  if (gpu.form === "reef") {
+  if (gpu.form === "reef" || gpu.form === "circuit") {
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     if (progress === 1 || reduced) {
       values[5] = 0;
@@ -1498,6 +1523,8 @@ async function initializeGpu(
       circuitMaterial,
       circuitTraceCount,
       clearColor: createFormClearColor(sceneConfig, form),
+      worldClearColor: createFormClearColor(sceneConfig, form),
+      scanClearColor: createClearColor(sceneConfig),
       context,
       device,
       format,
@@ -1525,6 +1552,8 @@ async function initializeGpu(
 function updateGpuScene(gpu: SeedGpuResources, scene: SeedSceneConfig): void {
   const palette = createPalette(scene);
   gpu.clearColor = createFormClearColor(scene, gpu.form);
+  gpu.worldClearColor = createFormClearColor(scene, gpu.form);
+  gpu.scanClearColor = createClearColor(scene);
   gpu.palette = palette;
   gpu.sceneEffect = createSceneEffect(scene);
   gpu.terrainPalette = createTerrainPalette(palette);
@@ -1662,7 +1691,7 @@ export function mountSeed(
       state.transitionDuration =
         MORPH_DURATION_MS * Math.max(0.25, Math.abs(state.target - state.from));
       if (
-        (isStagedWorld(form) || form === "reef") &&
+        (isStagedWorld(form) || form === "reef" || form === "circuit") &&
         (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false)
       ) {
         state.transitionDuration = 0;
