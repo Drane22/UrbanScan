@@ -230,27 +230,27 @@ export const DIORAMA_PALETTES: Readonly<Record<DioramaForm, readonly WorldPalett
   terrain: families([
     [
       "alpine-glacier",
-      "Opal Highlands",
+      "Jade Wildflower Valley",
       ["#273039", "#b6a0e4", "#c58064", "#65b6ae", "#fff8eb"],
-      "Copper-opal ridges, lavender crystals and jade rivers",
+      "Fern-green hills, lavender wildflowers and jade streams",
     ],
     [
       "volcanic-rift",
-      "Obsidian Furnace",
+      "Amber Autumn Meadow",
       ["#291b27", "#ffc35a", "#cd5f40", "#745eae", "#fff7e9"],
-      "Obsidian crust, molten streams and glowing mineral vents",
+      "Golden grasses, copper soil and lilac creeks",
     ],
     [
       "desert-dunes",
-      "Rose Sand Labyrinth",
+      "Rosewater Gardens",
       ["#342333", "#79ccbc", "#d68fa2", "#d9b454", "#fff8e9"],
-      "Rose sandstone, turquoise streams and levitating gold rocks",
+      "Rose meadows, mint water and honey-colored flowers",
     ],
     [
       "lush-highlands",
-      "Aurora Geodes",
+      "Moonlit Alpine Garden",
       ["#17253a", "#d9dc79", "#5e9ecd", "#b977c9", "#f6faff"],
-      "Blue geodes, violet crystal forests and sweeping mineral surges",
+      "Teal foliage, blue streams and violet alpine blossoms",
     ],
   ]),
 };

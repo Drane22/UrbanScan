@@ -20,6 +20,7 @@ import {
   type SeedModel,
 } from "./seed-model.js";
 import { createTerrainPalette, type TerrainScenePalette } from "./terrain-palette.js";
+import { TERRAIN_DETAIL_INSTANCES } from "./terrain-population.js";
 
 export type SeedRenderer = {
   dispose: () => void;
@@ -525,14 +526,12 @@ type RendererState = {
   frame: number;
   from: number;
   gpu: SeedGpuResources | undefined;
-  lastFrameTime: number;
   progress: number;
   resizePending: boolean;
   target: number;
   transitionDuration: number;
   transitionStart: number;
   toggleTime: number;
-  velocity: number;
   zoom: number;
 };
 
@@ -802,6 +801,7 @@ async function createTerrainPipelines(
 ): Promise<TerrainPipelines> {
   const module = await createShaderModule(device, "every-qrcode-terrain", sources.terrain);
   const terrain = await createScenePipeline(device, format, {
+    blend: ALPHA_BLEND,
     label: "every-qrcode-terrain-pipeline",
     layout: layouts.blocks,
     module,
@@ -812,11 +812,17 @@ async function createTerrainPipelines(
     sources.terrainDetails,
   );
   const terrainDetails = await createScenePipeline(device, format, {
+    blend: ALPHA_BLEND,
     label: "every-qrcode-terrain-details-pipeline",
     layout: layouts.blocks,
     module: detailModule,
   });
-  return { ...shared, form: sources.form, terrain, terrainDetails };
+  return {
+    ...shared,
+    form: sources.form,
+    terrain,
+    terrainDetails,
+  };
 }
 
 async function createCityPipelines(
@@ -828,6 +834,7 @@ async function createCityPipelines(
 ): Promise<CityPipelines> {
   const module = await createShaderModule(device, "every-qrcode-city", sources.city);
   const city = await createScenePipeline(device, format, {
+    blend: ALPHA_BLEND,
     label: "every-qrcode-city-pipeline",
     layout: layouts.blocks,
     module,
@@ -951,6 +958,7 @@ async function createTreePipelines(
     shadowModule,
   ] = modules;
   const blocks = await createScenePipeline(device, format, {
+    blend: ALPHA_BLEND,
     label: "every-qrcode-block-pipeline",
     layout: layouts.blocks,
     module: blockModule,
@@ -1018,6 +1026,7 @@ async function createCustomModelPipelines<T extends SeedPipelines>(
 ): Promise<T> {
   const module = await createShaderModule(device, `every-qrcode-${form}`, code);
   const pipeline = await createScenePipeline(device, format, {
+    blend: ALPHA_BLEND,
     label: `every-qrcode-${form}-pipeline`,
     layout: layouts.blocks,
     module,
@@ -1306,7 +1315,7 @@ function writeUniforms(
   sceneAge: number,
 ): void {
   const idle = 1 - progress;
-  if (gpu.form === "reef" || gpu.form === "circuit") {
+  {
     // Fade the world's backdrop into the caller's background (transparent by
     // default), so the final QR has no separate rectangular paper card.
     const phase = Math.max(0, Math.min(1, (progress - 0.58) / 0.4));
@@ -1424,10 +1433,12 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
     pass.draw(36, gpu.blockField.blocks.length);
   } else if (gpu.pipelines.form === "terrain") {
     pass.setPipeline(gpu.pipelines.terrain);
-    pass.draw(36, gpu.blockField.blocks.length + 1);
+    // Foundation first so fading surface cells composite over it correctly.
+    if (gpu.uniformValues[3]! < 1) pass.draw(36, 1, 0, gpu.blockField.blocks.length);
+    pass.draw(36, gpu.blockField.blocks.length);
     if (gpu.uniformValues[3]! < 0.62) {
       pass.setPipeline(gpu.pipelines.terrainDetails);
-      pass.draw(384, 96 * 4);
+      pass.draw(384, TERRAIN_DETAIL_INSTANCES);
     }
   } else if (gpu.pipelines.form === "tree") {
     pass.setPipeline(gpu.pipelines.blocks);
@@ -1455,14 +1466,14 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
   } else if (isStagedWorld(gpu.pipelines.form)) {
     const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
     pass.setPipeline(pipeline);
-    if (gpu.uniformValues[3] === 1) pass.draw(6, gpu.blockField.blocks.length + 1);
+    if (gpu.uniformValues[3] === 1) pass.draw(6, gpu.blockField.blocks.length);
     else {
       const owners = gpu.blockField.blocks.length;
       // At rest, submit only existing scene objects. Extra QR owners are needed during morphing.
       const primary =
         gpu.uniformValues[3] === 0 ? Math.min(gpu.worldPopulation.primary, owners) : owners;
-      pass.draw(SCULPTURE_VERTICES, primary * SCULPTURE_PARTS);
       pass.draw(SCULPTURE_VERTICES, 1, 0, owners * SCULPTURE_PARTS);
+      pass.draw(SCULPTURE_VERTICES, primary * SCULPTURE_PARTS);
       if (gpu.uniformValues[3]! < 0.62)
         pass.draw(
           SCULPTURE_VERTICES,
@@ -1664,35 +1675,13 @@ function animate(canvas: HTMLCanvasElement, state: RendererState, now: number): 
   const gpu = state.gpu;
   if (!gpu || state.closed) return;
   if (!state.visible || document.hidden) {
-    state.lastFrameTime = now;
     return;
   }
-  if (gpu.form === "terrain") {
-    if (state.transitionDuration === 0) {
-      state.progress = state.target;
-      state.velocity = 0;
-    }
-    const elapsedSeconds = Math.min(0.05, Math.max(0, now - state.lastFrameTime) / 1000);
-    const [progress, velocity] = stepTerrainSpring(
-      state.progress,
-      state.velocity,
-      state.target,
-      elapsedSeconds,
-    );
-    state.progress = progress;
-    state.velocity = velocity;
-    if (Math.abs(progress - state.target) < 0.0005 && Math.abs(velocity) < 0.006) {
-      state.progress = state.target;
-      state.velocity = 0;
-    }
-  } else {
-    const elapsed = now - state.transitionStart;
-    const linear =
-      state.transitionDuration === 0 ? 1 : Math.min(1, elapsed / state.transitionDuration);
-    const eased = evaluateMorphCurve(linear);
-    state.progress = state.from + (state.target - state.from) * eased;
-  }
-  state.lastFrameTime = now;
+  // Use Tree's interruptible timing for every world; geometry stages the growth.
+  const elapsed = now - state.transitionStart;
+  const linear =
+    state.transitionDuration === 0 ? 1 : Math.min(1, elapsed / state.transitionDuration);
+  state.progress = state.from + (state.target - state.from) * evaluateMorphCurve(linear);
   canvas.dataset["morphProgress"] = state.progress.toFixed(3);
   if (state.resizePending) state.resizePending = false;
   resizeGpuCanvas(canvas, gpu);
@@ -1748,14 +1737,12 @@ function createInitialState(): RendererState {
     frame: 0,
     from: 0,
     gpu: undefined,
-    lastFrameTime: now,
     progress: 0,
     resizePending: true,
     target: 0,
     transitionDuration: 0,
     transitionStart: now,
     toggleTime: now,
-    velocity: 0,
     zoom: 1,
   };
 }
