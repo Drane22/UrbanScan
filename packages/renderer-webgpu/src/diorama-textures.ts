@@ -146,7 +146,8 @@ fn dtFungus(color:vec3f,q:vec2f,p:vec3f,pixel:f32,part:u32,up:f32)->vec3f {
 }
 fn dtCosmic(color:vec3f,q:vec2f,n:vec3f,pixel:f32,foundation:bool)->vec3f {
   let warp=vec2f(dtFbm(q*0.16),dtFbm(q*0.16+vec2f(7,41)))-0.5;
-  let nebula=dtFbm(q*0.49+warp*3.0);
+  let drift=select(vec2f(0),vec2f(uniforms.time*0.008,-uniforms.time*0.005)*motionTempo(),foundation);
+  let nebula=dtFbm(q*0.49+warp*3.0+drift);
   let cloud=smoothstep(0.34,0.72,nebula);
   let stardust=dtDot(q,3.2,0.035,pixel,0.80);
   let stars=dtDot(q,0.9,0.046,pixel,0.87);
@@ -190,6 +191,7 @@ fn dioramaTexture(color:vec3f,p:vec3f,n:vec3f,uv:vec2f,part:u32)->vec3f {
   q+=worldDNA(10u).xy*53.0;
   // Derivatives run before material/part branches (part is flat but nonuniform).
   let pixel=max(length(dpdx(q)),length(dpdy(q)));
+  if(part==10u){return color;}
   let up=smoothstep(0.35,0.85,an.y);let foundation=part==9u;
   var out=color;
   if(MATERIAL_KIND==0u){out=dtEarth(color,q,p,up,pixel,part);}
@@ -199,7 +201,7 @@ fn dioramaTexture(color:vec3f,p:vec3f,n:vec3f,uv:vec2f,part:u32)->vec3f {
   else if(MATERIAL_KIND==4u){out=dtFungus(color,q,p,pixel,part,up);}
   else if(MATERIAL_KIND==5u){out=dtCosmic(color,q,n,pixel,foundation);}
   else {out=dtPlastic(color,q,n,pixel,foundation);}
-  let style=materialStyle();let time=uniforms.time*motionTempo()*alive();
+  let style=materialStyle();let time=uniforms.time*motionTempo();
   // Material families have different finishes and localized ambient motion;
   // neither layout genes nor the locked QR pigments depend on this treatment.
   if(MATERIAL_KIND==0u){
@@ -232,5 +234,35 @@ fn dioramaTexture(color:vec3f,p:vec3f,n:vec3f,uv:vec2f,part:u32)->vec3f {
     if(style==3u && foundation){let sprinkle=dtDot(q,2.0,.06,pixel,.80);out+=palette(1)*sprinkle*.15;}
   }
   return clamp(out,vec3f(0.0),vec3f(1.35));
+}
+// Finishes respond to the moving camera without changing the locked QR pigments.
+fn dioramaLighting(color:vec3f,p:vec3f,normal:vec3f,part:u32,key:vec3f)->vec3f {
+ let view=treeViewDirection();let n=select(-normal,normal,dot(normal,view)>=0.0);
+ let halfVector=normalize(key+view);let cosine=max(dot(n,halfVector),0.0);
+ let facing=clamp(dot(n,view),0.0,1.0);let fresnel=pow(1.0-facing,4.0);
+ let time=uniforms.time*motionTempo();let foundation=part==9u;
+ let diffuse=0.48+max(dot(n,key),0.0)*0.52;
+ var finish=0.025;var power=9.0;var rim=0.0;
+ if(MATERIAL_KIND==0u){finish=select(0.025,0.13,part==8u);power=24.0;}
+ else if(MATERIAL_KIND==1u){
+  let damp=smoothstep(0.58,0.78,dtNoise(p.xz*0.63));
+  finish=mix(0.025,0.16,damp);power=mix(6.0,32.0,damp);
+ }else if(MATERIAL_KIND==2u){finish=0.02;power=5.0;
+  if(materialStyle()==3u){finish+=dtNoise(p.xz*7.0)*0.055;power=28.0;}
+ }else if(MATERIAL_KIND==3u){finish=select(0.36,0.065,foundation);power=54.0;rim=select(0.12,0.018,foundation);}
+ else if(MATERIAL_KIND==4u){finish=select(0.025,0.22,part==0u);power=24.0;rim=select(0.0,0.045,part==0u);}
+ else if(MATERIAL_KIND==5u){
+  if(foundation){return color;}
+  let atmosphere=mix(palette(2),palette(3),0.45)*fresnel*0.22;
+  return color*(0.28+max(dot(n,key),0.0)*0.82)+atmosphere;
+ }else{finish=select(0.28,0.14,foundation);power=42.0;rim=0.035;}
+ let specular=pow(cosine,power)*finish;
+ var reflection=mix(color,vec3f(1.0),0.68)*(specular+fresnel*rim);
+ if(MATERIAL_KIND==3u && !foundation){
+  let ripple=sin(p.x*1.7+p.y*2.1+time*0.32)*0.5+0.5;
+  let ribbon=pow(max(dot(n,normalize(view+vec3f(-0.25,0.38,0.18))),0.0),14.0);
+  reflection+=mix(palette(1),palette(2),ripple)*ribbon*0.12;
+ }
+ return color*diffuse+reflection;
 }
 `;

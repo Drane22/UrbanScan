@@ -125,7 +125,7 @@ fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
   if(part==0u){return surface(p+sphere(v,vec3f(0.30*release*s)),mix(palette(1),uniforms.themeFifth.rgb,0.35),0.65);}
   return surface(p,palette(0),0);
  }
- let a=time*(0.11+g.w*0.065)*alive()+g.w*6.28;let path=vec3f(cos(a),0,sin(a))*uniforms.gridSize*(0.20+g.w*0.18)+vec3f(0,0.55*s,0);
+ let a=time*(0.11+g.w*0.065)+g.w*6.28;let path=vec3f(cos(a),0,sin(a))*uniforms.gridSize*(0.20+g.w*0.18)+vec3f(0,0.55*s,0);
  if(part==4u){return surface(path,palette(0),0);}
  if(part==0u){return surface(path+rotate(sphere(v,vec3f(0.60,0.28,0.85)*s),a),mix(palette(2),palette(1),0.20),0.25);}
  if(part==1u){return surface(path+rotate(sphere(v,vec3f(0.26,0.20,0.28)*s)+vec3f(0,0,0.86*s),a),palette(0),0.02);}

@@ -44,13 +44,8 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> BlockOutput {
   let height = mix(blockHeights[blockIndex], blockSize, uniforms.progress);
   let treeProgress = 1.0 - uniforms.progress;
   let layer = baseY / blockSize;
-  let revealStart = clamp(layer / 42.0, 0.0, 0.46);
-  let layerRise = select(
-    1.0,
-    smoothstep(revealStart, min(1.0, revealStart + 0.42), treeProgress),
-    baseY > 0.001,
-  );
-  let semanticAbsorb = 1.0 - smoothstep(0.68, 0.98, treeProgress);
+  let layerRise=select(1.0,treeLayerRise(layer),baseY>0.001);
+  let semanticAbsorb=treeSemanticAbsorb();
   let layerScale = select(1.0, layerRise * semanticAbsorb, baseY > 0.001);
   let animatedBaseY = baseY * layerRise;
   let animatedHeight = height * layerScale;
@@ -296,7 +291,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> BranchOutput {
   let startData = segments[segmentIndex * 3u];
   let endData = segments[segmentIndex * 3u + 1u];
   let metadata = segments[segmentIndex * 3u + 2u];
-  let visibility = smoothstep(0.38, 0.88, 1.0 - uniforms.progress);
+  let visibility = treeBranchVisibility();
   if (visibility < 0.01) {
     output.position = vec4f(0.0, 0.0, -10.0, 1.0);
     return output;
@@ -585,7 +580,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> FlowerOutput {
   let seed = rawSeed - isRegularLeaf - 2.0 * isFruit
     - 3.0 * isOrb - 5.0 * isFrond;
   output.seed = rawSeed;
-  let visibility = smoothstep(0.0, 0.6, 1.0 - uniforms.progress);
+  let visibility = treeFoliageVisibility();
   if (visibility < 0.01) {
     output.position = vec4f(0.0, 0.0, -10.0, 1.0);
     return output;

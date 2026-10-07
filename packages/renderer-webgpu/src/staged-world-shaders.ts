@@ -1,15 +1,12 @@
+import { TREE_MORPH_WGSL } from "./tree-morph.js";
+
 export const STAGED_PROJECTION_WGSL = /* wgsl */ `
-fn worldProject(p: vec3f, worldScale: f32, lift: f32) -> vec4f {
-  let t = uniforms.progress;
-  let yaw = mix(0.78,0.0,t);
-  let tilt = mix(-0.62,-1.57079632679,t);
-  let x = p.x*cos(yaw)-p.z*sin(yaw);
-  let z = p.x*sin(yaw)+p.z*cos(yaw);
-  let y = p.y*cos(tilt)-z*sin(tilt);
-  let depth = p.y*sin(tilt)+z*cos(tilt);
-  let scale = mix(worldScale,1.90,t)/((uniforms.gridSize+10.0)*uniforms.blockSize)
-    * mix(uniforms.camera.x,min(uniforms.camera.x,1.0),t);
-  return vec4f(x*scale/max(uniforms.aspectRatio,1.0),
-    (y-lift*(1.0-t))*scale/max(1.0/uniforms.aspectRatio,1.0),depth*0.02+0.5,1.0);
+${TREE_MORPH_WGSL}
+fn worldProject(p:vec3f,worldScale:f32,lift:f32)->vec4f {
+ let denominator=(uniforms.gridSize+10.0)*uniforms.blockSize;
+ let portrait=mix(select(1.0,1.2,uniforms.aspectRatio<0.8),1.0,uniforms.progress);
+ let zoom=mix(uniforms.camera.x,min(uniforms.camera.x,1.0),uniforms.progress);
+ return treeCameraView(p,worldScale/denominator,1.90/denominator,
+  vec2f(0,-lift),vec2f(0),portrait,zoom);
 }
 `;

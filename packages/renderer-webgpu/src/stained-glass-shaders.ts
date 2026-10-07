@@ -23,7 +23,7 @@ fn panePoint(i:u32,u:f32,w:f32)->vec3f {
   var p=vec3f(x*width,height*y+arch+0.45*s,0);
   // Each louver pivots on a real vertical hinge; its lead frame follows it.
   let hinge=vec3f((f32(column)/4.0-0.5)*width,p.y,0);
-  let opening=sin(uniforms.time*(0.48+gene(730u+panel).w*0.24)+f32(row)*0.65+f32(panel))*0.60*alive();
+  let opening=sin(uniforms.time*(0.48+gene(730u+panel).w*0.24)+f32(row)*0.65+f32(panel))*0.60;
   p=hinge+rotate(p-hinge,opening);
   return panelBase(panel)+rotate(p,panelHeading(panel));
 }
@@ -31,7 +31,7 @@ fn canopyPoint(i:u32,u:f32,w:f32)->vec3f {
   let s=uniforms.gridSize/25.0;let a=(f32(i)+u)*PI/32.0+worldDNA(9u).w*PI;
   let inner=(1.5+worldDNA(10u).w)*s;let outer=(5.0+worldDNA(11u).w*1.2)*s;
   let radius=mix(inner,outer,w);let petals=6.0+floor(worldDNA(12u).w*5.0);
-  let breathe=sin(uniforms.time*0.60+a*3.0)*0.45*w*alive();
+  let breathe=sin(uniforms.time*0.60+a*3.0)*0.45*w;
   let h=(6.6+worldDNA(13u).w*1.4)*s+cos(w*PI*0.5)*1.3*s+sin(a*petals)*0.32*w*s+breathe*s;
   return pavilionCenter()+vec3f(cos(a)*radius,h,sin(a)*radius);
 }
@@ -50,7 +50,7 @@ fn worldSurface(v:u32,i:u32,part:u32)->Surface {
   let color=palette(f32(1u+(band+panel+u32(worldDNA(14u).w*3.0))%3u));
   if(part==0u){
     var p=canopyPoint(slot,uv.x,uv.y);if(wall){p=panePoint(i,uv.x,uv.y);}
-    let hammered=0.90+0.10*sin(p.x*2.3+p.y*3.1+p.z*1.5+uniforms.time*0.32*alive());
+    let hammered=0.90+0.10*sin(p.x*2.3+p.y*3.1+p.z*1.5+uniforms.time*0.32);
     return surface(p,color*hammered,0.48);
   }
   if(part==1u){
@@ -77,7 +77,7 @@ fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
     let p=floorPoint(i,q);let local=p.xz-pavilionCenter().xz;let angle=atan2(local.y,local.x);
     let motif=4.0+floor(worldDNA(15u).w*5.0);let petal=sin(angle*motif+length(local)*0.35);
     let color=select(palette(2),palette(1),petal>0.0);
-    let light=0.5+0.5*sin(angle*3.0-uniforms.time*0.35*alive()+length(local)*0.24);
+    let light=0.5+0.5*sin(angle*3.0-uniforms.time*0.35+length(local)*0.24);
     let mosaic=mix(color,palette(3),light*0.35)*(.78+light*0.24);
     if(part==0u){return surface(p,mosaic,0.25+light*0.25);}
     if(part==1u){let uv=quad(v);return surface(floorPoint(i,vec2f(uv.x,0))+vec3f(0,0.012,(uv.y-0.5)*0.055*s),palette(0),0.1);}
@@ -88,11 +88,11 @@ fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
   if(i<304u){
     let slot=i-256u;let a=f32(slot)/48.0*PI*2.0+worldDNA(9u).w*PI;let radius=(2.2+f32(slot%3u)*1.25)*s;
     let anchor=pavilionCenter()+vec3f(cos(a)*radius,(6.5+worldDNA(13u).w)*s,sin(a)*radius);
-    let length=(0.7+g.w*1.8)*s;let sway=sin(uniforms.time*(0.65+g.w*0.25)+g.w*18.0)*0.55*alive();
+    let length=(0.7+g.w*1.8)*s;let sway=sin(uniforms.time*(0.65+g.w*0.25)+g.w*18.0)*0.55;
     let head=anchor+vec3f(sin(sway)*length,-cos(sway)*length,cos(sway*1.3)*0.25*s);
     if(part==4u){return surface(anchor,palette(0),0);}
     let size=select(0.28+g.w*0.18,0.62+g.w*0.22,slot%6u==0u)*s;
-    if(part==0u){return surface(head+rotate(jewel(v,size),uniforms.time*(0.25+g.w)*alive()),palette(f32(1u+slot%3u)),0.65);}
+    if(part==0u){return surface(head+rotate(jewel(v,size),uniforms.time*(0.25+g.w)),palette(f32(1u+slot%3u)),0.65);}
     if(part==1u){return surface(bridge(v,anchor,head,0.018*s),mix(palette(0),palette(3),0.25),0.2);}
     if(part==2u){return surface(head+ring(v,size*1.25,0.035*s),palette(3),0.6);}
     return surface(head+sphere(v,vec3f(0.075*s)),uniforms.themeFifth.rgb,0.9);
@@ -108,13 +108,13 @@ fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
     return surface(base+vec3f(0,height+0.28*s,0)+jewel(v,0.24*s),palette(3),0.5);
   }
   if(i<360u){
-    let a=uniforms.time*(0.12+g.w*0.08)*alive()+g.w*PI*2.0;
+    let a=uniforms.time*(0.12+g.w*0.08)+g.w*PI*2.0;
     let r=uniforms.gridSize*(0.32+g.x*0.12);let p=pavilionCenter()+vec3f(cos(a)*r,(1.3+g.z*1.3+sin(a*2.0)*0.3)*s,sin(a)*r);
     if(part==4u){return surface(p,palette(0),0);}
     if(part==0u){return surface(p+rotate(jewel(v,(0.18+g.w*0.14)*s),a*2.0),palette(f32(1u+i%3u)),0.55);}
     return surface(p,palette(0),0);
   }
-  let a=f32(i-360u)*PI/12.0+uniforms.time*0.28*alive();let r=uniforms.gridSize*0.39;
+  let a=f32(i-360u)*PI/12.0+uniforms.time*0.28;let r=uniforms.gridSize*0.39;
   let c=pavilionCenter()+vec3f(cos(a)*r,0.06,sin(a)*r);
   if(part==4u){return surface(c,palette(0),0);}
   if(part==0u){return surface(c+rotate(box(v,vec3f(0.85*s,0.008*s,0.22*s)),a),mix(palette(f32(1u+i%3u)),uniforms.themeFifth.rgb,0.35),0.8);}

@@ -1,3 +1,5 @@
+import { STAGED_PROJECTION_WGSL } from "./staged-world-shaders.js";
+
 export const SEED_UNIFORMS_WGSL = /* wgsl */ `
 struct Uniforms {
   aspectRatio: f32,
@@ -127,32 +129,11 @@ fn themeSnow() -> vec3f {
   return mix(uniforms.themeFifth.rgb, vec3f(1.0), 0.78);
 }
 
-fn projectPosition(localPos: vec3f) -> vec4f {
-  let progress = uniforms.progress;
-  let isoAngleY = mix(0.78, 0.0, progress) + uniforms.cameraBobX;
-  let isoAngleX = mix(-0.55, -1.5708, progress) + uniforms.cameraBobY;
-  let cy = cos(isoAngleY);
-  let sy = sin(isoAngleY);
-  let cx = cos(isoAngleX);
-  let sx = sin(isoAngleX);
-  let ryX = localPos.x * cy - localPos.z * sy;
-  let ryZ = localPos.x * sy + localPos.z * cy;
-  let rxY = localPos.y * cx - ryZ * sx;
-  let rxZ = localPos.y * sx + ryZ * cx;
-  let portraitBoost = select(1.0, 1.2, uniforms.aspectRatio < 0.8);
-  let morphPulse = 1.0 + sin(progress * 3.14159265) * 0.035;
-  let viewScale = (mix(41.5, 46.4, progress) / uniforms.gridSize)
-    * portraitBoost * morphPulse * uniforms.camera.x;
-  let scaleX = viewScale / max(uniforms.aspectRatio, 1.0);
-  let scaleY = viewScale / max(1.0 / uniforms.aspectRatio, 1.0);
-  let yOffset = mix(-0.12, 0.08, progress);
-  let xOffset = mix(0.0, 0.015, progress);
-  return vec4f(
-    (ryX + xOffset) * scaleX,
-    (rxY + yOffset) * scaleY,
-    rxZ * 0.01 + 0.5,
-    1.0,
-  );
+${STAGED_PROJECTION_WGSL}
+fn projectPosition(localPos:vec3f)->vec4f {
+ let portrait=select(1.0,1.2,uniforms.aspectRatio<0.8);
+ return treeCameraView(localPos,41.5/uniforms.gridSize,46.4/uniforms.gridSize,
+  vec2f(0,-0.12),vec2f(0.015,0.08),portrait,uniforms.camera.x);
 }
 `;
 

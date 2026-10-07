@@ -1,5 +1,6 @@
 import { DIORAMA_MATERIALS_WGSL } from "./diorama-materials.js";
 import { STAGED_PROJECTION_WGSL } from "./staged-world-shaders.js";
+import { QR_RELIEF_WGSL } from "./tree-morph.js";
 
 const REEF_COMMON = /* wgsl */ `
 struct Uniforms {
@@ -42,6 +43,7 @@ struct Uniforms {
 @group(0) @binding(7) var reefSampler: sampler;
 ${DIORAMA_MATERIALS_WGSL}
 ${STAGED_PROJECTION_WGSL}
+${QR_RELIEF_WGSL}
 
 fn reefTempo()->f32 {return select(select(1.0,0.65,uniforms.camera.w==1.0),select(0.85,1.15,uniforms.camera.w==3.0),uniforms.camera.w>=2.0);}
 fn reefStage(start: f32, end: f32) -> f32 {
@@ -50,23 +52,8 @@ fn reefStage(start: f32, end: f32) -> f32 {
 
 // Tree-contract camera: continuous swing with a breathing pulse instead of a
 // late jump to top-down.
-fn reefProject(localPos: vec3f) -> vec4f {
-  let cy = cos(mix(0.72, 0.0, uniforms.progress) + uniforms.cameraBobX);
-  let sy = sin(mix(0.72, 0.0, uniforms.progress) + uniforms.cameraBobX);
-  let cx = cos(mix(-0.48, -1.570796, uniforms.progress) + uniforms.cameraBobY);
-  let sx = sin(mix(-0.48, -1.570796, uniforms.progress) + uniforms.cameraBobY);
-  let rotX = localPos.x * cy - localPos.z * sy;
-  let rotZ = localPos.x * sy + localPos.z * cy;
-  let rotY = localPos.y * cx - rotZ * sx;
-  let depth = localPos.y * sx + rotZ * cx;
-  let portrait = select(1.0, 1.16, uniforms.aspectRatio < 0.8);
-  let morphPulse = 1.0 + sin(uniforms.progress * 3.14159265) * 0.035;
-  let scale = mix(40.0, 46.2, uniforms.progress) / uniforms.gridSize * portrait * morphPulse * uniforms.camera.x;
-  let scaleX = scale / max(uniforms.aspectRatio, 1.0);
-  let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
-  let living = vec4f((rotX + mix(0.0, 0.015, uniforms.progress)) * scaleX, (rotY + mix(-0.15, 0.07, uniforms.progress)) * scaleY, depth * 0.01 + 0.5, 1.0);
-  let scan = worldProject(localPos, 1.68, uniforms.gridSize * uniforms.blockSize * 0.045);
-  return mix(living, scan, reefStage(0.28, 0.96));
+fn reefProject(localPos:vec3f)->vec4f {
+ return worldProject(localPos,1.68,uniforms.gridSize*uniforms.blockSize*0.045);
 }
 
 // Seeded per-colony delay so the reef contracts as a traveling wave.
@@ -139,7 +126,12 @@ fn underwaterLighting(normal: vec3f, worldPos: vec3f, albedo: vec3f, roughness: 
   let direct = key * 0.95 + caustics;
   let sss = backLight * sssAmount * sssColor * 0.65;
 
-  let lit = albedo * (waterAmbient + direct) + sss;
+  let waveNormal=normalize(normal+vec3f(sin(worldPos.x*28.0+time*0.75)*0.08,0,cos(worldPos.z*31.0-time*0.9)*0.08));
+  let view=treeViewDirection();let halfVector=normalize(view+sunDir);
+  let shimmer=pow(max(dot(waveNormal,halfVector),0.0),mix(64.0,12.0,roughness))*mix(0.38,0.04,roughness);
+  let fresnel=pow(1.0-abs(dot(waveNormal,view)),4.0)*mix(0.12,0.015,roughness);
+  let reflection=mix(waterColor(),vec3f(0.90,1.0,1.0),0.6)*(shimmer+fresnel)*(1.0-reefStage(0.64,0.96));
+  let lit = albedo * (waterAmbient + direct) + sss + reflection;
   return lit;
 }
 
@@ -213,9 +205,8 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   // Internal faces never reach rasterization, so the shelf stays one enclosure.
   let geometry = boxGeometry(face, uv, vec3f(uniforms.blockSize, 1.0, uniforms.blockSize));
   let cellUv = geometry[0].xz / uniforms.blockSize + vec2f(0.5);
-  // The same perimeter stretches into an opaque four-module quiet zone as
-  // the shelf flattens. The canonical QR destinations remain fixed inside it.
-  let quietZone = 4.0 * reefStage(0.55, 0.95);
+  // Keep the seabed inside its own enclosure throughout the handoff.
+  let quietZone = 0.0;
   let extendX = select(0.0, -(1.0 - cellUv.x) * quietZone, position.x < 0.5)
     + select(0.0, cellUv.x * quietZone, position.x >= uniforms.gridSize - 1.0);
   let extendZ = select(0.0, -(1.0 - cellUv.y) * quietZone, position.y < 0.5)
@@ -227,9 +218,9 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let sandWave = sin(gridX * 0.38 + gridZ * 0.28) * 0.12 + sin(gridX * 0.82 - gridZ * 0.65) * 0.06;
   let ripple = sin(gridX * 3.6 + gridZ * 2.4) * 0.018;
   let baseRelief = shelf.x * 0.95 + 0.10 + sandWave + ripple;
-  let flatten = reefStage(0.34, 0.86);
+  let flatten = 1.0-treeFoliageVisibility();
   let relief = mix(baseRelief, 0.035, flatten);
-  let retract = reefStage(0.30, 0.86);
+  let retract = 1.0-treeFoliageVisibility();
   let underside = mix(-1.05, 0.035, retract);
   var height = relief;
   if (face == 1u) { height = underside; }
@@ -445,10 +436,9 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let waveSurge = sin(time * 1.4 + a.x * 0.28 + a.y * 0.19) * 0.16 + sin(time * 2.8 + a.x * 0.5) * 0.05;
   let current = waveSurge * (flexible + select(0.02, 0.12, partData.isTentacle));
 
-  // Staggered contraction wave: soft colonies fold first, rigid heads last,
-  // each within its own seeded window instead of one global pop.
+  // Soft fronds follow Tree's foliage timing; rigid skeletons follow its branches.
   let delay = reefDelay(a.x, a.y, c.x) + select(0.0, 0.10, flexible < 0.5);
-  let contract = 1.0 - reefStage(0.30 + delay, 0.72 + delay) * select(0.78, 0.96, flexible > 0.0);
+  let contract = select(treeBranchVisibility(),treeFoliageVisibility(),flexible>0.0);
   let face = vertexIndex / 6u;
   let uv = quadUv(vertexIndex);
   let geometry = boxGeometry(face, uv, partData.size * uniforms.blockSize * vec3f(contract, contract, contract));
@@ -469,7 +459,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   } else if (partData.isTentacle) {
     let t = clamp(local.y / max(partData.size.y * uniforms.blockSize, 0.001), 0.0, 1.0);
     let tentacleSway = sin(time * 2.2 + f32(partIndex) * 1.2 + t * 3.5) * t * t * uniforms.blockSize * 0.8;
-    local.x += tentacleSway;
+    local.x += tentacleSway*contract;
   }
 
   local.x += current * local.y * 1.5;
@@ -569,7 +559,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   if(style==3u){albedo*=0.86+detail.g*0.30;albedo=mix(albedo,coralAccent(),step(0.76,detail.b)*0.18);}
   let normal = normalize(input.normal);
   let lit = underwaterLighting(normal, input.world, albedo, 0.42, sssTint, sssAmount);
-  let fade = 1.0 - reefStage(0.60 + input.delay, min(0.86 + input.delay, 0.98));
+  let fade = 1.0 - reefStage(0.64,0.96);
   return vec4f(acesToneMap(lit), fade);
 }
 `;
@@ -788,44 +778,23 @@ struct Output {
 
 @vertex
 fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) instanceIndex: u32) -> Output {
-  var output: Output;
-  let blockType = blockTypes[instanceIndex];
-  let position = blockPositions[instanceIndex];
-  let role = finderRole(position.x, position.y);
-  // Living polyps sprout upward in a seeded radial sweep, finder polyps
-  // first, then settle into the flat scan plaques.
-  let center = uniforms.gridSize * 0.5;
-  let radial = distance(vec2f(position.x, position.y), vec2f(center, center)) / max(uniforms.gridSize * 0.71, 1.0);
-  let jitter = fract(sin((position.x * 12.9898 + position.y * 78.233 + 5.13) * 43.7585) * 43758.5453);
-  let delay = clamp(radial * 0.14 + jitter * 0.08 - select(0.0, 0.06, role > 0u), 0.0, 0.20);
-  let rise = reefStage(0.14 + delay, 0.50 + delay);
-  let settle = reefStage(0.54 + delay, 0.76 + delay);
-  let molten = rise * (1.0 - settle);
-  let height = (0.052 + max(0.34 * rise - 0.052, 0.0) * (1.0 - settle)) * uniforms.blockSize;
-  let footprint = mix(0.84, 1.0, settle) * uniforms.blockSize;
-  let uv = quadUv(vertexIndex);
-  let geometry = boxGeometry(vertexIndex / 6u, uv, vec3f(footprint, height, footprint));
-  var local = geometry[0];
-  // Lobed organic crown while the polyp stands; square plaque at lock.
-  let topness = clamp(local.y / max(height, 0.0001), 0.0, 1.0);
-  let lobe = sin(atan2(local.z, local.x) * 3.0 + position.x * 2.3 + position.y * 1.7) * 0.10;
-  let pinch = 1.0 - topness * molten * (0.30 - lobe);
-  local.x *= pinch;
-  local.z *= pinch;
-  let sway = sin(uniforms.time * 1.6 + position.x * 4.1 + position.y * 2.9) * 0.03 * molten * uniforms.blockSize;
-  let world = reefPoint(position.x, position.y, 0.10) + local + vec3f(sway, 0.0, -sway);
-  output.position = reefProject(world);
-  output.normal = geometry[1];
-  // The underside quad reverses its Z axis; mask both caps in grid coordinates.
-  output.uv = select(uv, vec2f(uv.x, 1.0 - uv.y), vertexIndex / 6u == 1u);
-  output.molten = molten;
-  output.tint = fract(sin(position.x * 17.3 + position.y * 31.1 + 9.7) * 43758.5);
-  output.visible = select(0u, 1u, blockTypes[instanceIndex] != 0u && rise > 0.002);
-  output.neighborMask = u32(position.w);
-  output.finderRole = role;
-  output.blockType = blockType;
-  output.cell = position.xy;
-  if (output.visible == 0u) { output.position = vec4f(2.0, 2.0, 2.0, 1.0); }
+  var output: Output;output.position=vec4f(2,2,2,1);
+  let count=u32(uniforms.gridSize*uniforms.gridSize);let owner=instanceIndex%count;let layer=instanceIndex/count;
+  let position=blockPositions[owner];let blockType=blockTypes[owner];
+  let cell=position.xy+vec2f(0.5)-vec2f(uniforms.gridSize*0.5);
+  let profile=1.0-smoothstep(0.15,0.49,length(cell)/uniforms.gridSize);
+  let jitter=fract(sin(position.x*17.3+position.y*31.1 + 9.7)*43758.5);
+  let cap=1u+u32(profile*(4.0+jitter*6.0));
+  if(blockType==0u || layer>=cap || treeSemanticAbsorb()<0.001 || (layer>0u && treeLayerRise(f32(layer))<0.001)){return output;}
+  var local=qrReliefPoint(vertexIndex,vec2f(0),layer)*uniforms.blockSize;
+  // Retain the original shallow scan plaque at the locked endpoint.
+  if(layer==0u && vertexIndex/6u==0u){local.y+=0.052*uniforms.blockSize;}
+  else if(layer==0u && vertexIndex/6u>=2u){local.y+=qrReliefUv(vertexIndex).y*0.052*uniforms.blockSize;}
+  output.position=reefProject(reefPoint(position.x,position.y,0.10)+local);
+  output.normal=qrReliefNormal(vertexIndex);output.uv=qrReliefUv(vertexIndex);
+  output.molten=1.0-reefStage(0.64,0.96);output.tint=jitter;
+  output.visible=1u;output.neighborMask=u32(position.w);
+  output.finderRole=finderRole(position.x,position.y);output.blockType=blockType;output.cell=position.xy;
   return output;
 }
 
@@ -833,9 +802,9 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
 fn fragmentMain(input: Output) -> @location(0) vec4f {
   if (input.visible == 0u) { discard; }
 
-  let lock = reefStage(0.58, 0.98);
+  let lock = reefStage(0.64, 0.96);
   let organicMask = qrModuleMask(input.uv, input.neighborMask);
-  if (abs(input.normal.y) > 0.5 && organicMask < 0.5) {
+  if (uniforms.progress > 0.94 && abs(input.normal.y) > 0.5 && organicMask < 0.5) {
     discard;
   }
 
@@ -848,12 +817,13 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let scanMaterial = select(plaqueInk * 0.84, plaqueInk, input.normal.y > 0.5);
   // Keep the polyp texture during the reveal, then lock to the shared ink.
   let cooled = scanMaterial * (0.94 + input.tint * 0.09);
-  let polypColor = mix(coralPrimary() * 0.94, coralAccent() * 1.05, 0.5 * input.molten)
+  let polypColor = mix(coralPrimary() * 0.94, mix(coralSecondary(),coralAccent(),input.tint) * 1.05, input.tint)
     * (0.98 + input.molten * 0.48);
-  let livingColor = mix(cooled, acesToneMap(polypColor), input.molten);
+  let reliefLight=0.38+max(dot(input.normal,normalize(vec3f(-0.35,0.88,-0.30))),0.0)*0.62;
+  let livingColor = mix(cooled, acesToneMap(polypColor*reliefLight), input.molten);
   let ink = qrModuleMaterial(input.blockType, input.cell);
   let scanColor = select(ink * 0.84, ink, input.normal.y > 0.5);
   let finalColor = mix(livingColor, scanColor, lock);
-  return vec4f(finalColor, 1.0);
+  return vec4f(finalColor, treeSemanticAbsorb());
 }
 `;

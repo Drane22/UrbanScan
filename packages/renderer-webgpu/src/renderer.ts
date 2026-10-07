@@ -6,6 +6,7 @@ import {
 
 import {
   getSculpturalPopulation,
+  SCULPTURE_AMBIENT_INSTANCES,
   SCULPTURE_PARTS,
   SCULPTURE_VERTICES,
 } from "./diorama-population.js";
@@ -20,6 +21,7 @@ import {
   type SeedModel,
 } from "./seed-model.js";
 import { createTerrainPalette, type TerrainScenePalette } from "./terrain-palette.js";
+import { QR_RELIEF_LAYERS } from "./tree-morph.js";
 import { TERRAIN_DETAIL_INSTANCES } from "./terrain-population.js";
 
 export type SeedRenderer = {
@@ -870,6 +872,7 @@ async function createCircuitPipelines(
       module: components,
     }),
     circuitQr: await createScenePipeline(device, format, {
+      blend: ALPHA_BLEND,
       label: "every-qrcode-circuit-qr-pipeline",
       layout: layouts.circuit,
       module: qr,
@@ -921,7 +924,12 @@ async function createReefPipelines(
     form: sources.form,
     reefCorals: await create("every-qrcode-reef-coral-pipeline", corals, true),
     reefFish: await create("every-qrcode-reef-fish-pipeline", fish, true),
-    reefQr: await create("every-qrcode-reef-qr-pipeline", qr),
+    reefQr: await createScenePipeline(device, format, {
+      blend: ALPHA_BLEND,
+      label: "every-qrcode-reef-qr-pipeline",
+      layout: layouts.reef,
+      module: qr,
+    }),
     reefShelf: await createScenePipeline(device, format, {
       blend: ALPHA_BLEND,
       label: "every-qrcode-reef-shelf-pipeline",
@@ -1416,7 +1424,11 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
     pass.setPipeline(gpu.pipelines.circuitSignals);
     pass.draw(6, gpu.circuitTraceCount);
     pass.setPipeline(gpu.pipelines.circuitQr);
-    pass.draw(36, gpu.blockField.blocks.length);
+    if (gpu.uniformValues[3]! > 0)
+      pass.draw(
+        36,
+        gpu.blockField.blocks.length * (gpu.uniformValues[3] === 1 ? 1 : QR_RELIEF_LAYERS),
+      );
   } else if (gpu.pipelines.form === "reef") {
     const reefBindGroup = gpu.bindGroups.reef;
     if (!reefBindGroup) throw new Error("Reef bind group was not initialized");
@@ -1430,13 +1442,21 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
     pass.setPipeline(gpu.pipelines.reefFish);
     pass.draw(36, gpu.reefFishCount);
     pass.setPipeline(gpu.pipelines.reefQr);
-    pass.draw(36, gpu.blockField.blocks.length);
+    if (gpu.uniformValues[3]! > 0)
+      pass.draw(
+        36,
+        gpu.blockField.blocks.length * (gpu.uniformValues[3] === 1 ? 1 : QR_RELIEF_LAYERS),
+      );
   } else if (gpu.pipelines.form === "terrain") {
     pass.setPipeline(gpu.pipelines.terrain);
-    // Foundation first so fading surface cells composite over it correctly.
-    if (gpu.uniformValues[3]! < 1) pass.draw(36, 1, 0, gpu.blockField.blocks.length);
-    pass.draw(36, gpu.blockField.blocks.length);
-    if (gpu.uniformValues[3]! < 0.62) {
+    const owners = gpu.blockField.blocks.length;
+    if (gpu.uniformValues[3]! < 1) {
+      pass.draw(36, 1, 0, owners);
+      pass.draw(36, owners);
+    }
+    if (gpu.uniformValues[3]! > 0)
+      pass.draw(36, owners * (gpu.uniformValues[3] === 1 ? 1 : QR_RELIEF_LAYERS), 0, owners + 1);
+    if (gpu.uniformValues[3]! < 0.99) {
       pass.setPipeline(gpu.pipelines.terrainDetails);
       pass.draw(384, TERRAIN_DETAIL_INSTANCES);
     }
@@ -1469,17 +1489,22 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
     if (gpu.uniformValues[3] === 1) pass.draw(6, gpu.blockField.blocks.length);
     else {
       const owners = gpu.blockField.blocks.length;
-      // At rest, submit only existing scene objects. Extra QR owners are needed during morphing.
-      const primary =
-        gpu.uniformValues[3] === 0 ? Math.min(gpu.worldPopulation.primary, owners) : owners;
+      const primary = Math.min(gpu.worldPopulation.primary, owners);
       pass.draw(SCULPTURE_VERTICES, 1, 0, owners * SCULPTURE_PARTS);
       pass.draw(SCULPTURE_VERTICES, primary * SCULPTURE_PARTS);
-      if (gpu.uniformValues[3]! < 0.62)
+      if (gpu.uniformValues[3]! < 0.99)
         pass.draw(
           SCULPTURE_VERTICES,
           gpu.worldPopulation.ambient * SCULPTURE_PARTS,
           0,
           owners * SCULPTURE_PARTS + 1,
+        );
+      if (gpu.uniformValues[3]! > 0)
+        pass.draw(
+          36,
+          owners * QR_RELIEF_LAYERS,
+          0,
+          owners * SCULPTURE_PARTS + 1 + SCULPTURE_AMBIENT_INSTANCES,
         );
     }
   } else {

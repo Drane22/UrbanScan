@@ -1,5 +1,6 @@
 import { DIORAMA_MATERIALS_WGSL } from "./diorama-materials.js";
 import { STAGED_PROJECTION_WGSL } from "./staged-world-shaders.js";
+import { QR_RELIEF_WGSL } from "./tree-morph.js";
 
 const CIRCUIT_COMMON = /* wgsl */ `
 struct Uniforms {
@@ -41,6 +42,7 @@ struct Uniforms {
 @group(0) @binding(6) var materialSampler: sampler;
 ${DIORAMA_MATERIALS_WGSL}
 ${STAGED_PROJECTION_WGSL}
+${QR_RELIEF_WGSL}
 
 fn circuitTempo()->f32 {return select(select(1.0,1.40,uniforms.camera.w==1.0),select(1.2,0.65,uniforms.camera.w==3.0),uniforms.camera.w>=2.0);}
 fn pcbBase() -> vec3f {
@@ -138,25 +140,8 @@ fn circuitDelay(column: f32, row: f32, seed: f32) -> f32 {
 
 // Tree-contract camera: moves across the whole morph with a breathing pulse and
 // idle/bounce bob instead of waiting for the second half to swing to top-down.
-fn circuitProject(localPos: vec3f) -> vec4f {
-  let cy = cos(mix(0.70, 0.0, uniforms.progress) + uniforms.cameraBobX);
-  let sy = sin(mix(0.70, 0.0, uniforms.progress) + uniforms.cameraBobX);
-  let cx = cos(mix(-0.55, -1.570796, uniforms.progress) + uniforms.cameraBobY);
-  let sx = sin(mix(-0.55, -1.570796, uniforms.progress) + uniforms.cameraBobY);
-  let rotX = localPos.x * cy - localPos.z * sy;
-  let rotZ = localPos.x * sy + localPos.z * cy;
-  let rotY = localPos.y * cx - rotZ * sx;
-  let depth = localPos.y * sx + rotZ * cx;
-  let portrait = select(1.0, 1.16, uniforms.aspectRatio < 0.8);
-  let morphPulse = 1.0 + sin(uniforms.progress * 3.14159265) * 0.035;
-  let scale = mix(40.5, 46.2, uniforms.progress) / uniforms.gridSize * portrait * morphPulse * uniforms.camera.x;
-  let scaleX = scale / max(uniforms.aspectRatio, 1.0);
-  let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
-  let yOffset = mix(-0.13, 0.07, uniforms.progress);
-  let xOffset = mix(0.0, 0.015, uniforms.progress);
-  let living = vec4f((rotX + xOffset) * scaleX, (rotY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
-  let scan = worldProject(localPos, 1.68, uniforms.gridSize * uniforms.blockSize * 0.045);
-  return mix(living, scan, stage(0.28, 0.96));
+fn circuitProject(localPos:vec3f)->vec4f {
+ return worldProject(localPos,1.68,uniforms.gridSize*uniforms.blockSize*0.045);
 }
 
 fn boardPoint(column: f32, row: f32, height: f32) -> vec3f {
@@ -222,7 +207,7 @@ fn studioLight(normal: vec3f, roughness: f32) -> f32 {
   let key = max(dot(normal, sunDir), 0.0);
   let fill = max(dot(normal, fillDir), 0.0);
   let up = max(normal.y, 0.0);
-  let viewDir = normalize(vec3f(0.398, 0.597, 0.696));
+  let viewDir = treeViewDirection();
   let halfVec = normalize(sunDir + viewDir);
   let specPower = mix(48.0, 6.0, roughness);
   let spec = pow(max(dot(normal, halfVec), 0.0), specPower) * mix(0.7, 0.08, roughness);
@@ -250,7 +235,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let isBoard = instanceIndex == 1u;
   let flatten = stage(0.72, 0.94);
   let worldWidth = (uniforms.gridSize + select(3.2, 0.55, isBoard)) * uniforms.blockSize;
-  let width = mix(worldWidth, (uniforms.gridSize + 8.0) * uniforms.blockSize, stage(0.28, 0.96));
+  let width = worldWidth;
   let heightCells = select(0.30, 0.18, isBoard);
   let height = mix(heightCells, 0.055, flatten) * uniforms.blockSize;
   let geometry = boxGeometry(face, uv, vec3f(width, height, width));
@@ -657,16 +642,15 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   // Staggered reflow: details retract first, then each body deflates into its
   // own pad. Hero processors hold until the end so the rising QR finder
   // pillars read as a handoff instead of everything vanishing at once.
-  let delay = circuitDelay(a.x, a.y, c.x) + select(0.0, 0.12, kind == 0u);
-  let detailFade = 1.0 - stage(0.08 + delay, 0.32 + delay);
-  let bodyFade = 1.0 - stage(0.36 + delay, 0.62 + delay);
+  let detailFade = treeFoliageVisibility();
+  let bodyFade = treeBranchVisibility();
   let partGeometry = componentPart(part, kind, vec3f(a.z, b.x, a.w), variant);
   let visibility = select(bodyFade, detailFade, part > 0u);
   let uv = quadUv(vertexIndex);
   let face = vertexIndex / 6u;
-  let geometry = boxGeometry(face, uv, partGeometry.size * uniforms.blockSize * vec3f(1.0, visibility, 1.0));
+  let geometry = boxGeometry(face, uv, partGeometry.size * uniforms.blockSize * visibility);
   let rotation = b.y * 1.570796;
-  let local = geometry[0] + partGeometry.offset * uniforms.blockSize;
+  let local = geometry[0] + partGeometry.offset * uniforms.blockSize * visibility;
   let rotated = vec3f(
     local.x * cos(rotation) - local.z * sin(rotation),
     local.y,
@@ -795,47 +779,23 @@ struct Output {
 
 @vertex
 fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) instanceIndex: u32) -> Output {
-  var output: Output;
-  let activeModule = blockTypes[instanceIndex] != 0u;
-  let blockType = blockTypes[instanceIndex];
-  let face = vertexIndex / 6u;
-  let uv = quadUv(vertexIndex);
-  let position = blockPositions[instanceIndex];
-  let role = finderRole(position.x, position.y);
-  // Finder cells bloom first; the rest sweep outward from the corners with
-  // seeded jitter so solder reflows across the board instead of popping in.
-  let center = uniforms.gridSize * 0.5;
-  let radial = distance(vec2f(position.x, position.y), vec2f(center, center)) / max(uniforms.gridSize * 0.71, 1.0);
-  let jitter = fract(sin((position.x * 12.9898 + position.y * 78.233) * 43.7585) * 43758.5453);
-  let delay = clamp(radial * 0.14 + jitter * 0.08 - select(0.0, 0.06, role > 0u), 0.0, 0.20);
-  let rise = stage(0.12 + delay, 0.48 + delay);
-  let settle = stage(0.52 + delay, 0.76 + delay);
-  let molten = rise * (1.0 - settle);
-  // Tall molten bump that cools down into the shallow scan module profile.
-  let height = (0.052 + max(0.38 * rise - 0.052, 0.0) * (1.0 - settle)) * uniforms.blockSize;
-  let footprint = mix(0.86, 1.0, settle) * uniforms.blockSize;
-  let geometry = boxGeometry(face, uv, vec3f(footprint, height, footprint));
-  var local = geometry[0];
-  // Round the pillar crown while molten; the locked module stays a square.
-  let topness = clamp(local.y / max(height, 0.0001), 0.0, 1.0);
-  let pinch = 1.0 - topness * molten * 0.34;
-  local.x *= pinch;
-  local.z *= pinch;
-  let wobblePhase = position.x * 3.1 + position.y * 5.7;
-  let wobble = sin(uniforms.time * 2.2 + wobblePhase) * 0.02 * molten * uniforms.blockSize;
-  let moduleCenter = boardPoint(position.x, position.y, 0.12);
-  output.position = circuitProject(moduleCenter + local + vec3f(wobble, 0.0, -wobble));
-  output.normal = geometry[1];
-  // The underside quad reverses its Z axis; mask both caps in grid coordinates.
-  output.uv = select(uv, vec2f(uv.x, 1.0 - uv.y), face == 1u);
-  output.molten = molten;
-  output.tint = fract(sin(position.x * 17.3 + position.y * 31.1) * 43758.5);
-  output.visible = select(0u, 1u, activeModule && rise > 0.002);
-  output.neighborMask = u32(position.w);
-  output.finderRole = role;
-  output.blockType = blockType;
-  output.cell = position.xy;
-  if (output.visible == 0u) { output.position = vec4f(2.0, 2.0, 2.0, 1.0); }
+  var output: Output;output.position=vec4f(2,2,2,1);
+  let count=u32(uniforms.gridSize*uniforms.gridSize);let owner=instanceIndex%count;let layer=instanceIndex/count;
+  let position=blockPositions[owner];let blockType=blockTypes[owner];
+  let cell=position.xy+vec2f(0.5)-vec2f(uniforms.gridSize*0.5);
+  let profile=1.0-smoothstep(0.15,0.49,length(cell)/uniforms.gridSize);
+  let jitter=fract(sin(position.x*17.3+position.y*31.1)*43758.5);
+  let cap=1u+u32(profile*(4.0+jitter*6.0));
+  if(blockType==0u || layer>=cap || treeSemanticAbsorb()<0.001 || (layer>0u && treeLayerRise(f32(layer))<0.001)){return output;}
+  var local=qrReliefPoint(vertexIndex,vec2f(0),layer)*uniforms.blockSize;
+  // Retain the original shallow scan plaque at the locked endpoint.
+  if(layer==0u && vertexIndex/6u==0u){local.y+=0.052*uniforms.blockSize;}
+  else if(layer==0u && vertexIndex/6u>=2u){local.y+=qrReliefUv(vertexIndex).y*0.052*uniforms.blockSize;}
+  output.position=circuitProject(boardPoint(position.x,position.y,0.12)+local);
+  output.normal=qrReliefNormal(vertexIndex);output.uv=qrReliefUv(vertexIndex);
+  output.molten=1.0-stage(0.64,0.96);output.tint=jitter;
+  output.visible=1u;output.neighborMask=u32(position.w);
+  output.finderRole=finderRole(position.x,position.y);output.blockType=blockType;output.cell=position.xy;
   return output;
 }
 
@@ -844,7 +804,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   if (input.visible == 0u) { discard; }
 
   let organicMask = qrModuleMask(input.uv, input.neighborMask);
-  if (abs(input.normal.y) > 0.5 && organicMask < 0.5) {
+  if (uniforms.progress > 0.94 && abs(input.normal.y) > 0.5 && organicMask < 0.5) {
     discard;
   }
 
@@ -855,8 +815,11 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let scanMaterial = select(contactInk * 0.82, contactInk, input.normal.y > 0.5);
   // Retain the original plated materials and brightness as solder cools.
   let cooled = scanMaterial * (0.94 + input.tint * 0.09);
-  let moltenColor = mix(goldPad(), solderMaterial() * 1.08, 0.4 * input.molten)
-    * (1.05 + input.molten * 0.48);
-  return vec4f(acesToneMap(mix(cooled, moltenColor, input.molten)), 1.0);
+  let reliefLight=0.36+max(dot(input.normal,normalize(vec3f(-0.46,0.82,-0.33))),0.0)*0.64;
+  let halfVector=normalize(treeViewDirection()+normalize(vec3f(-0.46,0.82,-0.33)));
+  let glint=pow(max(dot(input.normal,halfVector),0.0),32.0)*0.12;
+  let moltenColor = mix(goldPad(), solderMaterial() * 1.08, input.tint*0.60)
+    * reliefLight+mix(goldPad(),uniforms.themeFifth.rgb,0.40)*glint;
+  return vec4f(acesToneMap(mix(cooled, moltenColor, input.molten)), treeSemanticAbsorb());
 }
 `;

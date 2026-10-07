@@ -10,7 +10,7 @@ fn paperBloom(v:u32,radius:f32,seed:f32)->vec3f {
   let petal=(v/12u)%8u;let layer=(v/96u)%2u;
   let size=select(1.0,0.65,layer==1u);
   let a=f32(petal)*PI/4.0+f32(layer)*PI/8.0+seed;
-  let breathe=sin(uniforms.time*0.8+seed*9.0)*0.14*alive();
+  let breathe=sin(uniforms.time*0.8+seed*9.0)*0.14;
   let p=paperPetal(v,radius*size,radius*0.36*size,radius*(0.35+f32(layer)*0.65+breathe));
   return rotate(p,a)+vec3f(0,f32(layer)*radius*0.08,0);
 }
@@ -32,7 +32,7 @@ fn worldFoundation(v:u32)->Surface {
 fn craneWing(v:u32,side:f32,seed:f32)->vec3f {
   // Broad folded wings, with a raised center crease and a pointed outer tip.
   let p=array<vec3f,12>(vec3f(0,0,-0.65),vec3f(1.05,0.38,-0.05),vec3f(2.75,0.12,0.55),vec3f(0,0,-0.65),vec3f(0,0,0.75),vec3f(1.05,0.38,-0.05),vec3f(0,0,0.75),vec3f(2.75,0.12,0.55),vec3f(1.05,0.38,-0.05),vec3f(0,0,0.75),vec3f(2.75,0.12,0.55),vec3f(0.75,-0.12,0.9));
-  var q=p[v%12u];let hinge=sin(uniforms.time*(1.65+seed*0.45)+seed*11.0)*0.72*alive();
+  var q=p[v%12u];let hinge=sin(uniforms.time*(1.65+seed*0.45)+seed*11.0)*0.72;
   let x=q.x;q.x=(x*cos(hinge)-q.y*sin(hinge))*side;q.y=x*sin(hinge)+q.y*cos(hinge);
   return q;
 }
@@ -51,7 +51,7 @@ fn worldSurface(v:u32,i:u32,part:u32)->Surface {
       let points=array<vec3f,12>(vec3f(-0.18,0,-0.55),vec3f(-0.12,1.45,-1.15),vec3f(0.14,1.30,-1.10),vec3f(-0.18,0,-0.55),vec3f(0.14,1.30,-1.10),vec3f(0.18,0.1,-0.5),vec3f(-0.12,1.45,-1.15),vec3f(0,1.10,-2.10),vec3f(0.14,1.30,-1.10),vec3f(0.14,1.30,-1.10),vec3f(0,1.10,-2.10),vec3f(0.12,1.45,-1.15));
       p=points[v%12u];
     }
-    let a=uniforms.time*(0.20+g.w*0.10)*alive()+g.w*PI*2.0;
+    let a=uniforms.time*(0.20+g.w*0.10)+g.w*PI*2.0;
     let drift=vec3f(cos(a)*(1.4+g.w),sin(uniforms.time*0.9+g.w*13.0)*0.65,sin(a)*(1.2+g.w))*s*alive();
     let bank=sin(a*1.5)*0.16*alive();
     p=vec3f(p.x*cos(bank)-p.y*sin(bank),p.x*sin(bank)+p.y*cos(bank),p.z);
@@ -92,12 +92,12 @@ fn worldAmbient(v:u32,i:u32,part:u32)->Surface {
     let edge=i-289u;let a=f32(edge)*PI*0.25+worldDNA(15u).w;
     let foot=vec3f(cos(a)*uniforms.gridSize*0.40,0,sin(a)*uniforms.gridSize*0.40);
     let head=foot+vec3f(0,1.5*s,0);
-    if(part==0u){let p=paperPetal(v,0.85*s,0.38*s,0.13*s);let blade=f32((v/12u)%4u)*PI*0.5+uniforms.time*(0.6+g.w)*alive();return surface(head+rotate(p,blade),palette(f32(1u+edge%3u)),0);}
+    if(part==0u){let p=paperPetal(v,0.85*s,0.38*s,0.13*s);let blade=f32((v/12u)%4u)*PI*0.5+uniforms.time*(0.6+g.w);return surface(head+rotate(p,blade),palette(f32(1u+edge%3u)),0);}
     if(part==1u){return surface(bridge(v,foot,head,0.045*s),palette(2),0);}
     if(part==2u){return surface(head+sphere(v,vec3f(0.12*s)),palette(1),0);}
     return surface(head,palette(2),0);
   }
-  let a=uniforms.time*(0.23+g.w*0.10)*alive()+g.w*PI*2.0;
+  let a=uniforms.time*(0.23+g.w*0.10)+g.w*PI*2.0;
   let radius=uniforms.gridSize*(0.20+g.w*0.11);
   let path=vec3f(cos(a)*radius,(3.0+g.z+sin(a*2.0)*0.7)*s,sin(a)*radius*0.72);
   let points=array<vec3f,12>(vec3f(0,0,-1.15),vec3f(-0.9,0,0.65),vec3f(-0.12,0.25,0.38),vec3f(0,0,-1.15),vec3f(-0.12,0.25,0.38),vec3f(0,0.12,0.55),vec3f(0,0,-1.15),vec3f(0.12,0.25,0.38),vec3f(0.9,0,0.65),vec3f(0,0,-1.15),vec3f(0,0.12,0.55),vec3f(0.12,0.25,0.38));

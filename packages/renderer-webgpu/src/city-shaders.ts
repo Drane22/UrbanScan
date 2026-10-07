@@ -1,3 +1,5 @@
+import { STAGED_PROJECTION_WGSL } from "./staged-world-shaders.js";
+
 const CITY_UNIFORMS_WGSL = /* wgsl */ `
 struct Uniforms {
   aspectRatio: f32,
@@ -67,25 +69,11 @@ fn cityStage(start: f32, end: f32) -> f32 {
   return smoothstep(start, end, uniforms.progress);
 }
 
-fn cityProject(localPos: vec3f) -> vec4f {
-  let camera = cityStage(0.5, 1.0);
-  let angleY = mix(0.79, 0.0, camera);
-  let angleX = mix(-0.56, -1.5708, camera);
-  let cy = cos(angleY);
-  let sy = sin(angleY);
-  let cx = cos(angleX);
-  let sx = sin(angleX);
-  let rotatedX = localPos.x * cy - localPos.z * sy;
-  let rotatedZ = localPos.x * sy + localPos.z * cy;
-  let rotatedY = localPos.y * cx - rotatedZ * sx;
-  let depth = localPos.y * sx + rotatedZ * cx;
-  let portrait = select(1.0, 1.18, uniforms.aspectRatio < 0.8);
-  let pulse = 1.0 + sin(camera * 3.14159265) * 0.025;
-  let scale = mix(40.0, 46.4, camera) / uniforms.gridSize * portrait * pulse * uniforms.camera.x;
-  let scaleX = scale / max(uniforms.aspectRatio, 1.0);
-  let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
-  let yOffset = mix(-0.18, 0.08, camera) + uniforms.cameraBobY;
-  return vec4f(rotatedX * scaleX + uniforms.cameraBobX, (rotatedY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
+${STAGED_PROJECTION_WGSL}
+fn cityProject(localPos:vec3f)->vec4f {
+ let portrait=select(1.0,1.18,uniforms.aspectRatio<0.8);
+ return treeCameraView(localPos,40.0/uniforms.gridSize,46.4/uniforms.gridSize,
+  vec2f(0,-0.18),vec2f(0,0.08),portrait,uniforms.camera.x);
 }
 `;
 
@@ -170,9 +158,9 @@ struct CityPart {
  */
 fn cityPart(part: u32, lot: vec4f, blockType: u32, seed: f32) -> CityPart {
   let progress = uniforms.progress;
-  let propStage = 1.0 - cityStage(0.0, 0.18);
-  let roofStage = 1.0 - cityStage(0.12, 0.34);
-  let heightStage = 1.0 - cityStage(0.22, 0.62);
+  let propStage = treeFoliageVisibility();
+  let roofStage = treeBranchVisibility();
+  let heightStage = treeBranchVisibility();
   let footStage = cityStage(0.55, 0.9);
   let floors = lot.x;
   let archetype = u32(lot.y);
@@ -441,6 +429,11 @@ fn fragmentMain(input: CityOutput) -> @location(0) vec4f {
   var windowColor = mix(vec3f(0.12, 0.14, 0.18), vec3f(1.0, 0.86, 0.6), night);
   if(style==2u){let chase=pow(max(sin(input.local.y*1.4-uniforms.time*1.5+input.seed*8.0),0.0),6.0);windowColor=mix(uniforms.themeSecondary.rgb,uniforms.themeThird.rgb,chase);}
   if(style==3u){color+=uniforms.themeThird.rgb*pow(max(sin(input.local.y*0.9-uniforms.time*0.5),0.0),24.0)*0.06;}
+  let view=treeViewDirection();
+  let halfVector=normalize(view+normalize(vec3f(-0.41,0.86,-0.3)));
+  let reflection=pow(max(dot(input.normal,halfVector),0.0),40.0)*0.30;
+  let fresnel=pow(1.0-abs(dot(input.normal,view)),4.0)*0.12;
+  windowColor+=mix(uniforms.themeFifth.rgb,vec3f(1.0),0.45)*(reflection+fresnel)*(1.0-night);
   color = mix(color, windowColor, windows * mix(0.55, 0.95, night));
   // Snow: dust roofs and plazas.
   let topFace = select(0.0, 1.0, input.faceIndex == 0u);
