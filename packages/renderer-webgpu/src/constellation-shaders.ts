@@ -3,9 +3,6 @@ import { createSculpturalWorldShader } from "./sculptural-world-shaders.js";
 // Preserve the stored form key while generating a different fantasy system per link.
 export const CONSTELLATION_SHADER = createSculpturalWorldShader(
   /* wgsl */ `
-fn planetCount()->u32 {return 5u+u32(worldDNA(5u).w*5.0);}
-fn worldCount()->u32 {return planetCount()+1u;}
-fn worldAmbientCount()->u32 {return 384u;}
 fn solarCenter()->vec3f {return vec3f(worldDNA(6u).x*0.10,0,worldDNA(6u).y*0.10)*uniforms.gridSize;}
 fn orbitRadius(i:u32)->f32 {return uniforms.gridSize*(0.13+f32(i)/f32(max(planetCount()-1u,1u))*0.23);}
 fn orbitPoint(i:u32,a:f32)->vec3f {

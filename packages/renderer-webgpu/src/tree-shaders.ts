@@ -880,7 +880,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> PetalOutput {
   let seed = data.w;
   let visibility = smoothstep(0.0, 0.35, 1.0 - uniforms.progress) * sceneWind();
   let cycleRate = 0.052 + seed * 0.025;
-  let cycle = fract(uniforms.time * cycleRate + seed * 7.31);
+  let cycle = fract(uniforms.time * seasonalTempo() * cycleRate + seed * 7.31);
   let fallT = smoothstep(0.03, 0.94, cycle);
   let fade = smoothstep(0.0, 0.08, cycle) * (1.0 - smoothstep(0.92, 1.0, cycle));
   let blockSize = uniforms.blockSize;

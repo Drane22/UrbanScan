@@ -1,4 +1,7 @@
-const TERRAIN_UNIFORMS_WGSL = /* wgsl */ `
+import { STAGED_PROJECTION_WGSL } from "./staged-world-shaders.js";
+import { DIORAMA_MATERIALS_WGSL } from "./diorama-materials.js";
+
+export const TERRAIN_UNIFORMS_WGSL = /* wgsl */ `
 struct Uniforms {
   aspectRatio: f32,
   time: f32,
@@ -26,6 +29,7 @@ struct Uniforms {
   terrainMeadow: vec4f,
   terrainRidge: vec4f,
   terrainSummit: vec4f,
+  camera: vec4f,
 }
 
 fn terrainInk() -> vec3f {
@@ -53,25 +57,31 @@ fn terrainReliefProfile(heightValue: f32) -> f32 {
   return 0.1 + pow(heightValue, 0.72) * 12.6;
 }
 
+${STAGED_PROJECTION_WGSL}
+${DIORAMA_MATERIALS_WGSL}
 fn terrainProject(localPos: vec3f) -> vec4f {
-  let progress = uniforms.progress;
-  let angleY = mix(0.79, 0.0, progress);
-  let angleX = mix(-0.56, -1.5708, progress);
-  let cy = cos(angleY);
-  let sy = sin(angleY);
-  let cx = cos(angleX);
-  let sx = sin(angleX);
-  let rotatedX = localPos.x * cy - localPos.z * sy;
-  let rotatedZ = localPos.x * sy + localPos.z * cy;
-  let rotatedY = localPos.y * cx - rotatedZ * sx;
-  let depth = localPos.y * sx + rotatedZ * cx;
-  let portrait = select(1.0, 1.18, uniforms.aspectRatio < 0.8);
-  let pulse = 1.0 + sin(progress * 3.14159265) * 0.025;
-  let scale = mix(40.0, 46.4, progress) / uniforms.gridSize * portrait * pulse;
-  let scaleX = scale / max(uniforms.aspectRatio, 1.0);
-  let scaleY = scale / max(1.0 / uniforms.aspectRatio, 1.0);
-  let yOffset = mix(-0.045, 0.08, progress);
-  return vec4f(rotatedX * scaleX, (rotatedY + yOffset) * scaleY, depth * 0.01 + 0.5, 1.0);
+ return worldProject(localPos,1.68,uniforms.gridSize*uniforms.blockSize*0.045);
+}
+
+`;
+
+export const TERRAIN_RELIEF_WGSL = /* wgsl */ `
+@group(0) @binding(4) var<storage, read> worldData: array<vec4f>;
+fn terrainGene(i:u32)->vec4f {return worldData[i%arrayLength(&worldData)];}
+fn terrainSample(p:vec2f)->f32 {
+ let n=i32(uniforms.gridSize);let q=clamp(p+vec2f(uniforms.gridSize*0.5-0.5),vec2f(0),vec2f(f32(n-1)));
+ let c=vec2i(floor(q));let next=min(c+vec2i(1),vec2i(n-1));let f=fract(q);
+ return mix(mix(blockHeights[u32(c.y*n+c.x)],blockHeights[u32(c.y*n+next.x)],f.x),
+ mix(blockHeights[u32(next.y*n+c.x)],blockHeights[u32(next.y*n+next.x)],f.x),f.y);
+}
+fn terrainRiver(p:vec2f)->f32 {
+ let n=uniforms.gridSize;let g=terrainGene(705u);let axis=select(p,p.yx,g.w>0.5);
+ let bend=sin(axis.y/n*7.0+g.x*6.28)*n*(0.12+g.z*0.035)+g.y*n*0.35;
+ return 1.0-smoothstep(n*0.027,n*0.051,abs(axis.x-bend));
+}
+fn terrainElevation(p:vec2f)->f32 {
+ let value=terrainSample(p);let raw=terrainReliefProfile(value)*uniforms.gridSize/25.0;
+ return mix(raw,0.30*uniforms.gridSize/25.0,terrainRiver(p));
 }
 `;
 
@@ -92,12 +102,15 @@ struct TerrainOutput {
   @location(9) @interpolate(flat) blockType: u32,
   @location(10) @interpolate(flat) neighborMask: u32,
   @location(11) @interpolate(flat) faceIndex: u32,
+  @location(12) world: vec3f,
+  @location(13) @interpolate(flat) foundation: u32,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var<storage, read> blockTypes: array<u32>;
 @group(0) @binding(2) var<storage, read> blockPositions: array<vec4f>;
 @group(0) @binding(3) var<storage, read> blockHeights: array<f32>;
+${TERRAIN_RELIEF_WGSL}
 
 fn terrainHeightAt(column: i32, row: i32) -> f32 {
   let size = i32(uniforms.gridSize);
@@ -133,12 +146,6 @@ fn terrainShadow(height: f32, column: i32, row: i32) -> f32 {
     shadow *= mix(1.0, 0.78, occlusion * max(distanceFade, 0.45));
   }
   return max(shadow, 0.74);
-}
-
-fn terrainTopNormal(column: i32, row: i32) -> vec3f {
-  let slopeX = terrainHeightAt(column + 1, row) - terrainHeightAt(column - 1, row);
-  let slopeZ = terrainHeightAt(column, row + 1) - terrainHeightAt(column, row - 1);
-  return normalize(vec3f(-slopeX * 2.2, 1.0, -slopeZ * 2.2));
 }
 
 fn terrainGeometry(
@@ -187,17 +194,39 @@ fn vertexMain(
     vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0),
   );
   let uv = quad[quadIndex];
+  if(instanceIndex==u32(uniforms.gridSize*uniforms.gridSize)){
+    let n=uniforms.gridSize;let base=2.4*n/25.0*(1.0-uniforms.progress);
+    let extent=mix(n,n+8.0,uniforms.progress)*uniforms.blockSize;
+    let g=terrainGeometry(faceIndex,uv,extent,base*uniforms.blockSize,vec3f(0,1,0));
+    output.world=g[0]-vec3f(0,(base+0.045)*uniforms.blockSize,0);
+    output.position=terrainProject(output.world);output.normal=g[1];output.uv=uv;
+    output.shade=0.65+max(dot(g[1],normalize(vec3f(-0.4,0.85,-0.3))),0.0)*0.35;
+    output.faceIndex=faceIndex;output.foundation=1u;return output;
+  }
   let positionData = blockPositions[instanceIndex];
   let column = i32(positionData.x);
   let row = i32(positionData.y);
   let heightValue = clamp(blockHeights[instanceIndex], 0.0, 1.0);
   let blockSize = uniforms.blockSize;
-  let terrainHeight = blockSize * terrainReliefProfile(heightValue);
+  let cell=positionData.xy+vec2f(0.5)-vec2f(uniforms.gridSize*0.5);
+  let terrainHeight = blockSize * terrainElevation(cell);
   let flatHeight = blockSize * 0.11;
   let height = mix(terrainHeight, flatHeight, uniforms.progress);
-  let footprint = blockSize * mix(0.84, 1.0, uniforms.progress);
-  let topNormal = mix(terrainTopNormal(column, row), vec3f(0.0, 1.0, 0.0), uniforms.progress);
-  let geometry = terrainGeometry(faceIndex, uv, footprint, height, topNormal);
+  let footprint = blockSize;
+  let topNormal = vec3f(0.0, 1.0, 0.0);
+  var geometry = terrainGeometry(faceIndex, uv, footprint, height, topNormal);
+  var local=geometry[0];
+  if(faceIndex!=1u){
+    let corner=cell+local.xz/blockSize;
+    let top=mix(terrainElevation(corner)*blockSize,flatHeight,uniforms.progress);
+    local.y=select(top*uv.y,top,faceIndex==0u);
+    geometry[0]=local;
+    if(faceIndex==0u){
+      let dx=terrainElevation(corner+vec2f(0.35,0))-terrainElevation(corner-vec2f(0.35,0));
+      let dz=terrainElevation(corner+vec2f(0,0.35))-terrainElevation(corner-vec2f(0,0.35));
+      geometry[1]=normalize(mix(vec3f(-dx,0.70,-dz),vec3f(0,1,0),uniforms.progress));
+    }
+  }
   let halfGrid = uniforms.gridSize * blockSize * 0.5;
   let center = vec3f(
     (positionData.x + 0.5) * blockSize - halfGrid,
@@ -213,6 +242,7 @@ fn vertexMain(
   if (abs(normal.y) < 0.12) { shade *= 0.68; }
   let viewDirection = normalize(vec3f(sin(0.79), 0.58, cos(0.79)));
   let viewDot = abs(dot(normal, viewDirection));
+  output.world=worldPosition;output.foundation=0u;
   output.position = terrainProject(worldPosition);
   output.normal = normal;
   output.uv = uv;
@@ -236,7 +266,7 @@ fn terrainBandColor(height: f32) -> vec3f {
   let ridge = uniforms.terrainRidge.rgb;
   let summit = uniforms.terrainSummit.rgb;
   if (height < 0.055) {
-    return terrainPaper();
+    return mix(uniforms.themeThird.rgb,uniforms.themeFourth.rgb,0.25);
   }
   if (height < 0.22) {
     return water;
@@ -251,20 +281,6 @@ fn terrainBandColor(height: f32) -> vec3f {
     return mix(meadow, ridge, smoothstep(0.62, 0.84, height));
   }
   return mix(ridge, summit, smoothstep(0.84, 1.0, height));
-}
-
-fn terrainQrColor(blockType: u32, noise: f32) -> vec3f {
-  var color = uniforms.themePrimary.rgb;
-  if (blockType == 3u) {
-    color = uniforms.themeSecondary.rgb;
-  } else if (blockType == 4u) {
-    color = mix(uniforms.themeThird.rgb, uniforms.themeFourth.rgb, 0.58);
-  } else if (blockType == 2u || blockType == 5u) {
-    color = uniforms.themeFourth.rgb;
-  }
-  let luma = dot(color, vec3f(0.2126, 0.7152, 0.0722));
-  let contrast = mix(color, terrainInk(), smoothstep(0.76, 0.96, luma) * 0.2);
-  return contrast * (0.92 + noise * 0.08);
 }
 
 fn terrainQrMask(uv: vec2f, neighborMask: u32) -> f32 {
@@ -299,9 +315,34 @@ fn terrainHash(position: vec2f) -> f32 {
 fn fragmentMain(input: TerrainOutput) -> @location(0) vec4f {
   let progress = uniforms.progress;
   let noise = terrainHash(input.position.xy + vec2f(uniforms.time * 0.13));
-  let paper = terrainPaper();
+  let paper = qrPaper();
+  let coord=input.world/uniforms.blockSize;
+  if(input.foundation==1u){
+    let layers=sin(coord.y*14.0+sin(coord.x*0.7)*1.3)*0.5+0.5;
+    let pores=terrainHash(floor(coord.xz*18.0)+vec2f(floor(coord.y*21.0)));
+    let stone=mix(uniforms.themePrimary.rgb,uniforms.themeThird.rgb,0.10+layers*0.25)*(0.84+pores*0.22)*input.shade;
+    return vec4f(mix(stone,paper,smoothstep(0.50,0.98,progress)),1);
+  }
   var terrainColor = terrainBandColor(input.heightValue);
-  terrainColor *= mix(0.92, 1.06, input.shade);
+  // Stable mineral bands use world coordinates, so faces share the same rock layers.
+  let h=input.heightValue;let river=terrainRiver(coord.xz);let style=u32(uniforms.camera.w);
+  let mineral=mix(uniforms.themeThird.rgb,uniforms.themeFourth.rgb,smoothstep(0.22,0.75,h)*0.55);
+  terrainColor=mix(terrainColor,mineral,0.86);
+  terrainColor=mix(terrainColor,uniforms.themeFifth.rgb,smoothstep(0.66,1.0,h)*0.5);
+  let veins=pow(0.5+0.5*sin(coord.x*2.2+coord.z*1.9+sin(coord.z*0.7)*2.0),15.0);
+  let strata=0.5+0.5*sin(coord.y*9.0+sin(coord.x*0.5)*2.0);
+  terrainColor=mix(terrainColor,uniforms.themePrimary.rgb,strata*select(0.12,0.30,input.faceIndex>1u));
+  terrainColor=mix(terrainColor,uniforms.themeSecondary.rgb,veins*0.30);
+  let flow=0.5+0.5*sin(coord.z*2.2+coord.x*1.3-uniforms.time*2.3);
+  let water=mix(uniforms.themeFourth.rgb,uniforms.themeSecondary.rgb,0.20+flow*0.20);
+  terrainColor=mix(terrainColor,water,river*0.88);
+  if(style==1u){terrainColor=mix(terrainColor,uniforms.themeSecondary.rgb,river*(0.7+flow*0.25));}
+  if(style==3u){terrainColor+=uniforms.themeSecondary.rgb*veins*pow(max(sin(coord.x*0.20-uniforms.time*0.9),0.0),12.0)*0.24;}
+  let grit=terrainHash(floor(coord.xz*15.0)+vec2f(floor(coord.y*19.0)));
+  let fissure=pow(max(sin(coord.x*2.7+sin(coord.z*2.2)*3.0+coord.y*0.8),0.0),40.0);
+  terrainColor*=0.94+grit*0.12;
+  terrainColor=mix(terrainColor,uniforms.themePrimary.rgb,fissure*0.12);
+  terrainColor *= mix(0.72, 1.06, input.shade);
   let contact = mix(0.82, 1.0, smoothstep(0.0, 0.72, input.heightFraction));
   terrainColor *= mix(contact, 1.0, progress);
   terrainColor *= mix(input.castShadow, 1.0, progress * 0.92);
@@ -317,10 +358,11 @@ fn fragmentMain(input: TerrainOutput) -> @location(0) vec4f {
     * smoothstep(0.42 + snowNoise * 0.1, 0.72, input.heightValue);
   terrainColor = mix(terrainColor, terrainPaper(), snowCover * 0.88);
   let qrNoise = terrainHash(input.uv + vec2f(input.heightValue * 17.0));
-  let qrMask = terrainQrMask(input.uv, input.neighborMask);
+  let qrUv=select(input.uv,vec2f(input.uv.x,1.0-input.uv.y),input.faceIndex==1u);
+  let qrMask = terrainQrMask(qrUv, input.neighborMask);
   let isActive = select(0.0, 1.0, input.blockType != 0u);
-  var qrColor = mix(paper, terrainQrColor(input.blockType, qrNoise), isActive * qrMask);
-  if (input.faceIndex != 0u) {
+  var qrColor = mix(paper, qrModuleMaterial(input.blockType,input.world.xz/uniforms.blockSize), isActive * qrMask);
+  if (input.faceIndex != 0u && input.faceIndex != 1u) {
     qrColor = mix(qrColor, terrainInk(), 0.18);
   }
   var color = mix(terrainColor, qrColor, smoothstep(0.58, 0.98, progress));

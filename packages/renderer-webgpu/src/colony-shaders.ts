@@ -2,9 +2,6 @@ import { createSculpturalWorldShader } from "./sculptural-world-shaders.js";
 
 export const COLONY_SHADER = createSculpturalWorldShader(
   /* wgsl */ `
-fn colonyWidth()->u32 {return 4u+u32(worldDNA(5u).w*3.0);}
-fn worldCount()->u32 {return colonyWidth()*colonyWidth();}
-fn worldAmbientCount()->u32 {return 342u+u32(worldDNA(6u).w*14.0);}
 fn colonyHero(i:u32)->bool {
   let width=colonyWidth();let x=i%width;let z=i/width;
   return x>0u && x<width-1u && z>0u && z<width-1u && (i+u32(worldDNA(7u).w*17.0))%(3u+sceneVariant(4u))==0u;

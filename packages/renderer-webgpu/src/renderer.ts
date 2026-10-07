@@ -4,14 +4,15 @@ import {
   type GeneratorVersion,
 } from "@every-qrcode/core";
 
-import { createSeedGpuScene, type SeedGpuScene } from "./gpu-scene.js";
-import { acquireGpuDevice, releaseGpuDevice } from "./gpu-session.js";
-import { isStagedWorld, selectWorldPalette } from "./staged-world.js";
 import {
-  SCULPTURE_AMBIENT_INSTANCES,
+  getSculpturalPopulation,
   SCULPTURE_PARTS,
   SCULPTURE_VERTICES,
-} from "./sculptural-world-shaders.js";
+} from "./diorama-population.js";
+import { createSeedGpuScene, type SeedGpuScene } from "./gpu-scene.js";
+import { acquireGpuDevice, releaseGpuDevice } from "./gpu-session.js";
+import { getPalettesForModel } from "./world-palettes.js";
+import { isStagedWorld, selectWorldPalette } from "./staged-world.js";
 import {
   createSeedBlockField,
   type SeedBlockField,
@@ -44,6 +45,7 @@ export type SeedScenePalette = readonly [
 ];
 
 export type SeedSceneConfig = {
+  readonly artDirection?: number;
   readonly background?: readonly [number, number, number];
   readonly effect?: SeedSceneEffect;
   readonly palette?: SeedScenePalette;
@@ -76,6 +78,7 @@ type TreePipelines = SharedPipelines & {
 type TerrainPipelines = SharedPipelines & {
   readonly form: "terrain";
   readonly terrain: GPURenderPipeline;
+  readonly terrainDetails: GPURenderPipeline;
 };
 
 type CityPipelines = SharedPipelines & {
@@ -164,6 +167,7 @@ type TreeShaderSources = {
 type TerrainShaderSources = {
   readonly form: "terrain";
   readonly terrain: string;
+  readonly terrainDetails: string;
 };
 
 type CityShaderSources = {
@@ -331,11 +335,17 @@ const VERSION_ONE_SHADER_LOADERS = {
     return { ...shared, form: "stained-glass", "stained-glass": m.STAINED_GLASS_SHADER };
   },
   terrain: async (): Promise<SeedShaderSources> => {
-    const [shared, terrain] = await Promise.all([
+    const [shared, terrain, details] = await Promise.all([
       loadVersionOneSharedShaders(),
       import("./terrain-shaders.js"),
+      import("./terrain-detail-shaders.js"),
     ]);
-    return { ...shared, form: "terrain", terrain: terrain.TERRAIN_SHADER };
+    return {
+      ...shared,
+      form: "terrain",
+      terrain: terrain.TERRAIN_SHADER,
+      terrainDetails: details.TERRAIN_DETAIL_SHADER,
+    };
   },
   "toy-block": async (): Promise<SeedShaderSources> => {
     const [shared, m] = await Promise.all([
@@ -416,11 +426,13 @@ type RenderTargets = {
 };
 
 type SeedGpuResources = {
+  artDirection: number;
   readonly uniformValues: Float32Array;
   readonly bindGroups: SeedBindGroups;
   readonly blockField: SeedBlockField;
   readonly buffers: SeedBuffers;
   readonly cityPartCount: number;
+  readonly worldPopulation: { primary: number; ambient: number };
   readonly circuitComponentCount: number;
   readonly circuitMaterial: GPUTexture | undefined;
   readonly circuitTraceCount: number;
@@ -794,7 +806,17 @@ async function createTerrainPipelines(
     layout: layouts.blocks,
     module,
   });
-  return { ...shared, form: sources.form, terrain };
+  const detailModule = await createShaderModule(
+    device,
+    "every-qrcode-terrain-details",
+    sources.terrainDetails,
+  );
+  const terrainDetails = await createScenePipeline(device, format, {
+    label: "every-qrcode-terrain-details-pipeline",
+    layout: layouts.blocks,
+    module: detailModule,
+  });
+  return { ...shared, form: sources.form, terrain, terrainDetails };
 }
 
 async function createCityPipelines(
@@ -1144,7 +1166,7 @@ function createBindGroups(
       {
         binding: 4,
         resource: {
-          buffer: form === "tree" || form === "terrain" ? buffers.baseY : buffers.cityLots,
+          buffer: form === "tree" ? buffers.baseY : buffers.cityLots,
         },
       },
     ],
@@ -1336,23 +1358,14 @@ function writeUniforms(
   }
   values[56] = gpu.zoom;
   values[57] = target;
-  if (isStagedWorld(gpu.form)) {
-    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    values[58] = reduced ? 10 : sceneAge;
-    // No time-dependent projection or weather at the locked QR endpoint.
-    if (progress === 1 || reduced) {
-      values[5] = 0;
-      values[6] = 0;
-    }
-    if (reduced) values[1] = 0;
-  }
-  if (gpu.form === "reef" || gpu.form === "circuit") {
-    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    if (progress === 1 || reduced) {
-      values[5] = 0;
-      values[6] = 0;
-    }
-    if (reduced) values[1] = 0;
+  values[59] = gpu.artDirection;
+  const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  values[58] = reduced ? 10 : sceneAge;
+  // Freeze ambient motion for reduced-motion users and every locked QR endpoint.
+  if (progress === 1 || reduced) {
+    values[1] = 0;
+    values[5] = 0;
+    values[6] = 0;
   }
   gpu.device.queue.writeBuffer(gpu.buffers.uniforms, 0, values);
 }
@@ -1411,7 +1424,11 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
     pass.draw(36, gpu.blockField.blocks.length);
   } else if (gpu.pipelines.form === "terrain") {
     pass.setPipeline(gpu.pipelines.terrain);
-    pass.draw(36, gpu.blockField.blocks.length);
+    pass.draw(36, gpu.blockField.blocks.length + 1);
+    if (gpu.uniformValues[3]! < 0.62) {
+      pass.setPipeline(gpu.pipelines.terrainDetails);
+      pass.draw(384, 96 * 4);
+    }
   } else if (gpu.pipelines.form === "tree") {
     pass.setPipeline(gpu.pipelines.blocks);
     pass.draw(gpu.blockField.blocks.length * 36);
@@ -1439,11 +1456,21 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
     const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
     pass.setPipeline(pipeline);
     if (gpu.uniformValues[3] === 1) pass.draw(6, gpu.blockField.blocks.length + 1);
-    else
-      pass.draw(
-        SCULPTURE_VERTICES,
-        gpu.blockField.blocks.length * SCULPTURE_PARTS + 1 + SCULPTURE_AMBIENT_INSTANCES,
-      );
+    else {
+      const owners = gpu.blockField.blocks.length;
+      // At rest, submit only existing scene objects. Extra QR owners are needed during morphing.
+      const primary =
+        gpu.uniformValues[3] === 0 ? Math.min(gpu.worldPopulation.primary, owners) : owners;
+      pass.draw(SCULPTURE_VERTICES, primary * SCULPTURE_PARTS);
+      pass.draw(SCULPTURE_VERTICES, 1, 0, owners * SCULPTURE_PARTS);
+      if (gpu.uniformValues[3]! < 0.62)
+        pass.draw(
+          SCULPTURE_VERTICES,
+          gpu.worldPopulation.ambient * SCULPTURE_PARTS,
+          0,
+          owners * SCULPTURE_PARTS + 1,
+        );
+    }
   } else {
     const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
     pass.setPipeline(pipeline);
@@ -1539,7 +1566,7 @@ async function initializeGpu(
       circuitTraceData = circuit.traceData;
       circuitComponentCount = circuit.components.length;
       circuitTraceCount = circuit.traces.length;
-    } else if (isStagedWorld(form)) {
+    } else if (isStagedWorld(form) || form === "terrain") {
       const { createDioramaLayout } = await import("./diorama-layout.js");
       modelData = createDioramaLayout(model, form);
     } else if (form === "reef") {
@@ -1580,11 +1607,13 @@ async function initializeGpu(
     );
     const palette = createPalette(sceneConfig);
     return {
+      artDirection: resolveArtDirection(sceneConfig, form),
       uniformValues: new Float32Array(UNIFORM_FLOATS),
       bindGroups,
       blockField,
       buffers,
       cityPartCount,
+      worldPopulation: getSculpturalPopulation(modelData, form),
       circuitComponentCount,
       circuitMaterial,
       circuitTraceCount,
@@ -1615,6 +1644,7 @@ async function initializeGpu(
 }
 
 function updateGpuScene(gpu: SeedGpuResources, scene: SeedSceneConfig): void {
+  gpu.artDirection = resolveArtDirection(scene, gpu.form);
   const palette = createPalette(scene);
   gpu.clearColor = createFormClearColor(scene, gpu.form);
   gpu.worldClearColor = createFormClearColor(scene, gpu.form);
@@ -1622,6 +1652,12 @@ function updateGpuScene(gpu: SeedGpuResources, scene: SeedSceneConfig): void {
   gpu.palette = palette;
   gpu.sceneEffect = createSceneEffect(scene);
   gpu.terrainPalette = createTerrainPalette(palette);
+}
+
+function resolveArtDirection(scene: SeedSceneConfig, form: SeedForm): number {
+  const selected = getPalettesForModel(form).find((preset) => preset.palette === scene.palette);
+  const direction = scene.artDirection ?? selected?.artDirection ?? 0;
+  return Number.isFinite(direction) ? Math.max(0, Math.min(3, Math.floor(direction))) : 0;
 }
 
 function animate(canvas: HTMLCanvasElement, state: RendererState, now: number): void {
@@ -1632,6 +1668,10 @@ function animate(canvas: HTMLCanvasElement, state: RendererState, now: number): 
     return;
   }
   if (gpu.form === "terrain") {
+    if (state.transitionDuration === 0) {
+      state.progress = state.target;
+      state.velocity = 0;
+    }
     const elapsedSeconds = Math.min(0.05, Math.max(0, now - state.lastFrameTime) / 1000);
     const [progress, velocity] = stepTerrainSpring(
       state.progress,
@@ -1740,10 +1780,15 @@ export function mountSeed(
     if (!document.hidden) requestFrame(canvas, state);
   };
   if (typeof document !== "undefined") document.addEventListener("visibilitychange", resume);
-  const resolveScene = (value: SeedSceneConfig): SeedSceneConfig =>
-    isStagedWorld(form)
-      ? { ...value, palette: value.palette ?? selectWorldPalette(form, model.morphSeed).palette }
-      : value;
+  const resolveScene = (value: SeedSceneConfig): SeedSceneConfig => {
+    if ((!isStagedWorld(form) && form !== "terrain") || value.palette) return value;
+    const preset = selectWorldPalette(form, model.morphSeed);
+    return {
+      ...value,
+      palette: preset.palette,
+      artDirection: value.artDirection ?? preset.artDirection ?? 0,
+    };
+  };
   let sceneConfig = resolveScene(scene);
   canvas.dataset["renderer"] = "webgpu-initializing";
   delete canvas.dataset["morphProgress"];
@@ -1801,10 +1846,7 @@ export function mountSeed(
       state.target = target;
       state.transitionDuration =
         MORPH_DURATION_MS * Math.max(0.25, Math.abs(state.target - state.from));
-      if (
-        (isStagedWorld(form) || form === "reef" || form === "circuit") &&
-        (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false)
-      ) {
+      if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false) {
         state.transitionDuration = 0;
       }
       state.transitionStart = now;

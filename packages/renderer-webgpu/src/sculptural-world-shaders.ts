@@ -1,12 +1,15 @@
+import { SCULPTURAL_POPULATION_WGSL } from "./diorama-population.js";
 import { SEED_UNIFORMS_WGSL } from "./shared-shaders.js";
 import { STAGED_PROJECTION_WGSL } from "./staged-world-shaders.js";
 import { DIORAMA_PRIMITIVES_WGSL } from "./diorama-primitives.js";
 import { DIORAMA_MATERIALS_WGSL } from "./diorama-materials.js";
 import { DIORAMA_TEXTURES_WGSL } from "./diorama-textures.js";
 
-export const SCULPTURE_VERTICES = 384;
-export const SCULPTURE_PARTS = 4;
-export const SCULPTURE_AMBIENT_INSTANCES = 384 * 4;
+export {
+  SCULPTURE_VERTICES,
+  SCULPTURE_PARTS,
+  SCULPTURE_AMBIENT_INSTANCES,
+} from "./diorama-population.js";
 
 /** Canonical owners, one solid foundation, then a bounded scene-only actor batch. */
 export function createSculpturalWorldShader(
@@ -38,6 +41,7 @@ struct WorldOutput {
 ${DIORAMA_PRIMITIVES_WGSL}
 ${DIORAMA_MATERIALS_WGSL}
 ${DIORAMA_TEXTURES_WGSL}
+${SCULPTURAL_POPULATION_WGSL[materialKind]}
 ${scene}
 fn darkAt(x:i32,y:i32)->bool {
   let n=i32(uniforms.gridSize);

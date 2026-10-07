@@ -2,8 +2,6 @@ import { createSculpturalWorldShader } from "./sculptural-world-shaders.js";
 
 export const TOY_BLOCK_SHADER = createSculpturalWorldShader(
   /* wgsl */ `
-fn worldCount()->u32 {return 136u;}
-fn worldAmbientCount()->u32 {return 384u;}
 fn toyDistrict(i:u32)->vec3f {
   let g=gene(i+270u);let s=uniforms.gridSize/25.0;
   if(sceneVariant(3u)==1u){return spiral(i,8.0,uniforms.gridSize*0.22)+vec3f(g.x,0,g.y)*s;}

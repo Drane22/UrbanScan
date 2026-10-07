@@ -62,8 +62,9 @@ fn sceneSnow() -> f32 {
   return 1.0 - step(0.51, abs(uniforms.sceneEffect - 2.0));
 }
 
+fn seasonalTempo()->f32 {return select(select(1.0,0.8,uniforms.camera.w==1.0),select(1.2,0.6,uniforms.camera.w==3.0),uniforms.camera.w>=2.0);}
 fn sceneBreeze() -> f32 {
-  return sceneWind() * 0.72 + sceneRain() * 0.12;
+  return (sceneWind() * 0.72 + sceneRain() * 0.12)*seasonalTempo();
 }
 
 fn sceneBranchBreeze() -> f32 {
@@ -82,7 +83,11 @@ fn themeLeaf(noise: f32) -> vec3f {
   let tier = fract(noise * 5.17);
   let leafMain = uniforms.themeFourth.rgb;
   let leafDeep = mix(themeInk(), leafMain, 0.54);
-  return mix(leafDeep, leafMain, smoothstep(0.22, 0.86, tier));
+  var leaf=mix(leafDeep, leafMain, smoothstep(0.22, 0.86, tier));
+  if(uniforms.camera.w==1.0){leaf=mix(leaf,uniforms.themeThird.rgb,0.13);}
+  if(uniforms.camera.w==2.0){leaf*=0.92+sin(noise*61.0)*0.08;}
+  if(uniforms.camera.w==3.0){leaf=mix(leaf,uniforms.themeFifth.rgb,step(0.81,tier)*0.4);}
+  return leaf;
 }
 
 fn themeGrass(noise: f32) -> vec3f {

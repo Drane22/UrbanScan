@@ -2,9 +2,6 @@ import { createSculpturalWorldShader } from "./sculptural-world-shaders.js";
 
 export const STAINED_GLASS_SHADER = createSculpturalWorldShader(
   /* wgsl */ `
-fn glassPanels()->u32 {return 5u+u32(worldDNA(5u).w*4.0);}
-fn worldCount()->u32 {return glassPanels()*24u+64u;}
-fn worldAmbientCount()->u32 {return 384u;}
 fn pavilionCenter()->vec3f {return vec3f(worldDNA(6u).x*0.16,0,worldDNA(6u).y*0.16)*uniforms.gridSize;}
 fn panelBase(i:u32)->vec3f {
   let s=uniforms.gridSize/25.0;let t=f32(i)/f32(glassPanels());let mode=sceneVariant(3u);

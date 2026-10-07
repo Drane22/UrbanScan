@@ -42,6 +42,7 @@ struct Uniforms {
 ${DIORAMA_MATERIALS_WGSL}
 ${STAGED_PROJECTION_WGSL}
 
+fn circuitTempo()->f32 {return select(select(1.0,1.40,uniforms.camera.w==1.0),select(1.2,0.65,uniforms.camera.w==3.0),uniforms.camera.w>=2.0);}
 fn pcbBase() -> vec3f {
   let boardTone = mix(uniforms.themePrimary.rgb, uniforms.themeThird.rgb, 0.18);
   return boardTone * 0.58;
@@ -275,7 +276,11 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let weave = textureSampleLevel(materialAtlas, materialSampler, atlasUv(0.0, input.uv, 14.0), 0.0);
   let grain = textureSampleLevel(materialAtlas, materialSampler, atlasUv(1.0, input.uv, 4.0), 0.0);
   var worldColor = mix(pcbBase(), pcbEdge(), select(0.0, 1.0, abs(input.normal.y) < 0.5));
+  let style=u32(uniforms.camera.w);
   worldColor *= 0.88 + weave.r * 0.24;
+  if(style==1u){worldColor*=0.96+grain.r*0.10;}
+  if(style==2u){worldColor+=uniforms.themeThird.rgb*pow(max(sin(input.uv.y*50.0-uniforms.time*circuitTempo()),0.0),15.0)*0.045;}
+  if(style==3u){worldColor*=0.85+sin(input.uv.x*360.0)*0.04+grain.r*0.22;}
 
   if (input.normal.y > 0.5) {
     let boardUv = input.uv;
@@ -451,7 +456,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
 
 @fragment
 fn fragmentMain(input: Output) -> @location(0) vec4f {
-  let time = uniforms.time;
+  let time = uniforms.time*circuitTempo();
   let speed = 4.2 + input.routeId * 0.75;
   let routeLen = max(input.routeLength, 1.0);
 
@@ -735,7 +740,7 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
     }
   } else if (input.componentType == 8u) {
     if (input.part == 0u) {
-      let time = uniforms.time;
+      let time = uniforms.time*circuitTempo();
       let ledSeed = fract(sin(input.seed * 37.1) * 43758.5);
       let heartbeat = 0.5 + 0.5 * sin(time * 3.5 + ledSeed * 6.28);
       let burstCycle = fract(time * 4.0 + ledSeed * 13.0);

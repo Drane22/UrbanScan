@@ -424,6 +424,11 @@ fn fragmentMain(input: CityOutput) -> @location(0) vec4f {
     facade = mix(facade, vec3f(0.85), lane * 0.5 * (1.0 - night * 0.5));
   }
 
+  let style=u32(uniforms.camera.w);
+  let surfaceNoise=cityHash(floor(input.local.xz*30.0)+vec2f(floor(input.local.y*25.0)));
+  if(style==0u){facade*=0.93+surfaceNoise*0.12;}
+  if(style==1u){let bricks=step(0.12,fract(input.local.y*4.0))*step(0.10,fract(input.local.x*3.0+floor(input.local.y*4.0)*0.5));facade*=0.80+bricks*0.20;}
+  if(style==3u){facade*=0.94+sin(input.local.y*95.0)*0.055;}
   var color = facade * mix(0.9, 1.1, input.shade);
   color *= 1.0 - input.occlusion * 0.55;
   let contact = smoothstep(0.0, 0.5, input.local.y);
@@ -433,7 +438,9 @@ fn fragmentMain(input: CityOutput) -> @location(0) vec4f {
   color = mix(color, color * vec3f(0.42, 0.46, 0.58), night * 0.7);
   let windows = cityWindows(input.local, input.normal, input.flags, input.seed, input.floors, night)
     * select(0.0, 1.0, input.part <= 1u && input.blockType != 0u);
-  let windowColor = mix(vec3f(0.12, 0.14, 0.18), vec3f(1.0, 0.86, 0.6), night);
+  var windowColor = mix(vec3f(0.12, 0.14, 0.18), vec3f(1.0, 0.86, 0.6), night);
+  if(style==2u){let chase=pow(max(sin(input.local.y*1.4-uniforms.time*1.5+input.seed*8.0),0.0),6.0);windowColor=mix(uniforms.themeSecondary.rgb,uniforms.themeThird.rgb,chase);}
+  if(style==3u){color+=uniforms.themeThird.rgb*pow(max(sin(input.local.y*0.9-uniforms.time*0.5),0.0),24.0)*0.06;}
   color = mix(color, windowColor, windows * mix(0.55, 0.95, night));
   // Snow: dust roofs and plazas.
   let topFace = select(0.0, 1.0, input.faceIndex == 0u);
