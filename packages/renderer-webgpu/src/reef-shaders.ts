@@ -43,6 +43,7 @@ struct Uniforms {
 ${DIORAMA_MATERIALS_WGSL}
 ${STAGED_PROJECTION_WGSL}
 
+fn reefTempo()->f32 {return select(select(1.0,0.65,uniforms.camera.w==1.0),select(0.85,1.15,uniforms.camera.w==3.0),uniforms.camera.w>=2.0);}
 fn reefStage(start: f32, end: f32) -> f32 {
   return smoothstep(start, end, uniforms.progress);
 }
@@ -128,7 +129,7 @@ fn underwaterLighting(normal: vec3f, worldPos: vec3f, albedo: vec3f, roughness: 
   let up = max(normal.y, 0.0);
 
   // Dual-harmonic animated caustics
-  let time = uniforms.time;
+  let time = uniforms.time*reefTempo();
   let c1 = sin(worldPos.x * 46.0 + time * 1.8 + sin(worldPos.z * 34.0 + time * 0.95));
   let c2 = sin(worldPos.z * 52.0 - time * 1.5 + sin(worldPos.x * 38.0 - time * 1.15));
   let caustics = pow(max(c1 * c2, 0.0), 1.6) * 0.55 * (1.0 - reefStage(0.65, 0.95));
@@ -439,7 +440,7 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
   let partData = makePart(partIndex, family, a.z, a.w, c.x);
 
   // Fluid multi-harmonic ocean surge
-  let time = uniforms.time;
+  let time = uniforms.time*reefTempo();
   let flexible = select(0.0, 1.0 - b.w * 0.7, family == 6u || family == 7u || family == 8u || family == 9u);
   let waveSurge = sin(time * 1.4 + a.x * 0.28 + a.y * 0.19) * 0.16 + sin(time * 2.8 + a.x * 0.5) * 0.05;
   let current = waveSurge * (flexible + select(0.02, 0.12, partData.isTentacle));
@@ -561,7 +562,11 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   }
 
   let detail = textureSampleLevel(reefAtlas, reefSampler, atlasUv(tile, input.uv, 2.0 + input.seed * 2.0), 0.0);
-  let albedo = color * (0.80 + detail.r * 0.32);
+  var albedo = color * (0.80 + detail.r * 0.32);
+  let style=u32(uniforms.camera.w);
+  if(style==1u){let pulse=pow(max(sin(uniforms.time*0.8+input.seed*12.0+input.paramT*5.0),0.0),6.0);albedo+=coralAccent()*pulse*0.22;}
+  if(style==2u){albedo=mix(albedo,limestoneColor(),pow(max(input.normal.y,0.0),8.0)*0.16);}
+  if(style==3u){albedo*=0.86+detail.g*0.30;albedo=mix(albedo,coralAccent(),step(0.76,detail.b)*0.18);}
   let normal = normalize(input.normal);
   let lit = underwaterLighting(normal, input.world, albedo, 0.42, sssTint, sssAmount);
   let fade = 1.0 - reefStage(0.60 + input.delay, min(0.86 + input.delay, 0.98));

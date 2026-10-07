@@ -2,8 +2,6 @@ import { createSculpturalWorldShader } from "./sculptural-world-shaders.js";
 
 export const DUNGEON_SHADER = createSculpturalWorldShader(
   /* wgsl */ `
-fn worldCount()->u32 {return 384u;}
-fn worldAmbientCount()->u32 {return 288u;}
 fn roomCenter(room:u32)->vec3f {
   let centers=array<vec2f,3>(vec2f(-6.55,-6.5),vec2f(6.55,-6.5),vec2f(0,6.5));
   let p=centers[room%3u]*uniforms.gridSize/25.0;return vec3f(p.x,0,p.y);

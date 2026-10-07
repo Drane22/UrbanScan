@@ -1,218 +1,256 @@
 import type { SeedForm } from "./seed-model.js";
 import type { WorldPalettePreset } from "./world-palettes.js";
-
-type DioramaForm = Extract<
-  SeedForm,
-  | "colony"
-  | "dungeon"
-  | "origami"
-  | "stained-glass"
-  | "mycelium"
-  | "constellation"
-  | "toy-block"
-  | "reef"
->;
-type Color = readonly [number, number, number];
-
-const rgb = (hex: string): Color => {
+type DioramaForm = Exclude<SeedForm, "tree" | "city" | "circuit">;
+type Family = readonly [string, string, readonly [string, string, string, string, string], string];
+const rgb = (hex: string): readonly [number, number, number] => {
   const value = Number.parseInt(hex.slice(1), 16);
   return [(value >> 16) / 255, ((value >> 8) & 255) / 255, (value & 255) / 255];
 };
-
-/** Structural shadow, bright accent, main material, foliage/decor, pale substrate. */
-function family(
-  id: string,
-  name: string,
-  colors: readonly [string, string, string, string, string],
-): WorldPalettePreset {
-  return {
+// Structural shadow, accent, main surface, environment and pale highlight.
+// The main material owns the scene; accents are used for recognizable details.
+function families(rows: readonly Family[]): readonly WorldPalettePreset[] {
+  return rows.map(([id, name, colors, description], artDirection) => ({
     id,
     name,
-    palette: [rgb(colors[0]), rgb(colors[1]), rgb(colors[2]), rgb(colors[3]), rgb(colors[4])],
-    swatches: [colors[2], colors[1], colors[3]],
-  };
+    description,
+    artDirection,
+    palette: colors.map(rgb) as unknown as WorldPalettePreset["palette"],
+    swatches: [colors[1], colors[2], colors[3]],
+  }));
 }
-
-// Preserve preset IDs and order so stored overrides and seeded choices retain their families.
 export const DIORAMA_PALETTES: Readonly<Record<DioramaForm, readonly WorldPalettePreset[]>> = {
-  colony: [
-    family("earth-hive", "Terracotta Mint", [
-      "#362433",
-      "#ffc15d",
-      "#ce755b",
-      "#67d6bb",
-      "#fff4dc",
-    ]),
-    family("red-clay", "Plum Lime", ["#32203f", "#d4ec52", "#9256bd", "#f3aa81", "#fff2df"]),
-    family("pale-nest", "Cobalt Coral", ["#142944", "#ff766d", "#587bcc", "#ddbd63", "#faf2db"]),
-    family("fungal-colony", "Berry Lagoon", [
-      "#361d36",
-      "#f1d657",
-      "#b25089",
-      "#54ceca",
-      "#fff8dd",
-    ]),
-  ],
-  dungeon: [
-    family("crypt-granite", "Slate Amber", ["#202b3c", "#ffbe52", "#6879a1", "#45d2cf", "#f4f6ef"]),
-    family("obsidian-abyss", "Indigo Rose", [
-      "#25203f",
-      "#ed749d",
-      "#5966b7",
-      "#e4bb62",
-      "#fff1e6",
-    ]),
-    family("catacomb-sandstone", "Violet Lime", [
-      "#30233e",
-      "#d6e956",
-      "#9570ba",
-      "#4ebac8",
-      "#fff8e5",
-    ]),
-    family("bloodstone-keep", "Petrol Coral", [
-      "#152f37",
-      "#ff8572",
-      "#438d98",
-      "#b29bdc",
-      "#f2faf5",
-    ]),
-  ],
-  origami: [
-    family("washi-indigo", "Cobalt Tangerine", [
-      "#192e50",
-      "#ffab55",
-      "#5585d7",
-      "#74cdbb",
-      "#fff8e9",
-    ]),
-    family("mulberry-crimson", "Raspberry Sage", [
-      "#402439",
-      "#f2d75e",
-      "#bd548f",
-      "#83b57c",
-      "#fff8df",
-    ]),
-    family("bamboo-sage", "Violet Aqua", ["#322446", "#ffc290", "#a07acd", "#66d4cb", "#fff4eb"]),
-    family("gold-leaf-lacquer", "Cherry Mint", [
-      "#3a2430",
-      "#e7bb57",
-      "#dc6673",
-      "#76cbb4",
-      "#fff7e6",
-    ]),
-  ],
-  "stained-glass": [
-    family("gothic-rose", "Sapphire Ruby", ["#1b263f", "#df4864", "#4973cf", "#efc15c", "#fcf5df"]),
-    family("tiffany-emerald", "Emerald Violet", [
-      "#203831",
-      "#c67be5",
-      "#42a884",
-      "#f7b77d",
-      "#f3fae9",
-    ]),
-    family("art-nouveau-violet", "Turquoise Rose", [
-      "#183841",
-      "#ed7caa",
-      "#45b7c6",
-      "#c88b50",
-      "#fff4e9",
-    ]),
-    family("golden-cathedral", "Indigo Citrus", [
-      "#292543",
-      "#d1e759",
-      "#7266c6",
-      "#f18470",
-      "#fff7e3",
-    ]),
-  ],
-  mycelium: [
-    family("bioluminescent-neon", "Lavender Chartreuse", [
-      "#302841",
-      "#d4e859",
-      "#a18aca",
-      "#50ada2",
-      "#fff8e6",
-    ]),
-    family("spore-twilight", "Coral Petrol", [
-      "#19363b",
-      "#fac398",
-      "#df7e79",
-      "#409da8",
-      "#fff1e7",
-    ]),
-    family("amber-bracket", "Cobalt Bubblegum", [
-      "#20304e",
-      "#ef85b4",
-      "#5686d2",
-      "#e7d35f",
-      "#fffae0",
-    ]),
-    family("ghost-fungus", "Plum Mint", ["#36253d", "#efb858", "#a06baf", "#73cdae", "#f5f9e9"]),
-  ],
-  constellation: [
-    family("deep-nebula", "Midnight Ice", ["#18233e", "#95d4ef", "#5d72b3", "#d58c63", "#f3f8fd"]),
-    family("stellar-cyan", "Aubergine Mint", [
-      "#32233f",
-      "#85e0bb",
-      "#8e63ac",
-      "#ee8cae",
-      "#fff1f7",
-    ]),
-    family("solar-pulsar", "Teal Amber", ["#12373a", "#f9bd5a", "#429aa3", "#ad84dc", "#f2faf5"]),
-    family("aurora-borealis", "Burgundy Cyan", [
-      "#3e2333",
-      "#64d6e3",
-      "#b65a7d",
-      "#e6bf64",
-      "#fff5e8",
-    ]),
-  ],
-  "toy-block": [
-    family("classic-primary", "Cherry Cobalt", [
-      "#32253f",
-      "#f6ca48",
-      "#e86778",
-      "#518bd4",
-      "#fff9e7",
-    ]),
-    family("space-explorer", "Turquoise Tangerine", [
-      "#17363e",
-      "#ffa555",
-      "#4cbbc0",
-      "#a67bd1",
-      "#f5fbf5",
-    ]),
-    family("castle-fantasy", "Raspberry Lime", [
-      "#38223c",
-      "#cfe365",
-      "#be559e",
-      "#6bb5de",
-      "#fff7e6",
-    ]),
-    family("neon-arcade-blocks", "Coral Mint", [
-      "#34283e",
-      "#a792d9",
-      "#ed897a",
-      "#75ccac",
-      "#fff7ef",
-    ]),
-  ],
-  reef: [
-    family("tropical-coral", "Lagoon Coral", [
-      "#153b49",
-      "#f88288",
-      "#4cbcc7",
-      "#e4bd63",
-      "#fff6df",
-    ]),
-    family("bioluminescent-trench", "Violet Lime Reef", [
-      "#2b2648",
-      "#d9e966",
-      "#9c80cf",
-      "#61d0c2",
-      "#f2faf1",
-    ]),
-    family("azure-lagoon", "Cobalt Peach", ["#192e50", "#ffb599", "#6382d4", "#e6c359", "#fff7e6"]),
-    family("sunken-gold", "Petrol Rose", ["#16383c", "#ed88ae", "#569da9", "#87d7ac", "#f8fae8"]),
-  ],
+  colony: families([
+    [
+      "earth-hive",
+      "Amber Burrow",
+      ["#251910", "#f3ce4b", "#bf7951", "#82b35b", "#fff7e7"],
+      "Copper soil, moss chambers and amber resources",
+    ],
+    [
+      "pale-nest",
+      "Chalk & Nectar",
+      ["#172934", "#f2af38", "#8cb7c8", "#d76a59", "#f8fbef"],
+      "Porous chalk, honey deposits and terracotta nests",
+    ],
+    [
+      "red-clay",
+      "Red Clay Bloom",
+      ["#30201b", "#efcb61", "#d26b55", "#739fd0", "#fff6e9"],
+      "Layered red earth with cool mineral pockets",
+    ],
+    [
+      "fungal-colony",
+      "Root Sanctuary",
+      ["#1a2927", "#c98cdb", "#57a292", "#e9b956", "#f5fae8"],
+      "Living root seams, turquoise earth and violet nutrients",
+    ],
+  ]),
+  dungeon: families([
+    [
+      "crypt-granite",
+      "Torchlit Basalt",
+      ["#1e2635", "#ffaf3a", "#7184ac", "#c87962", "#fff7ea"],
+      "Chiseled basalt, warm torches and rusted relics",
+    ],
+    [
+      "obsidian-abyss",
+      "Mossbound Ruins",
+      ["#122c27", "#d5d879", "#55948a", "#76ae69", "#f3fae9"],
+      "Weathered teal stone with luminous moss in the joints",
+    ],
+    [
+      "bloodstone-keep",
+      "Amethyst Keep",
+      ["#2c1838", "#e8b749", "#9c68bf", "#cf577e", "#fff4ec"],
+      "Amethyst stone, brass fixtures and ruby relics",
+    ],
+    [
+      "catacomb-sandstone",
+      "Frozen Crypt",
+      ["#182b39", "#ffc585", "#61accc", "#bfd972", "#f2fbff"],
+      "Ice-glazed masonry and amber lights in frozen chambers",
+    ],
+  ]),
+  origami: families([
+    [
+      "washi-indigo",
+      "Washi & Vermilion",
+      ["#172b43", "#ef654a", "#3f6cab", "#c9ab56", "#fff8e9"],
+      "Indigo washi, vermilion folds and ochre paper fibres",
+    ],
+    [
+      "mulberry-crimson",
+      "Pressed Lotus",
+      ["#362136", "#e9ba60", "#cf77a7", "#669ba3", "#fff8ef"],
+      "Rose paper with pressed petals and lagoon-blue edges",
+    ],
+    [
+      "bamboo-sage",
+      "Bamboo Rice Paper",
+      ["#1c3029", "#dc9859", "#67a478", "#69b4bf", "#f8fae9"],
+      "Woven bamboo fibres, jade folds and copper pinwheels",
+    ],
+    [
+      "gold-leaf-lacquer",
+      "Lacquer Festival",
+      ["#302037", "#edbd50", "#e0525d", "#7159b5", "#fff7e9"],
+      "Crimson folds, violet ribbons and shifting gold flecks",
+    ],
+  ]),
+  "stained-glass": families([
+    [
+      "gothic-rose",
+      "Cathedral Jewels",
+      ["#1b263f", "#efc15c", "#df4864", "#4973cf", "#fcf7e9"],
+      "Ruby and sapphire panes with amber leadwork glints",
+    ],
+    [
+      "tiffany-emerald",
+      "Tiffany Garden",
+      ["#19372d", "#f1bd62", "#46a88c", "#ac78b9", "#f4faec"],
+      "Hammered emerald glass, violet jewels and honey light",
+    ],
+    [
+      "sea-mosaic",
+      "Sea Mosaic",
+      ["#17333e", "#d7a948", "#2daab5", "#4169bb", "#f5fbef"],
+      "Turquoise mosaic glass and cobalt ripples of light",
+    ],
+    [
+      "rose-quartz",
+      "Rose Quartz",
+      ["#342136", "#c38848", "#d68aaf", "#72b5ad", "#fff6ee"],
+      "Opalescent rose panes, copper seams and mint refractions",
+    ],
+  ]),
+  mycelium: families([
+    [
+      "bioluminescent-neon",
+      "Foxfire Grove",
+      ["#142b29", "#a8e761", "#3cb6a9", "#b584d1", "#f5faea"],
+      "Glowing teal fungi, luminous moss and mint spore clouds",
+    ],
+    [
+      "amber-bracket",
+      "Amber Shelf",
+      ["#282016", "#efe57f", "#da8a4c", "#6ba78f", "#fff8e8"],
+      "Velvet amber brackets, weathered logs and golden nutrients",
+    ],
+    [
+      "ghost-fungus",
+      "Moonmilk Cavern",
+      ["#1c283b", "#e3bf7b", "#7c9cce", "#c189c8", "#f3faff"],
+      "Milk-white stems, blue mineral soil and pearl-like spores",
+    ],
+    [
+      "spore-twilight",
+      "Velvet Bloom",
+      ["#321b30", "#a8d95c", "#cc5982", "#7283c7", "#fff6e8"],
+      "Wine-colored caps, leafy undergrowth and bursts of pollen",
+    ],
+  ]),
+  constellation: families([
+    [
+      "solar-pulsar",
+      "Solar Furnace",
+      ["#171325", "#ffcd59", "#e46135", "#617dcc", "#fff8ee"],
+      "Hot stellar flares, copper worlds and cool planetary oceans",
+    ],
+    [
+      "stellar-cyan",
+      "Ice Giants",
+      ["#102a39", "#b5e37a", "#4fbed4", "#9568c9", "#f2fbff"],
+      "Icy gas bands, violet rings and green auroral particles",
+    ],
+    [
+      "deep-nebula",
+      "Violet Nebula",
+      ["#281635", "#f3b886", "#9664bc", "#64cbbb", "#fff6fb"],
+      "Violet dust clouds, pale solar winds and mint moons",
+    ],
+    [
+      "aurora-borealis",
+      "Ringed Copper",
+      ["#241b24", "#e6ce77", "#b96543", "#69bdb8", "#fff7e9"],
+      "Copper crusts, icy rings and gold meteor trails",
+    ],
+  ]),
+  "toy-block": families([
+    [
+      "classic-primary",
+      "Classic Brick Box",
+      ["#17283c", "#ffd345", "#397ccc", "#ec5555", "#fff9eb"],
+      "Glossy primary bricks, red cars and yellow playground parts",
+    ],
+    [
+      "retro-toyshop",
+      "Retro Toyshop",
+      ["#1d3336", "#f49c42", "#42aea8", "#bb6cc3", "#fff8e9"],
+      "Satin turquoise bricks with tangerine and plum fittings",
+    ],
+    [
+      "space-explorer",
+      "Space Bricks",
+      ["#20223c", "#dd823c", "#8088cc", "#93cf53", "#f6f9ef"],
+      "Metallic space toys, lime signal studs and copper vehicles",
+    ],
+    [
+      "candy-workshop",
+      "Candy Workshop",
+      ["#352337", "#ddaf44", "#d279a0", "#74b5cb", "#fff8ee"],
+      "Sugar-colored molded bricks with blue trim and honey gears",
+    ],
+  ]),
+  reef: families([
+    [
+      "tropical-coral",
+      "Living Coral",
+      ["#143746", "#f5767e", "#4db9c2", "#92c77f", "#fff8e6"],
+      "Clear lagoon water, coral pink and leafy seagrass",
+    ],
+    [
+      "bioluminescent-trench",
+      "Abyssal Lanterns",
+      ["#211d3b", "#55dbe5", "#7358b5", "#d7c354", "#f7faee"],
+      "Deep violet water and luminous cyan colonies",
+    ],
+    [
+      "azure-lagoon",
+      "Kelp & Pearls",
+      ["#18362d", "#ab71c1", "#5b9d8c", "#d9b760", "#fafbea"],
+      "Green kelp currents, violet corals and pearl sand",
+    ],
+    [
+      "sunken-gold",
+      "Sunken Copper",
+      ["#1b3039", "#d9925f", "#556aaf", "#8bbc6c", "#fff8e6"],
+      "Copper corals, cool sea glass and olive seagrass",
+    ],
+  ]),
+  terrain: families([
+    [
+      "alpine-glacier",
+      "Opal Highlands",
+      ["#273039", "#b6a0e4", "#c58064", "#65b6ae", "#fff8eb"],
+      "Copper-opal ridges, lavender crystals and jade rivers",
+    ],
+    [
+      "volcanic-rift",
+      "Obsidian Furnace",
+      ["#291b27", "#ffc35a", "#cd5f40", "#745eae", "#fff7e9"],
+      "Obsidian crust, molten streams and glowing mineral vents",
+    ],
+    [
+      "desert-dunes",
+      "Rose Sand Labyrinth",
+      ["#342333", "#79ccbc", "#d68fa2", "#d9b454", "#fff8e9"],
+      "Rose sandstone, turquoise streams and levitating gold rocks",
+    ],
+    [
+      "lush-highlands",
+      "Aurora Geodes",
+      ["#17253a", "#d9dc79", "#5e9ecd", "#b977c9", "#f6faff"],
+      "Blue geodes, violet crystal forests and sweeping mineral surges",
+    ],
+  ]),
 };

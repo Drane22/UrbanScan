@@ -129,7 +129,11 @@ fn dtFungus(color:vec3f,q:vec2f,p:vec3f,pixel:f32,part:u32,up:f32)->vec3f {
     out=mix(out,mix(color,palette(3),0.25)*(0.82+velvet*0.30),mat*up*0.75);
     out+=mix(color,palette(2),0.30)*(hyphae*0.29+spores*0.16);
     let section=dtLine(fract((p.y+warp.x*0.15)*7.0)-0.5,0.04,pixel*7.0);
-    return out*(1.0-(1.0-up)*(0.14+section*0.17));
+    let pulse=pow(max(sin(q.x*1.7+q.y*2.2-uniforms.time*1.1*motionTempo()),0.0),7.0)*alive();
+    let exposed=(1.0-up)*(hyphae+rootSeam)*0.68;
+    out=mix(out,palette(1)*(0.70+pulse*0.32),exposed);
+    out+=palette(1)*pulse*hyphae*0.22*(1.0-up);
+    return out*(1.0-(1.0-up)*(0.10+section*0.18));
   }
   if(part==0u){
     let pores=dtCells(q*6.0+warp*0.6);
@@ -195,6 +199,38 @@ fn dioramaTexture(color:vec3f,p:vec3f,n:vec3f,uv:vec2f,part:u32)->vec3f {
   else if(MATERIAL_KIND==4u){out=dtFungus(color,q,p,pixel,part,up);}
   else if(MATERIAL_KIND==5u){out=dtCosmic(color,q,n,pixel,foundation);}
   else {out=dtPlastic(color,q,n,pixel,foundation);}
+  let style=materialStyle();let time=uniforms.time*motionTempo()*alive();
+  // Material families have different finishes and localized ambient motion;
+  // neither layout genes nor the locked QR pigments depend on this treatment.
+  if(MATERIAL_KIND==0u){
+    if(style==1u){let pores=dtDot(q,4.0,0.075,pixel,0.65);out=mix(out,out*0.74,pores*0.35);}
+    if(style==2u){let seams=dtLine(fract(q.y*1.2+dtNoise(q*.5)*.2)-.5,.032,pixel);out*=1.0-seams*.18;}
+    if(style==3u && foundation){let roots=dtLine(fract(q.x*.7+sin(q.y*.8)*.3)-.5,.025,pixel);let pulse=pow(max(sin(q.y-time),0.0),6.0);out+=palette(1)*roots*pulse*.20;}
+  }else if(MATERIAL_KIND==1u){
+    if(style==1u){let moss=smoothstep(.55,.78,dtFbm(q*.8+vec2f(time*.015,0)));out=mix(out,palette(3)*.65,moss*.28);}
+    if(style==2u){let glint=pow(max(dot(n,normalize(vec3f(-.4,.8,.3))),0.0),20.0);out+=palette(1)*glint*.20;}
+    if(style==3u){let ice=dtLine(fract(q.x*.75+q.y*.4)-.5,.014,pixel);out+=uniforms.themeFifth.rgb*ice*.15;}
+  }else if(MATERIAL_KIND==2u){
+    if(style==1u){let petal=dtDot(q,1.8,.13,pixel,.6);out=mix(out,palette(2)*.85,petal*.18);}
+    if(style==2u){let weave=dtLine(fract(q.x*3.0)-.5,.02,pixel)+dtLine(fract(q.y*2.0)-.5,.015,pixel);out*=1.0-weave*.07;}
+    if(style==3u){let foil=dtDot(q,3.5,.07,pixel,.72);out+=palette(1)*foil*(.12+.10*sin(q.x+time*.4));}
+  }else if(MATERIAL_KIND==3u){
+    if(style==1u){out*=.93+dtNoise(q*15.0)*.15;}
+    if(style==2u){let ripple=dtLine(sin(length(q)*1.4-time*.35),.03,pixel);out+=palette(3)*ripple*.12;}
+    if(style==3u){let sheen=pow(max(dot(n,normalize(vec3f(sin(time*.1)*.3,.9,.35))),0.0),9.0);out=mix(out,mix(out,uniforms.themeFifth.rgb,.25),sheen*.40);}
+  }else if(MATERIAL_KIND==4u){
+    if(style==1u && part==0u){let velvet=dtNoise(q*20.0);out*=.88+velvet*.18;}
+    if(style==2u && part!=9u){out+=uniforms.themeFifth.rgb*pow(max(n.y,0.0),8.0)*.12;}
+    if(style==3u && part==0u){let spots=dtDot(q,2.5,.12,pixel,.6);out=mix(out,uniforms.themeFifth.rgb,spots*.22);}
+  }else if(MATERIAL_KIND==5u){
+    if(style==1u && !foundation){out+=uniforms.themeFifth.rgb*pow(max(n.y,0.0),12.0)*.14;}
+    if(style==2u && foundation){let gas=smoothstep(.55,.8,dtFbm(q*.3+vec2f(time*.025,0)));out+=palette(2)*gas*.16;}
+    if(style==3u){let dust=dtDot(q,2.0,.04,pixel,.85);out+=palette(1)*dust*(.10+.12*sin(q.x+time*.7));}
+  }else{
+    if(style==1u){out=mix(out,color,.32);}
+    if(style==2u){let metal=pow(max(dot(n,normalize(vec3f(-.4,.8,.35))),0.0),18.0);out+=uniforms.themeFifth.rgb*metal*.17;}
+    if(style==3u && foundation){let sprinkle=dtDot(q,2.0,.06,pixel,.80);out+=palette(1)*sprinkle*.15;}
+  }
   return clamp(out,vec3f(0.0),vec3f(1.35));
 }
 `;

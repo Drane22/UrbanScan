@@ -4,13 +4,15 @@ import type { SeedScenePalette } from "./renderer.js";
 import type { SeedForm } from "./seed-model.js";
 
 export type WorldPalettePreset = {
+  readonly artDirection?: number;
+  readonly description?: string;
   readonly id: string;
   readonly name: string;
   readonly palette: SeedScenePalette;
   readonly swatches: readonly [string, string, string];
 };
 
-export const WORLD_PALETTES: Readonly<Record<SeedForm, readonly WorldPalettePreset[]>> = {
+const BASE_PALETTES: Readonly<Record<SeedForm, readonly WorldPalettePreset[]>> = {
   circuit: [
     {
       id: "emerald-pcb",
@@ -118,56 +120,7 @@ export const WORLD_PALETTES: Readonly<Record<SeedForm, readonly WorldPalettePres
   origami: DIORAMA_PALETTES["origami"],
   reef: DIORAMA_PALETTES["reef"],
   "stained-glass": DIORAMA_PALETTES["stained-glass"],
-  terrain: [
-    {
-      id: "alpine-glacier",
-      name: "Alpine Glacier",
-      palette: [
-        [0.1, 0.18, 0.28], // Glacial lake
-        [0.28, 0.62, 0.85], // Turquoise ice
-        [0.35, 0.55, 0.32], // Alpine meadow
-        [0.65, 0.68, 0.72], // Granite ridge
-        [0.95, 0.97, 0.99], // Summit snowcap
-      ],
-      swatches: ["#1a2e47", "#479ed9", "#598c52"],
-    },
-    {
-      id: "desert-dunes",
-      name: "Sahara Dunes",
-      palette: [
-        [0.25, 0.12, 0.08], // Desert canyon
-        [0.85, 0.52, 0.22], // Sand dune crest
-        [0.95, 0.75, 0.35], // Sunlit slope
-        [0.68, 0.32, 0.15], // Oasis shadow
-        [0.98, 0.95, 0.88], // Salt flat
-      ],
-      swatches: ["#401f14", "#d98538", "#f2bf59"],
-    },
-    {
-      id: "volcanic-rift",
-      name: "Volcanic Caldera",
-      palette: [
-        [0.12, 0.08, 0.08], // Basalt crater
-        [0.88, 0.22, 0.12], // Lava lake
-        [0.95, 0.62, 0.18], // Sulfur vent
-        [0.45, 0.18, 0.12], // Obsidian ridge
-        [0.95, 0.92, 0.88], // Volcanic ash
-      ],
-      swatches: ["#1f1414", "#e0381f", "#f29e2e"],
-    },
-    {
-      id: "lush-highlands",
-      name: "Scottish Highlands",
-      palette: [
-        [0.08, 0.18, 0.14], // Loch water
-        [0.28, 0.58, 0.32], // Emerald glen
-        [0.55, 0.28, 0.58], // Heather moor
-        [0.48, 0.52, 0.48], // Mist ridge
-        [0.94, 0.96, 0.92], // Overcast sky
-      ],
-      swatches: ["#142e24", "#479452", "#8c4794"],
-    },
-  ],
+  terrain: DIORAMA_PALETTES.terrain,
   "toy-block": DIORAMA_PALETTES["toy-block"],
   tree: [
     {
@@ -220,6 +173,41 @@ export const WORLD_PALETTES: Readonly<Record<SeedForm, readonly WorldPalettePres
     },
   ],
 };
+
+const LEGACY_MATERIALS: Partial<Record<SeedForm, readonly string[]>> = {
+  tree: [
+    "Oak bark, leaf-green canopy and drifting forest pollen",
+    "Cherry blossoms, pink petals and silk-like leaves",
+    "Copper foliage, gold leaves and an autumn breeze",
+    "Frosted needles, icy branches and slower winter motion",
+  ],
+  city: [
+    "Granite towers, reflective glass and terracotta rooftops",
+    "Warm brownstones, copper windows and sandstone plazas",
+    "Dark towers, magenta signs and chasing cyan window lights",
+    "Brushed alloy buildings with polished chrome glints",
+  ],
+  circuit: [
+    "Emerald laminate, gold contacts and measured signal pulses",
+    "Cobalt boards, cyan vias and rapid LED activity",
+    "Purple circuits, neon contacts and chasing signals",
+    "Etched industrial copper, gold plating and slow charge pulses",
+  ],
+};
+export const WORLD_PALETTES = Object.fromEntries(
+  Object.entries(BASE_PALETTES).map(([form, presets]) => [
+    form,
+    presets.map((preset, artDirection) =>
+      preset.artDirection === undefined
+        ? {
+            ...preset,
+            artDirection,
+            description: LEGACY_MATERIALS[form as SeedForm]?.[artDirection],
+          }
+        : preset,
+    ),
+  ]),
+) as unknown as Readonly<Record<SeedForm, readonly WorldPalettePreset[]>>;
 
 export function getPalettesForModel(model: SeedForm): readonly WorldPalettePreset[] {
   return WORLD_PALETTES[model] ?? WORLD_PALETTES.tree;

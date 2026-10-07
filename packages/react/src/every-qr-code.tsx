@@ -2,6 +2,7 @@ import {
   CURRENT_GENERATOR_VERSION,
   createEveryQRCodeIdentity,
   createQRSvgPath,
+  type EveryQRCodeIdentity,
   type GeneratorVersion,
   type IdentityScope,
   type QRSvgPath,
@@ -44,6 +45,7 @@ export type EveryQRCodeProps = {
   readonly interactive?: boolean;
   readonly model?: EveryQRCodeModel;
   readonly onError?: (error: Error) => void;
+  readonly onIdentity?: (identity: EveryQRCodeIdentity, morphSeed: number) => void;
   readonly onViewChange?: (view: EveryQRCodeView) => void;
   readonly scene?: EveryQRCodeSceneConfig;
   readonly style?: CSSProperties;
@@ -59,6 +61,8 @@ type SeedRenderer = {
 };
 
 type PreparedSeed = {
+  readonly identity: EveryQRCodeIdentity;
+  readonly morphSeed: number;
   mount: (
     canvas: HTMLCanvasElement,
     scene: EveryQRCodeSceneConfig,
@@ -194,16 +198,60 @@ function errorFrom(reason: unknown): Error {
 
 async function prepareSeed(
   generatorVersion: EveryQRCodeGeneratorVersion,
+  identityScope: IdentityScope,
+  url: string,
   model: EveryQRCodeModel,
-  identity: Awaited<ReturnType<typeof createEveryQRCodeIdentity>>,
 ): Promise<PreparedSeed> {
-  const { createSeedModel, mountSeed } = await import("@every-qrcode/renderer-webgpu");
-  const seed = await createSeedModel(identity, { generatorVersion });
+  const key = JSON.stringify([generatorVersion, identityScope, url]);
+  let source = preparedSources.get(key);
+  if (!source) {
+    source = (async () => {
+      const [identity, { createSeedModel, mountSeed }] = await Promise.all([
+        createEveryQRCodeIdentity(url, { identityScope }),
+        import("@every-qrcode/renderer-webgpu"),
+      ]);
+      const seed = await createSeedModel(identity, { generatorVersion });
+      return {
+        identity,
+        morphSeed: seed.morphSeed,
+        mount: (
+          canvas: HTMLCanvasElement,
+          scene: EveryQRCodeSceneConfig,
+          onError: (error: Error) => void,
+          form: EveryQRCodeModel,
+        ) => mountSeed(canvas, seed, scene, form, { onError }),
+        qr: createQRSvgPath(identity.qr),
+      };
+    })();
+    preparedSources.set(key, source);
+    if (preparedSources.size > 8) preparedSources.delete(preparedSources.keys().next().value!);
+    void source.catch(() => {
+      if (preparedSources.get(key) === source) preparedSources.delete(key);
+    });
+  }
+  const value = await source;
   return {
-    mount: (canvas, scene, onError) => mountSeed(canvas, seed, scene, model, { onError }),
-    qr: createQRSvgPath(identity.qr),
+    identity: value.identity,
+    morphSeed: value.morphSeed,
+    mount: (canvas, scene, onError) => value.mount(canvas, scene, onError, model),
+    qr: value.qr,
   };
 }
+
+const preparedSources = new Map<
+  string,
+  Promise<{
+    identity: EveryQRCodeIdentity;
+    morphSeed: number;
+    mount: (
+      canvas: HTMLCanvasElement,
+      scene: EveryQRCodeSceneConfig,
+      onError: (error: Error) => void,
+      form: EveryQRCodeModel,
+    ) => SeedRenderer;
+    qr: QRSvgPath;
+  }>
+>();
 
 export function EveryQRCode({
   className,
@@ -214,6 +262,7 @@ export function EveryQRCode({
   interactive = true,
   model = "tree",
   onError,
+  onIdentity,
   onViewChange,
   scene,
   style,
@@ -221,6 +270,7 @@ export function EveryQRCode({
 }: EveryQRCodeProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const onErrorRef = useRef(onError);
+  const onIdentityRef = useRef(onIdentity);
   const rendererRef = useRef<SeedRenderer | null>(null);
   const sceneRef = useRef(scene);
   const [error, setError] = useState<Error | null>(null);
@@ -252,18 +302,22 @@ export function EveryQRCode({
     onErrorRef.current = onError;
   }, [onError]);
 
-  useEffect(() => setView(initialView), [generatorVersion, initialView, model, url]);
+  useEffect(() => {
+    onIdentityRef.current = onIdentity;
+  }, [onIdentity]);
+
+  useEffect(() => setView(initialView), [generatorVersion, initialView, url]);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
     setPrepared(null);
-    void createEveryQRCodeIdentity(url, { identityScope })
-      .then((identity) => prepareSeed(generatorVersion, model, identity))
+    void prepareSeed(generatorVersion, identityScope, url, model)
       .then((nextPrepared) => {
         if (cancelled) return;
         setError(null);
         setPrepared(nextPrepared);
+        onIdentityRef.current?.(nextPrepared.identity, nextPrepared.morphSeed);
       })
       .catch((reason: unknown) => {
         if (cancelled) return;
@@ -318,7 +372,6 @@ export function EveryQRCode({
       <canvas
         data-every-qrcode-canvas={model}
         hidden={Boolean(fallback)}
-        key={model}
         ref={canvasRef}
         style={CANVAS_STYLE}
       />

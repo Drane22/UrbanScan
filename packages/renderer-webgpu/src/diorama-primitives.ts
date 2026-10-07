@@ -16,6 +16,8 @@ fn seededFrame(p:vec3f)->vec3f {
 }
 fn phase(a:f32,b:f32)->f32 { return smoothstep(a,b,uniforms.progress); }
 fn alive()->f32 { return 1.0-phase(0.0,0.65); }
+fn materialStyle()->u32 {return u32(clamp(uniforms.camera.w,0.0,3.0));}
+fn motionTempo()->f32 {return select(select(1.0,0.75,materialStyle()==1u),select(1.25,0.9,materialStyle()==3u),materialStyle()>=2u);}
 fn random(n:f32)->f32 { return fract(sin(n*127.1+gene(0u).w*317.0)*43758.5453); }
 fn palette(n:f32)->vec3f {
   let i=u32(max(n,0.0))%4u;

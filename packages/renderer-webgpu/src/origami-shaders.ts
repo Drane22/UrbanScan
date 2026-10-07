@@ -2,10 +2,6 @@ import { createSculpturalWorldShader } from "./sculptural-world-shaders.js";
 
 export const ORIGAMI_SHADER = createSculpturalWorldShader(
   /* wgsl */ `
-fn craneCount()->u32 {return 3u+u32(worldDNA(5u).w*3.0);}
-fn paperWidth()->u32 {return 10u+u32(worldDNA(6u).w*5.0);}
-fn worldCount()->u32 {return craneCount()+paperWidth()*paperWidth();}
-fn worldAmbientCount()->u32 {return 303u+u32(worldDNA(7u).w*4.0);}
 fn paperPetal(v:u32,length:f32,width:f32,lift:f32)->vec3f {
   let p=array<vec3f,12>(vec3f(0,0,0),vec3f(-1,0.25,0.48),vec3f(0,0.62,0.58),vec3f(-1,0.25,0.48),vec3f(0,1,1),vec3f(0,0.62,0.58),vec3f(0,0,0),vec3f(0,0.62,0.58),vec3f(1,0.25,0.48),vec3f(1,0.25,0.48),vec3f(0,0.62,0.58),vec3f(0,1,1));
   return p[v%12u]*vec3f(width,lift,length);
