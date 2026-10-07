@@ -5,6 +5,7 @@ import {
 } from "@every-qrcode/core";
 
 import { createSeedGpuScene, type SeedGpuScene } from "./gpu-scene.js";
+import { acquireGpuDevice, releaseGpuDevice } from "./gpu-session.js";
 import { isStagedWorld, selectWorldPalette } from "./staged-world.js";
 import {
   SCULPTURE_AMBIENT_INSTANCES,
@@ -415,6 +416,7 @@ type RenderTargets = {
 };
 
 type SeedGpuResources = {
+  readonly uniformValues: Float32Array;
   readonly bindGroups: SeedBindGroups;
   readonly blockField: SeedBlockField;
   readonly buffers: SeedBuffers;
@@ -503,6 +505,8 @@ function createPalette(scene: SeedSceneConfig): SeedScenePalette {
 }
 
 type RendererState = {
+  submitting: boolean;
+  needsFrame: boolean;
   closed: boolean;
   visible: boolean;
   readyTime: number;
@@ -630,7 +634,14 @@ export function clampSeedZoom(zoom: number): number {
   return Math.max(0.82, Math.min(1.45, zoom));
 }
 
+const layoutCache = new WeakMap<GPUDevice, PipelineLayouts>();
+const pipelineCache = new WeakMap<GPUDevice, Map<string, Promise<SeedPipelines>>>();
+const sharedPipelineCache = new WeakMap<GPUDevice, Map<string, Promise<SharedPipelines>>>();
+const contextOwners = new WeakMap<GPUCanvasContext, SeedGpuResources>();
+
 function createLayouts(device: GPUDevice): PipelineLayouts {
+  const cached = layoutCache.get(device);
+  if (cached) return cached;
   const visibility = SHADER_STAGE.vertex | SHADER_STAGE.fragment;
   const blocks = device.createBindGroupLayout({
     label: "every-qrcode-block-layout",
@@ -682,7 +693,9 @@ function createLayouts(device: GPUDevice): PipelineLayouts {
       { binding: 2, sampler: { type: "filtering" }, visibility: SHADER_STAGE.fragment },
     ],
   });
-  return { blocks, circuit, items, post, reef };
+  const layouts = { blocks, circuit, items, post, reef };
+  layoutCache.set(device, layouts);
+  return layouts;
 }
 
 async function createShaderModule(
@@ -704,9 +717,9 @@ function createScenePipeline(
   device: GPUDevice,
   format: GPUTextureFormat,
   spec: PipelineSpec,
-): GPURenderPipeline {
+): Promise<GPURenderPipeline> {
   const target: GPUColorTargetState = spec.blend ? { blend: spec.blend, format } : { format };
-  return device.createRenderPipeline({
+  return device.createRenderPipelineAsync({
     depthStencil: {
       depthCompare: "less",
       depthWriteEnabled: spec.depthWrite ?? true,
@@ -726,18 +739,39 @@ async function createSharedPipelines(
   layouts: PipelineLayouts,
   sources: SharedShaderSources,
 ): Promise<SharedPipelines> {
+  let cache = sharedPipelineCache.get(device);
+  if (!cache) {
+    cache = new Map();
+    sharedPipelineCache.set(device, cache);
+  }
+  const key = format + sources.post + sources.weather;
+  let result = cache.get(key);
+  if (!result) {
+    result = buildSharedPipelines(device, format, layouts, sources);
+    cache.set(key, result);
+    void result.catch(() => cache!.delete(key));
+  }
+  return result;
+}
+
+async function buildSharedPipelines(
+  device: GPUDevice,
+  format: GPUTextureFormat,
+  layouts: PipelineLayouts,
+  sources: SharedShaderSources,
+): Promise<SharedPipelines> {
   const [postModule, rainModule] = await Promise.all([
     createShaderModule(device, "every-qrcode-post", sources.post),
     createShaderModule(device, "every-qrcode-rain", sources.weather),
   ]);
-  const rain = createScenePipeline(device, format, {
+  const rain = await createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     depthWrite: false,
     label: "every-qrcode-rain-pipeline",
     layout: layouts.items,
     module: rainModule,
   });
-  const post = device.createRenderPipeline({
+  const post = await device.createRenderPipelineAsync({
     fragment: { entryPoint: "fragmentMain", module: postModule, targets: [{ format }] },
     label: "every-qrcode-post-pipeline",
     layout: device.createPipelineLayout({ bindGroupLayouts: [layouts.post] }),
@@ -755,7 +789,7 @@ async function createTerrainPipelines(
   sources: TerrainShaderSources,
 ): Promise<TerrainPipelines> {
   const module = await createShaderModule(device, "every-qrcode-terrain", sources.terrain);
-  const terrain = createScenePipeline(device, format, {
+  const terrain = await createScenePipeline(device, format, {
     label: "every-qrcode-terrain-pipeline",
     layout: layouts.blocks,
     module,
@@ -771,7 +805,7 @@ async function createCityPipelines(
   sources: CityShaderSources,
 ): Promise<CityPipelines> {
   const module = await createShaderModule(device, "every-qrcode-city", sources.city);
-  const city = createScenePipeline(device, format, {
+  const city = await createScenePipeline(device, format, {
     label: "every-qrcode-city-pipeline",
     layout: layouts.blocks,
     module,
@@ -795,30 +829,30 @@ async function createCircuitPipelines(
   ]);
   return {
     ...shared,
-    circuitBoard: createScenePipeline(device, format, {
+    circuitBoard: await createScenePipeline(device, format, {
       blend: ALPHA_BLEND,
       label: "every-qrcode-circuit-board-pipeline",
       layout: layouts.circuit,
       module: board,
     }),
-    circuitComponents: createScenePipeline(device, format, {
+    circuitComponents: await createScenePipeline(device, format, {
       label: "every-qrcode-circuit-components-pipeline",
       layout: layouts.circuit,
       module: components,
     }),
-    circuitQr: createScenePipeline(device, format, {
+    circuitQr: await createScenePipeline(device, format, {
       label: "every-qrcode-circuit-qr-pipeline",
       layout: layouts.circuit,
       module: qr,
     }),
-    circuitSignals: createScenePipeline(device, format, {
+    circuitSignals: await createScenePipeline(device, format, {
       blend: ALPHA_BLEND,
       depthWrite: false,
       label: "every-qrcode-circuit-signals-pipeline",
       layout: layouts.circuit,
       module: signals,
     }),
-    circuitTraces: createScenePipeline(device, format, {
+    circuitTraces: await createScenePipeline(device, format, {
       blend: ALPHA_BLEND,
       label: "every-qrcode-circuit-traces-pipeline",
       layout: layouts.circuit,
@@ -842,7 +876,11 @@ async function createReefPipelines(
     createShaderModule(device, "every-qrcode-reef-fish", sources.reefFish),
     createShaderModule(device, "every-qrcode-reef-qr", sources.reefQr),
   ]);
-  const create = (label: string, module: GPUShaderModule, blend = false): GPURenderPipeline =>
+  const create = (
+    label: string,
+    module: GPUShaderModule,
+    blend = false,
+  ): Promise<GPURenderPipeline> =>
     createScenePipeline(device, format, {
       ...(blend ? { blend: ALPHA_BLEND, depthWrite: false } : {}),
       label,
@@ -852,16 +890,16 @@ async function createReefPipelines(
   return {
     ...shared,
     form: sources.form,
-    reefCorals: create("every-qrcode-reef-coral-pipeline", corals, true),
-    reefFish: create("every-qrcode-reef-fish-pipeline", fish, true),
-    reefQr: create("every-qrcode-reef-qr-pipeline", qr),
-    reefShelf: createScenePipeline(device, format, {
+    reefCorals: await create("every-qrcode-reef-coral-pipeline", corals, true),
+    reefFish: await create("every-qrcode-reef-fish-pipeline", fish, true),
+    reefQr: await create("every-qrcode-reef-qr-pipeline", qr),
+    reefShelf: await createScenePipeline(device, format, {
       blend: ALPHA_BLEND,
       label: "every-qrcode-reef-shelf-pipeline",
       layout: layouts.reef,
       module: shelf,
     }),
-    reefWater: create("every-qrcode-reef-water-pipeline", water, true),
+    reefWater: await create("every-qrcode-reef-water-pipeline", water, true),
   };
 }
 
@@ -890,45 +928,45 @@ async function createTreePipelines(
     grassModule,
     shadowModule,
   ] = modules;
-  const blocks = createScenePipeline(device, format, {
+  const blocks = await createScenePipeline(device, format, {
     label: "every-qrcode-block-pipeline",
     layout: layouts.blocks,
     module: blockModule,
   });
-  const branches = createScenePipeline(device, format, {
+  const branches = await createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     label: "every-qrcode-branch-pipeline",
     layout: layouts.items,
     module: branchModule,
   });
-  const butterflies = createScenePipeline(device, format, {
+  const butterflies = await createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     depthWrite: false,
     label: "every-qrcode-butterfly-pipeline",
     layout: layouts.items,
     module: butterflyModule,
   });
-  const fallingPetals = createScenePipeline(device, format, {
+  const fallingPetals = await createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     depthWrite: false,
     label: "every-qrcode-falling-petal-pipeline",
     layout: layouts.items,
     module: fallingPetalModule,
   });
-  const flowers = createScenePipeline(device, format, {
+  const flowers = await createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     depthWrite: true,
     label: "every-qrcode-flower-pipeline",
     layout: layouts.items,
     module: flowerModule,
   });
-  const grass = createScenePipeline(device, format, {
+  const grass = await createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     label: "every-qrcode-grass-pipeline",
     layout: layouts.items,
     module: grassModule,
   });
-  const shadow = createScenePipeline(device, format, {
+  const shadow = await createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     depthWrite: false,
     label: "every-qrcode-shadow-pipeline",
@@ -957,7 +995,7 @@ async function createCustomModelPipelines<T extends SeedPipelines>(
   form: SeedForm,
 ): Promise<T> {
   const module = await createShaderModule(device, `every-qrcode-${form}`, code);
-  const pipeline = createScenePipeline(device, format, {
+  const pipeline = await createScenePipeline(device, format, {
     label: `every-qrcode-${form}-pipeline`,
     layout: layouts.blocks,
     module,
@@ -966,6 +1004,28 @@ async function createCustomModelPipelines<T extends SeedPipelines>(
 }
 
 async function createPipelines(
+  device: GPUDevice,
+  format: GPUTextureFormat,
+  layouts: PipelineLayouts,
+  form: SeedForm,
+  generatorVersion: GeneratorVersion,
+): Promise<SeedPipelines> {
+  let cache = pipelineCache.get(device);
+  if (!cache) {
+    cache = new Map();
+    pipelineCache.set(device, cache);
+  }
+  const key = `${format}:${form}:${generatorVersion}`;
+  let result = cache.get(key);
+  if (!result) {
+    result = buildPipelines(device, format, layouts, form, generatorVersion);
+    cache.set(key, result);
+    void result.catch(() => cache!.delete(key));
+  }
+  return result;
+}
+
+async function buildPipelines(
   device: GPUDevice,
   format: GPUTextureFormat,
   layouts: PipelineLayouts,
@@ -1239,7 +1299,7 @@ function writeUniforms(
     };
   }
   const bounce = Math.exp(-6 * toggleAge) * Math.sin(12 * toggleAge) * 0.012;
-  const values = new Float32Array(UNIFORM_FLOATS);
+  const values = gpu.uniformValues;
   const effectMotion = gpu.sceneEffect === 0 ? 1 : gpu.sceneEffect === 1 ? 0.15 : 0;
   const cameraMotion = gpu.form === "terrain" ? 0 : effectMotion;
   values[0] = canvas.width / Math.max(1, canvas.height);
@@ -1378,10 +1438,12 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
   } else if (isStagedWorld(gpu.pipelines.form)) {
     const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
     pass.setPipeline(pipeline);
-    pass.draw(
-      SCULPTURE_VERTICES,
-      gpu.blockField.blocks.length * SCULPTURE_PARTS + 1 + SCULPTURE_AMBIENT_INSTANCES,
-    );
+    if (gpu.uniformValues[3] === 1) pass.draw(6, gpu.blockField.blocks.length + 1);
+    else
+      pass.draw(
+        SCULPTURE_VERTICES,
+        gpu.blockField.blocks.length * SCULPTURE_PARTS + 1 + SCULPTURE_AMBIENT_INSTANCES,
+      );
   } else {
     const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
     pass.setPipeline(pipeline);
@@ -1430,8 +1492,11 @@ function destroyGpuResources(gpu: SeedGpuResources | undefined): void {
   gpu.circuitMaterial?.destroy();
   gpu.reefMaterial?.destroy();
   for (const buffer of Object.values(gpu.buffers)) buffer.destroy();
-  gpu.context.unconfigure();
-  gpu.device.destroy();
+  if (contextOwners.get(gpu.context) === gpu) {
+    contextOwners.delete(gpu.context);
+    gpu.context.unconfigure();
+  }
+  releaseGpuDevice(gpu.device);
 }
 
 async function initializeGpu(
@@ -1439,17 +1504,16 @@ async function initializeGpu(
   model: SeedModel,
   sceneConfig: SeedSceneConfig,
   form: SeedForm,
+  cancelled: () => boolean,
 ): Promise<SeedGpuResources> {
-  if (!("gpu" in navigator)) throw new Error("This browser does not support WebGPU");
-  const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
-  if (!adapter) throw new Error("No WebGPU adapter is available");
-  const device = await adapter.requestDevice();
+  const device = await acquireGpuDevice();
   const context = canvas.getContext("webgpu") as GPUCanvasContext | null;
   if (!context) {
-    device.destroy();
+    releaseGpuDevice(device);
     throw new Error("Could not create a WebGPU canvas context");
   }
   try {
+    if (cancelled()) throw new Error("Renderer initialization cancelled");
     const format = navigator.gpu.getPreferredCanvasFormat();
     const blockField = createSeedBlockField(model, form);
     const scene = createSeedGpuScene(model, form);
@@ -1490,6 +1554,7 @@ async function initializeGpu(
 
     const layouts = createLayouts(device);
     const pipelines = await createPipelines(device, format, layouts, form, model.generatorVersion);
+    if (cancelled()) throw new Error("Renderer initialization cancelled");
     const buffers = createBuffers(
       device,
       blockField,
@@ -1515,6 +1580,7 @@ async function initializeGpu(
     );
     const palette = createPalette(sceneConfig);
     return {
+      uniformValues: new Float32Array(UNIFORM_FLOATS),
       bindGroups,
       blockField,
       buffers,
@@ -1543,8 +1609,7 @@ async function initializeGpu(
       zoom: 1,
     };
   } catch (error) {
-    context.unconfigure();
-    device.destroy();
+    releaseGpuDevice(device);
     throw error;
   }
 }
@@ -1562,9 +1627,8 @@ function updateGpuScene(gpu: SeedGpuResources, scene: SeedSceneConfig): void {
 function animate(canvas: HTMLCanvasElement, state: RendererState, now: number): void {
   const gpu = state.gpu;
   if (!gpu || state.closed) return;
-  if (isStagedWorld(gpu.form) && (!state.visible || document.hidden)) {
+  if (!state.visible || document.hidden) {
     state.lastFrameTime = now;
-    state.frame = requestAnimationFrame((next) => animate(canvas, state, next));
     return;
   }
   if (gpu.form === "terrain") {
@@ -1604,12 +1668,40 @@ function animate(canvas: HTMLCanvasElement, state: RendererState, now: number): 
     Math.max(0, (now - state.readyTime) / 1000),
   );
   renderGpuFrame(gpu);
-  state.frame = requestAnimationFrame((next) => animate(canvas, state, next));
+  state.submitting = true;
+  // Keep at most one submitted frame per canvas. Slow GPUs must not accumulate
+  // seconds of obsolete scene work ahead of a theme switch or a QR reveal.
+  void gpu.device.queue.onSubmittedWorkDone().then(
+    () => {
+      state.submitting = false;
+      if (state.needsFrame || state.progress !== 1 || state.target !== 1) {
+        state.needsFrame = false;
+        requestFrame(canvas, state);
+      }
+    },
+    () => {
+      state.submitting = false;
+    },
+  );
+}
+
+function requestFrame(canvas: HTMLCanvasElement, state: RendererState): void {
+  if (state.closed || state.frame || !state.gpu) return;
+  if (state.submitting) {
+    state.needsFrame = true;
+    return;
+  }
+  state.frame = requestAnimationFrame((now) => {
+    state.frame = 0;
+    animate(canvas, state, now);
+  });
 }
 
 function createInitialState(): RendererState {
   const now = performance.now();
   return {
+    submitting: false,
+    needsFrame: false,
     closed: false,
     visible: true,
     readyTime: now,
@@ -1637,19 +1729,25 @@ export function mountSeed(
 ): SeedRenderer {
   const state = createInitialState();
   const visibilityObserver =
-    isStagedWorld(form) && typeof IntersectionObserver !== "undefined"
+    typeof IntersectionObserver !== "undefined"
       ? new IntersectionObserver(([entry]) => {
           state.visible = entry?.isIntersecting ?? true;
+          if (state.visible) requestFrame(canvas, state);
         })
       : undefined;
   visibilityObserver?.observe(canvas);
+  const resume = () => {
+    if (!document.hidden) requestFrame(canvas, state);
+  };
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", resume);
   const resolveScene = (value: SeedSceneConfig): SeedSceneConfig =>
     isStagedWorld(form)
       ? { ...value, palette: value.palette ?? selectWorldPalette(form, model.morphSeed).palette }
       : value;
   let sceneConfig = resolveScene(scene);
   canvas.dataset["renderer"] = "webgpu-initializing";
-  void initializeGpu(canvas, model, sceneConfig, form)
+  delete canvas.dataset["morphProgress"];
+  void initializeGpu(canvas, model, sceneConfig, form, () => state.closed)
     .then((gpu) => {
       if (state.closed) {
         destroyGpuResources(gpu);
@@ -1658,10 +1756,21 @@ export function mountSeed(
       updateGpuScene(gpu, sceneConfig);
       gpu.zoom = state.zoom;
       state.gpu = gpu;
+      contextOwners.set(gpu.context, gpu);
       state.readyTime = performance.now();
       canvas.dataset["renderer"] = "webgpu-wgsl";
+      canvas.dataset["renderedForm"] = form;
+      void gpu.device.lost.then(() => {
+        if (state.closed || state.gpu !== gpu) return;
+        cancelAnimationFrame(state.frame);
+        state.frame = 0;
+        destroyGpuResources(gpu);
+        state.gpu = undefined;
+        canvas.dataset["renderer"] = "webgpu-error";
+        options.onError?.(new Error("Graphics device was lost. Reload to restore the 3D world."));
+      });
       resizeGpuCanvas(canvas, gpu);
-      state.frame = requestAnimationFrame((now) => animate(canvas, state, now));
+      requestFrame(canvas, state);
       options.onReady?.();
     })
     .catch((reason: unknown) => {
@@ -1674,6 +1783,7 @@ export function mountSeed(
   return {
     dispose: () => {
       state.closed = true;
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", resume);
       visibilityObserver?.disconnect();
       cancelAnimationFrame(state.frame);
       destroyGpuResources(state.gpu);
@@ -1681,6 +1791,7 @@ export function mountSeed(
     },
     resize: () => {
       state.resizePending = true;
+      requestFrame(canvas, state);
     },
     setFlat: (flat) => {
       const target = flat ? 1 : 0;
@@ -1698,14 +1809,17 @@ export function mountSeed(
       }
       state.transitionStart = now;
       state.toggleTime = now;
+      requestFrame(canvas, state);
     },
     setScene: (nextScene) => {
       sceneConfig = resolveScene(nextScene);
       if (state.gpu) updateGpuScene(state.gpu, sceneConfig);
+      requestFrame(canvas, state);
     },
     setZoom: (zoom) => {
       state.zoom = clampSeedZoom(zoom);
       if (state.gpu) state.gpu.zoom = state.zoom;
+      requestFrame(canvas, state);
     },
   };
 }

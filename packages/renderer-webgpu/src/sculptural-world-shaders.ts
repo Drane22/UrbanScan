@@ -57,6 +57,13 @@ fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32
   let count=u32(uniforms.gridSize*uniforms.gridSize);
   let size=uniforms.blockSize;let scan=phase(0.28,0.96);
   let ambientStart=count*4u+1u;
+  if(uniforms.progress>=1.0){
+    if(instance>count){return o;}
+    let q=quad(v)-vec2f(0.5);o.owner=instance;
+    if(instance==count){o.world=vec3f(q.x*(uniforms.gridSize+8.0),-0.045,q.y*(uniforms.gridSize+8.0))*size;o.part=9u;}
+    else{let cell=blockPositions[instance].xy+vec2f(0.5)-vec2f(uniforms.gridSize*0.5);o.world=vec3f(cell.x+q.x,0,cell.y+q.y)*size;o.part=0u;}
+    o.position=worldProject(o.world,1.68,uniforms.gridSize*size*0.045);o.uv=q+vec2f(0.5);return o;
+  }
   if(instance>=ambientStart) {
     let slot=instance-ambientStart;let i=slot/4u;let part=slot%4u;
     if(i>=worldAmbientCount() || uniforms.progress>=0.62){return o;}
@@ -108,6 +115,11 @@ fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32
 @fragment
 fn fragmentMain(o:WorldOutput)->@location(0) vec4f {
   let scan=phase(0.58,0.98);let paper=qrPaper();
+  if(uniforms.progress>=1.0){
+    if(o.part==9u){return vec4f(paper,1);}
+    let coverage=f32(blockTypes[o.owner]!=0u)*roundedModule(o.uv,o.owner);
+    return vec4f(mix(paper,qrModuleMaterial(blockTypes[o.owner],blockPositions[o.owner].xy),coverage),1);
+  } else {
   let n=normalize(cross(dpdx(o.world),dpdy(o.world))+vec3f(0.000001));
   let light=0.55+abs(dot(n,normalize(vec3f(-0.45,0.85,-0.35))))*0.45;
   let coord=o.world/uniforms.blockSize;
@@ -132,6 +144,7 @@ fn fragmentMain(o:WorldOutput)->@location(0) vec4f {
     color=mix(color,mix(paper,ink,coverage),scan);
   }
   return vec4f(clamp(color,vec3f(0),vec3f(1)),1.0);
+  }
 }
 `;
 }

@@ -8,9 +8,9 @@ import {
   getPalettesForModel,
   type WorldPalettePreset,
 } from "@every-qrcode/renderer-webgpu";
-import { useDeferredValue, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { CoreInspector } from "@/core-inspector";
+import { QRDetailsDialog } from "@/qr-details-dialog";
 
 const DEFAULT_LINK = "https://example.com";
 
@@ -66,12 +66,19 @@ export function App(): React.JSX.Element {
   const [input, setInput] = useState(DEFAULT_LINK);
   const [model, setModel] = useState<EveryQRCodeModel>("circuit");
   const [paletteId, setPaletteId] = useState<string>(() => getDefaultPaletteForModel("circuit").id);
-  const [seededDefault, setSeededDefault] = useState<WorldPalettePreset | null>(null);
+  const [morphSeed, setMorphSeed] = useState<number | null>(null);
   const [replay, setReplay] = useState(0);
   const [identity, setIdentity] = useState<EveryQRCodeIdentity | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const deferredInput = useDeferredValue(input);
-  const resolvedInput = deferredInput.trim() || DEFAULT_LINK;
+  const [resolvedInput, setResolvedInput] = useState(DEFAULT_LINK);
+  useEffect(() => {
+    const timer = setTimeout(() => setResolvedInput(input.trim() || DEFAULT_LINK), 350);
+    return () => clearTimeout(timer);
+  }, [input]);
+  const seededDefault = useMemo(
+    () => (morphSeed === null ? null : selectWorldPalette(model, morphSeed)),
+    [model, morphSeed],
+  );
 
   const currentPalettes = getPalettesForModel(model);
   const currentPalette: WorldPalettePreset =
@@ -92,7 +99,7 @@ export function App(): React.JSX.Element {
         if (cancelled) return;
         const seed = await createSeedModel(nextIdentity);
         if (cancelled) return;
-        setSeededDefault(selectWorldPalette(model, seed.morphSeed));
+        setMorphSeed(seed.morphSeed);
         setIdentity(nextIdentity);
         setError(null);
       })
@@ -103,7 +110,13 @@ export function App(): React.JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [resolvedInput, model]);
+  }, [resolvedInput]);
+
+  const scene = useMemo(
+    () =>
+      isStagedWorld(model) && paletteId === "seeded" ? {} : { palette: currentPalette.palette },
+    [model, paletteId, currentPalette],
+  );
 
   return (
     <main className="demo-shell">
@@ -113,6 +126,7 @@ export function App(): React.JSX.Element {
           <span className="brand-badge">v1.2</span>
         </div>
         <p className="brand-attribution">Modified and improved by drane</p>
+        <QRDetailsDialog identity={identity} />
       </header>
 
       <section className="scene-region">
@@ -140,39 +154,35 @@ export function App(): React.JSX.Element {
           className="scene-button"
           model={model}
           onError={(rendererError) => setError(rendererError.message)}
-          scene={
-            isStagedWorld(model) && paletteId === "seeded"
-              ? {}
-              : { palette: currentPalette.palette }
-          }
+          scene={scene}
           url={resolvedInput}
         />
       </section>
 
       <div className="input-region">
-        {isStagedWorld(model) && (
-          <div className="preset-chips">
-            <button
-              className="preset-chip"
-              type="button"
-              onClick={() => setReplay((value) => value + 1)}
-            >
-              Replay construction
-            </button>
-            <button
-              className="preset-chip"
-              type="button"
-              aria-pressed={paletteId === "seeded"}
-              onClick={() => setPaletteId("seeded")}
-            >
-              Seed palette
-            </button>
-          </div>
-        )}
         <section className="palette-region" aria-label="Color Palette">
           <div className="palette-header">
             <span className="palette-title">{MODEL_INFO[model].label} Palette:</span>
             <span className="palette-active-name">{currentPalette.name}</span>
+            {isStagedWorld(model) && (
+              <div className="scene-actions">
+                <button
+                  className="preset-chip"
+                  type="button"
+                  onClick={() => setReplay((value) => value + 1)}
+                >
+                  Replay
+                </button>
+                <button
+                  className="preset-chip"
+                  type="button"
+                  aria-pressed={paletteId === "seeded"}
+                  onClick={() => setPaletteId("seeded")}
+                >
+                  Link palette
+                </button>
+              </div>
+            )}
           </div>
           <div className="palette-selector">
             {currentPalettes.map((p) => (
@@ -195,21 +205,13 @@ export function App(): React.JSX.Element {
           </div>
         </section>
 
-        <div className="preset-chips" aria-label="Sample destinations">
-          <span className="preset-title">Presets:</span>
-          {PRESET_URLS.map((preset) => (
-            <button
-              className="preset-chip"
-              key={preset.label}
-              onClick={() => setInput(preset.url)}
-              type="button"
-            >
-              {preset.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="url-input-wrapper">
+        <form
+          className="url-input-wrapper"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setResolvedInput(input.trim() || DEFAULT_LINK);
+          }}
+        >
           <label className="sr-only" htmlFor="qr-content">
             URL to render
           </label>
@@ -227,13 +229,35 @@ export function App(): React.JSX.Element {
             spellCheck={false}
             value={input}
           />
-        </div>
-
-        <p aria-live="polite" className="input-error">
-          {error}
-        </p>
-
-        {identity ? <CoreInspector identity={identity} /> : null}
+          <select
+            aria-label="Try a sample destination"
+            className="sample-select"
+            value=""
+            onChange={(event) => {
+              if (event.target.value) {
+                setInput(event.target.value);
+                setResolvedInput(event.target.value);
+              }
+            }}
+          >
+            <option value="" disabled>
+              Try a link
+            </option>
+            {PRESET_URLS.map((preset) => (
+              <option key={preset.label} value={preset.url}>
+                {preset.label}
+              </option>
+            ))}
+          </select>
+          <button className="generate-button" type="submit">
+            Generate
+          </button>
+        </form>
+        {error && (
+          <p role="alert" className="input-error">
+            {error}
+          </p>
+        )}
       </div>
     </main>
   );
