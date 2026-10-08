@@ -76,7 +76,7 @@ type TreePipelines = SharedPipelines & {
 type TerrainPipelines = SharedPipelines & {
   readonly form: "terrain";
   readonly terrain: GPURenderPipeline;
-  readonly terrainDetails: GPURenderPipeline;
+  readonly terrainDetails: GPURenderPipeline | undefined;
 };
 
 type CityPipelines = SharedPipelines & {
@@ -138,14 +138,19 @@ type ToyBlockPipelines = SharedPipelines & {
 };
 
 type SeedPipelines =
+  | (SharedPipelines & { readonly form: "waves"; readonly waves: GPURenderPipeline })
+  | (SharedPipelines & { readonly form: "crystalline"; readonly crystalline: GPURenderPipeline })
+  | (SharedPipelines & { readonly form: "mechanical"; readonly mechanical: GPURenderPipeline })
   | CityPipelines
   | CircuitPipelines
+  | (SharedPipelines & { readonly form: "circuit"; readonly circuit: GPURenderPipeline })
   | ColonyPipelines
   | ConstellationPipelines
   | DungeonPipelines
   | MyceliumPipelines
   | OrigamiPipelines
   | ReefPipelines
+  | (SharedPipelines & { readonly form: "reef"; readonly reef: GPURenderPipeline })
   | StainedGlassPipelines
   | TerrainPipelines
   | ToyBlockPipelines
@@ -165,7 +170,7 @@ type TreeShaderSources = {
 type TerrainShaderSources = {
   readonly form: "terrain";
   readonly terrain: string;
-  readonly terrainDetails: string;
+  readonly terrainDetails?: string;
 };
 
 type CityShaderSources = {
@@ -226,36 +231,62 @@ type ToyBlockShaderSources = {
   readonly "toy-block": string;
 };
 
-type SharedShaderSources = {
+export type SharedShaderSources = {
   readonly post: string;
   readonly weather: string;
 };
 
-type SeedShaderSources = SharedShaderSources &
+export type SeedShaderSources = SharedShaderSources &
   (
+    | { readonly form: "waves"; readonly waves: string }
+    | { readonly form: "crystalline"; readonly crystalline: string }
+    | { readonly form: "mechanical"; readonly mechanical: string }
     | CityShaderSources
     | CircuitShaderSources
+    | { readonly form: "circuit"; readonly circuit: string }
     | ColonyShaderSources
     | ConstellationShaderSources
     | DungeonShaderSources
     | MyceliumShaderSources
     | OrigamiShaderSources
     | ReefShaderSources
+    | { readonly form: "reef"; readonly reef: string }
     | StainedGlassShaderSources
     | TerrainShaderSources
     | ToyBlockShaderSources
     | TreeShaderSources
   );
 
-async function loadVersionOneSharedShaders(): Promise<SharedShaderSources> {
+async function loadCurrentSharedShaders(): Promise<SharedShaderSources> {
   const shared = await import("./shared-shaders.js");
   return { post: shared.SEED_POST_SHADER, weather: shared.SEED_WEATHER_SHADER };
 }
 
-const VERSION_ONE_SHADER_LOADERS = {
+const VERSION_TWO_SHADER_LOADERS = {
+  waves: async (): Promise<SeedShaderSources> => {
+    const [shared, m] = await Promise.all([
+      loadCurrentSharedShaders(),
+      import("./waves-shaders.js"),
+    ]);
+    return { ...shared, form: "waves", waves: m.WAVES_SHADER };
+  },
+  crystalline: async (): Promise<SeedShaderSources> => {
+    const [shared, m] = await Promise.all([
+      loadCurrentSharedShaders(),
+      import("./crystalline-shaders.js"),
+    ]);
+    return { ...shared, form: "crystalline", crystalline: m.CRYSTALLINE_SHADER };
+  },
+  mechanical: async (): Promise<SeedShaderSources> => {
+    const [shared, m] = await Promise.all([
+      loadCurrentSharedShaders(),
+      import("./mechanical-shaders.js"),
+    ]);
+    return { ...shared, form: "mechanical", mechanical: m.MECHANICAL_SHADER };
+  },
   circuit: async (): Promise<SeedShaderSources> => {
     const [shared, m] = await Promise.all([
-      loadVersionOneSharedShaders(),
+      loadCurrentSharedShaders(),
       import("./circuit-shaders.js"),
     ]);
     return {
@@ -270,49 +301,49 @@ const VERSION_ONE_SHADER_LOADERS = {
   },
   city: async (): Promise<SeedShaderSources> => {
     const [shared, city] = await Promise.all([
-      loadVersionOneSharedShaders(),
+      loadCurrentSharedShaders(),
       import("./city-shaders.js"),
     ]);
     return { ...shared, city: city.CITY_SHADER, form: "city" };
   },
   colony: async (): Promise<SeedShaderSources> => {
     const [shared, m] = await Promise.all([
-      loadVersionOneSharedShaders(),
+      loadCurrentSharedShaders(),
       import("./colony-shaders.js"),
     ]);
     return { ...shared, colony: m.COLONY_SHADER, form: "colony" };
   },
   constellation: async (): Promise<SeedShaderSources> => {
     const [shared, m] = await Promise.all([
-      loadVersionOneSharedShaders(),
+      loadCurrentSharedShaders(),
       import("./constellation-shaders.js"),
     ]);
     return { ...shared, constellation: m.CONSTELLATION_SHADER, form: "constellation" };
   },
   dungeon: async (): Promise<SeedShaderSources> => {
     const [shared, m] = await Promise.all([
-      loadVersionOneSharedShaders(),
+      loadCurrentSharedShaders(),
       import("./dungeon-shaders.js"),
     ]);
     return { ...shared, dungeon: m.DUNGEON_SHADER, form: "dungeon" };
   },
   mycelium: async (): Promise<SeedShaderSources> => {
     const [shared, m] = await Promise.all([
-      loadVersionOneSharedShaders(),
+      loadCurrentSharedShaders(),
       import("./mycelium-shaders.js"),
     ]);
     return { ...shared, form: "mycelium", mycelium: m.MYCELIUM_SHADER };
   },
   origami: async (): Promise<SeedShaderSources> => {
     const [shared, m] = await Promise.all([
-      loadVersionOneSharedShaders(),
+      loadCurrentSharedShaders(),
       import("./origami-shaders.js"),
     ]);
     return { ...shared, form: "origami", origami: m.ORIGAMI_SHADER };
   },
   reef: async (): Promise<SeedShaderSources> => {
     const [shared, m] = await Promise.all([
-      loadVersionOneSharedShaders(),
+      loadCurrentSharedShaders(),
       import("./reef-shaders.js"),
     ]);
     return {
@@ -327,14 +358,14 @@ const VERSION_ONE_SHADER_LOADERS = {
   },
   "stained-glass": async (): Promise<SeedShaderSources> => {
     const [shared, m] = await Promise.all([
-      loadVersionOneSharedShaders(),
+      loadCurrentSharedShaders(),
       import("./stained-glass-shaders.js"),
     ]);
     return { ...shared, form: "stained-glass", "stained-glass": m.STAINED_GLASS_SHADER };
   },
   terrain: async (): Promise<SeedShaderSources> => {
     const [shared, terrain, details] = await Promise.all([
-      loadVersionOneSharedShaders(),
+      loadCurrentSharedShaders(),
       import("./terrain-shaders.js"),
       import("./terrain-detail-shaders.js"),
     ]);
@@ -347,14 +378,14 @@ const VERSION_ONE_SHADER_LOADERS = {
   },
   "toy-block": async (): Promise<SeedShaderSources> => {
     const [shared, m] = await Promise.all([
-      loadVersionOneSharedShaders(),
+      loadCurrentSharedShaders(),
       import("./toy-block-shaders.js"),
     ]);
     return { ...shared, form: "toy-block", "toy-block": m.TOY_BLOCK_SHADER };
   },
   tree: async (): Promise<SeedShaderSources> => {
     const [shared, tree] = await Promise.all([
-      loadVersionOneSharedShaders(),
+      loadCurrentSharedShaders(),
       import("./tree-shaders.js"),
     ]);
     return {
@@ -372,15 +403,22 @@ const VERSION_ONE_SHADER_LOADERS = {
 };
 
 const SEED_SHADER_LOADERS = {
-  1: VERSION_ONE_SHADER_LOADERS,
-} satisfies Record<GeneratorVersion, typeof VERSION_ONE_SHADER_LOADERS>;
+  1: async (form: SeedForm) => {
+    const { versionOneShaderLoaders } = await import("./generator-v1/shader-loader.js");
+    if (!(form in versionOneShaderLoaders)) {
+      throw new RangeError(`World ${form} requires generator version 2`);
+    }
+    return versionOneShaderLoaders[form as keyof typeof versionOneShaderLoaders]();
+  },
+  2: (form: SeedForm) => VERSION_TWO_SHADER_LOADERS[form](),
+} satisfies Record<GeneratorVersion, (form: SeedForm) => Promise<SeedShaderSources>>;
 
 export async function loadSeedShaderSources(
   form: SeedForm,
   generatorVersion: GeneratorVersion = CURRENT_GENERATOR_VERSION,
 ): Promise<SeedShaderSources> {
   const version = resolveGeneratorVersion(generatorVersion);
-  return SEED_SHADER_LOADERS[version][form]();
+  return SEED_SHADER_LOADERS[version](form);
 }
 
 type SeedBuffers = {
@@ -418,6 +456,7 @@ type SeedBindGroups = {
 
 type RenderTargets = {
   readonly depth: GPUTexture;
+  readonly depthView: GPUTextureView;
   readonly postBindGroup: GPUBindGroup;
   readonly scene: GPUTexture;
   readonly sceneView: GPUTextureView;
@@ -426,6 +465,7 @@ type RenderTargets = {
 };
 
 type SeedGpuResources = {
+  readonly generatorVersion: GeneratorVersion;
   artDirection: number;
   readonly uniformValues: Float32Array;
   readonly bindGroups: SeedBindGroups;
@@ -517,6 +557,7 @@ function createPalette(scene: SeedSceneConfig): SeedScenePalette {
 }
 
 type RendererState = {
+  fail: (reason: unknown) => void;
   submitting: boolean;
   needsFrame: boolean;
   closed: boolean;
@@ -630,10 +671,15 @@ function createGpuBuffer(
     size: minimumStorageBufferByteLength(data.byteLength),
     usage: BUFFER_USAGE.copyDestination | BUFFER_USAGE.storage,
   });
-  const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
-  new Uint8Array(buffer.getMappedRange()).set(bytes);
-  buffer.unmap();
-  return buffer;
+  try {
+    const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    new Uint8Array(buffer.getMappedRange()).set(bytes);
+    buffer.unmap();
+    return buffer;
+  } catch (error) {
+    buffer.destroy();
+    throw error;
+  }
 }
 
 export function minimumStorageBufferByteLength(byteLength: number): number {
@@ -806,17 +852,20 @@ async function createTerrainPipelines(
     layout: layouts.blocks,
     module,
   });
-  const detailModule = await createShaderModule(
-    device,
-    "every-qrcode-terrain-details",
-    sources.terrainDetails,
-  );
-  const terrainDetails = await createScenePipeline(device, format, {
-    blend: ALPHA_BLEND,
-    label: "every-qrcode-terrain-details-pipeline",
-    layout: layouts.blocks,
-    module: detailModule,
-  });
+  let terrainDetails: GPURenderPipeline | undefined;
+  if (sources.terrainDetails) {
+    const detailModule = await createShaderModule(
+      device,
+      "every-qrcode-terrain-details",
+      sources.terrainDetails,
+    );
+    terrainDetails = await createScenePipeline(device, format, {
+      blend: ALPHA_BLEND,
+      label: "every-qrcode-terrain-details-pipeline",
+      layout: layouts.blocks,
+      module: detailModule,
+    });
+  }
   return {
     ...shared,
     form: sources.form,
@@ -1107,6 +1156,19 @@ async function buildPipelines(
   if (sources.form === "city") {
     return createCityPipelines(device, format, layouts, shared, sources);
   }
+  if (sources.form === "circuit" && "circuit" in sources) {
+    return createCustomModelPipelines(
+      device,
+      format,
+      layouts,
+      shared,
+      sources.circuit,
+      sources.form,
+    );
+  }
+  if (sources.form === "reef" && "reef" in sources) {
+    return createCustomModelPipelines(device, format, layouts, shared, sources.reef, sources.form);
+  }
   if (sources.form === "circuit") {
     return createCircuitPipelines(device, format, layouts, shared, sources);
   }
@@ -1133,30 +1195,42 @@ function createBuffers(
   reefCorals: Float32Array<ArrayBufferLike> = new Float32Array(),
   reefFish: Float32Array<ArrayBufferLike> = new Float32Array(),
 ): SeedBuffers {
-  const uniforms = device.createBuffer({
-    label: "every-qrcode-uniforms",
-    size: UNIFORM_FLOATS * Float32Array.BYTES_PER_ELEMENT,
-    usage: BUFFER_USAGE.copyDestination | BUFFER_USAGE.uniform,
-  });
-  return {
-    baseY: createGpuBuffer(device, "every-qrcode-block-base-y", field.baseY),
-    blockHeights: createGpuBuffer(device, "every-qrcode-block-heights", field.heights),
-    blockPositions: createGpuBuffer(device, "every-qrcode-block-positions", field.positions),
-    blockTypes: createGpuBuffer(device, "every-qrcode-block-types", field.types),
-    butterflies: createGpuBuffer(device, "every-qrcode-butterflies", scene.butterflies),
-    circuitTraces: createGpuBuffer(device, "every-qrcode-circuit-traces", circuitTraces),
-    fallingPetals: createGpuBuffer(device, "every-qrcode-falling-petals", scene.fallingPetals),
-    flowers: createGpuBuffer(device, "every-qrcode-flowers", scene.flowers),
-    grass: createGpuBuffer(device, "every-qrcode-grass", scene.grass),
-    groundPetals: createGpuBuffer(device, "every-qrcode-ground-petals", scene.groundPetals),
-    cityLots: createGpuBuffer(device, "every-qrcode-city-lots", cityLots),
-    rain: createGpuBuffer(device, "every-qrcode-rain", scene.rain),
-    reefCorals: createGpuBuffer(device, "every-qrcode-reef-corals", reefCorals),
-    reefFish: createGpuBuffer(device, "every-qrcode-reef-fish", reefFish),
-    reefShelf: createGpuBuffer(device, "every-qrcode-reef-shelf", reefShelf),
-    segments: createGpuBuffer(device, "every-qrcode-segments", scene.segments),
-    uniforms,
+  const allocated: GPUBuffer[] = [];
+  const storage = (label: string, data: Float32Array | Uint32Array) => {
+    const buffer = createGpuBuffer(device, label, data);
+    allocated.push(buffer);
+    return buffer;
   };
+  try {
+    const uniforms = device.createBuffer({
+      label: "every-qrcode-uniforms",
+      size: UNIFORM_FLOATS * Float32Array.BYTES_PER_ELEMENT,
+      usage: BUFFER_USAGE.copyDestination | BUFFER_USAGE.uniform,
+    });
+    allocated.push(uniforms);
+    return {
+      baseY: storage("every-qrcode-block-base-y", field.baseY),
+      blockHeights: storage("every-qrcode-block-heights", field.heights),
+      blockPositions: storage("every-qrcode-block-positions", field.positions),
+      blockTypes: storage("every-qrcode-block-types", field.types),
+      butterflies: storage("every-qrcode-butterflies", scene.butterflies),
+      circuitTraces: storage("every-qrcode-circuit-traces", circuitTraces),
+      fallingPetals: storage("every-qrcode-falling-petals", scene.fallingPetals),
+      flowers: storage("every-qrcode-flowers", scene.flowers),
+      grass: storage("every-qrcode-grass", scene.grass),
+      groundPetals: storage("every-qrcode-ground-petals", scene.groundPetals),
+      cityLots: storage("every-qrcode-city-lots", cityLots),
+      rain: storage("every-qrcode-rain", scene.rain),
+      reefCorals: storage("every-qrcode-reef-corals", reefCorals),
+      reefFish: storage("every-qrcode-reef-fish", reefFish),
+      reefShelf: storage("every-qrcode-reef-shelf", reefShelf),
+      segments: storage("every-qrcode-segments", scene.segments),
+      uniforms,
+    };
+  } catch (error) {
+    for (const buffer of allocated) buffer.destroy();
+    throw error;
+  }
 }
 
 async function createCircuitMaterialTexture(device: GPUDevice): Promise<GPUTexture> {
@@ -1167,13 +1241,18 @@ async function createCircuitMaterialTexture(device: GPUDevice): Promise<GPUTextu
     size: [atlas.CIRCUIT_MATERIAL_ATLAS_SIZE, atlas.CIRCUIT_MATERIAL_ATLAS_SIZE],
     usage: TEXTURE_USAGE.copyDestination | TEXTURE_USAGE.textureBinding,
   });
-  device.queue.writeTexture(
-    { texture },
-    atlas.createCircuitMaterialAtlas(),
-    { bytesPerRow: atlas.CIRCUIT_MATERIAL_ATLAS_SIZE * 4 },
-    [atlas.CIRCUIT_MATERIAL_ATLAS_SIZE, atlas.CIRCUIT_MATERIAL_ATLAS_SIZE],
-  );
-  return texture;
+  try {
+    device.queue.writeTexture(
+      { texture },
+      atlas.createCircuitMaterialAtlas(),
+      { bytesPerRow: atlas.CIRCUIT_MATERIAL_ATLAS_SIZE * 4 },
+      [atlas.CIRCUIT_MATERIAL_ATLAS_SIZE, atlas.CIRCUIT_MATERIAL_ATLAS_SIZE],
+    );
+    return texture;
+  } catch (error) {
+    texture.destroy();
+    throw error;
+  }
 }
 
 async function createReefMaterialTexture(device: GPUDevice): Promise<GPUTexture> {
@@ -1184,13 +1263,18 @@ async function createReefMaterialTexture(device: GPUDevice): Promise<GPUTexture>
     size: [atlas.REEF_MATERIAL_ATLAS_SIZE, atlas.REEF_MATERIAL_ATLAS_SIZE],
     usage: TEXTURE_USAGE.copyDestination | TEXTURE_USAGE.textureBinding,
   });
-  device.queue.writeTexture(
-    { texture },
-    atlas.createReefMaterialAtlas(),
-    { bytesPerRow: atlas.REEF_MATERIAL_ATLAS_SIZE * 4 },
-    [atlas.REEF_MATERIAL_ATLAS_SIZE, atlas.REEF_MATERIAL_ATLAS_SIZE],
-  );
-  return texture;
+  try {
+    device.queue.writeTexture(
+      { texture },
+      atlas.createReefMaterialAtlas(),
+      { bytesPerRow: atlas.REEF_MATERIAL_ATLAS_SIZE * 4 },
+      [atlas.REEF_MATERIAL_ATLAS_SIZE, atlas.REEF_MATERIAL_ATLAS_SIZE],
+    );
+    return texture;
+  } catch (error) {
+    texture.destroy();
+    throw error;
+  }
 }
 
 function createBindGroups(
@@ -1201,6 +1285,7 @@ function createBindGroups(
   materialTexture?: GPUTexture,
   materialSampler?: GPUSampler,
   reefTexture?: GPUTexture,
+  generatorVersion: GeneratorVersion = CURRENT_GENERATOR_VERSION,
 ): SeedBindGroups {
   const uniformEntry = { binding: 0, resource: { buffer: buffers.uniforms } } as const;
   const blocks = device.createBindGroup({
@@ -1214,7 +1299,10 @@ function createBindGroups(
       {
         binding: 4,
         resource: {
-          buffer: form === "tree" ? buffers.baseY : buffers.cityLots,
+          buffer:
+            form === "tree" || (form === "terrain" && generatorVersion === 1)
+              ? buffers.baseY
+              : buffers.cityLots,
         },
       },
     ],
@@ -1307,46 +1395,62 @@ function destroyTargets(targets: RenderTargets | undefined): void {
   targets?.qr?.destroy();
 }
 
-function usesDirectMorph(form: SeedForm): boolean {
+function usesDirectMorph(
+  form: SeedForm,
+  version: GeneratorVersion = CURRENT_GENERATOR_VERSION,
+): boolean {
+  if (version === 1) return false;
   return isStagedWorld(form) || form === "terrain" || form === "reef" || form === "circuit";
 }
 function premultiplied(color: GPUColorDict): GPUColorDict {
   return { r: color.r * color.a, g: color.g * color.a, b: color.b * color.a, a: color.a };
 }
 function createTargets(gpu: SeedGpuResources, width: number, height: number): RenderTargets {
-  const scene = gpu.device.createTexture({
-    format: gpu.format,
-    label: "every-qrcode-scene-texture",
-    size: [width, height],
-    usage: TEXTURE_USAGE.renderAttachment | TEXTURE_USAGE.textureBinding,
-  });
-  const depth = gpu.device.createTexture({
-    format: "depth24plus",
-    label: "every-qrcode-depth-texture",
-    size: [width, height],
-    usage: TEXTURE_USAGE.renderAttachment,
-  });
-  const sceneView = scene.createView();
-  const qr = usesDirectMorph(gpu.form)
-    ? gpu.device.createTexture({
-        format: gpu.format,
-        label: "every-qrcode-flat-ink",
-        size: [width, height],
-        usage: TEXTURE_USAGE.renderAttachment | TEXTURE_USAGE.textureBinding,
-      })
-    : undefined;
-  const qrView = qr?.createView() ?? sceneView;
-  const postBindGroup = gpu.device.createBindGroup({
-    label: "every-qrcode-post-bind-group",
-    layout: gpu.layouts.post,
-    entries: [
-      { binding: 0, resource: { buffer: gpu.buffers.uniforms } },
-      { binding: 1, resource: sceneView },
-      { binding: 2, resource: gpu.sampler },
-      { binding: 3, resource: qrView },
-    ],
-  });
-  return { depth, postBindGroup, scene, sceneView, qr, qrView };
+  const allocated: GPUTexture[] = [];
+  const texture = (descriptor: GPUTextureDescriptor) => {
+    const target = gpu.device.createTexture(descriptor);
+    allocated.push(target);
+    return target;
+  };
+  try {
+    const scene = texture({
+      format: gpu.format,
+      label: "every-qrcode-scene-texture",
+      size: [width, height],
+      usage: TEXTURE_USAGE.renderAttachment | TEXTURE_USAGE.textureBinding,
+    });
+    const depth = texture({
+      format: "depth24plus",
+      label: "every-qrcode-depth-texture",
+      size: [width, height],
+      usage: TEXTURE_USAGE.renderAttachment,
+    });
+    const depthView = depth.createView();
+    const sceneView = scene.createView();
+    const qr = usesDirectMorph(gpu.form, gpu.generatorVersion)
+      ? texture({
+          format: gpu.format,
+          label: "every-qrcode-flat-ink",
+          size: [width, height],
+          usage: TEXTURE_USAGE.renderAttachment | TEXTURE_USAGE.textureBinding,
+        })
+      : undefined;
+    const qrView = qr?.createView() ?? sceneView;
+    const postBindGroup = gpu.device.createBindGroup({
+      label: "every-qrcode-post-bind-group",
+      layout: gpu.layouts.post,
+      entries: [
+        { binding: 0, resource: { buffer: gpu.buffers.uniforms } },
+        { binding: 1, resource: sceneView },
+        { binding: 2, resource: gpu.sampler },
+        { binding: 3, resource: qrView },
+      ],
+    });
+    return { depth, depthView, postBindGroup, scene, sceneView, qr, qrView };
+  } catch (error) {
+    for (const target of allocated) target.destroy();
+    throw error;
+  }
 }
 
 function resizeGpuCanvas(canvas: HTMLCanvasElement, gpu: SeedGpuResources): void {
@@ -1358,6 +1462,7 @@ function resizeGpuCanvas(canvas: HTMLCanvasElement, gpu: SeedGpuResources): void
   canvas.height = height;
   gpu.context.configure({ alphaMode: "premultiplied", device: gpu.device, format: gpu.format });
   destroyTargets(gpu.targets);
+  gpu.targets = undefined;
   gpu.targets = createTargets(gpu, width, height);
 }
 
@@ -1370,7 +1475,7 @@ function writeUniforms(
   sceneAge: number,
 ): void {
   const idle = 1 - progress;
-  {
+  if (gpu.generatorVersion !== 1) {
     // Fade the world's backdrop into the caller's background (transparent by
     // default), so the final QR has no separate rectangular paper card.
     const phase = Math.max(0, Math.min(1, (progress - 0.58) / 0.4));
@@ -1422,7 +1527,7 @@ function writeUniforms(
   }
   values[56] = gpu.zoom;
   // camera.y selects independent world/ink compositing; it is not motion direction.
-  values[57] = usesDirectMorph(gpu.form) ? 1 : 0;
+  values[57] = usesDirectMorph(gpu.form, gpu.generatorVersion) ? 1 : 0;
   values[59] = gpu.artDirection;
   const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   values[58] = reduced ? 10 : sceneAge;
@@ -1437,11 +1542,17 @@ function writeUniforms(
 
 function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): void {
   const targets = gpu.targets;
-  if (!targets || (usesDirectMorph(gpu.form) && gpu.uniformValues[3]! >= 0.92)) return;
+  if (
+    !targets ||
+    (usesDirectMorph(gpu.form, gpu.generatorVersion) && gpu.uniformValues[3]! >= 0.92)
+  )
+    return;
   const pass = encoder.beginRenderPass({
     colorAttachments: [
       {
-        clearValue: usesDirectMorph(gpu.form) ? premultiplied(gpu.worldClearColor) : gpu.clearColor,
+        clearValue: usesDirectMorph(gpu.form, gpu.generatorVersion)
+          ? premultiplied(gpu.worldClearColor)
+          : gpu.clearColor,
         loadOp: "clear",
         storeOp: "store",
         view: targets.sceneView,
@@ -1451,7 +1562,7 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
       depthClearValue: 1,
       depthLoadOp: "clear",
       depthStoreOp: "store",
-      view: targets.depth.createView(),
+      view: targets.depthView,
     },
     label: "every-qrcode-scene-pass",
   });
@@ -1459,7 +1570,15 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
   if (gpu.pipelines.form === "city") {
     pass.setPipeline(gpu.pipelines.city);
     pass.draw(36, gpu.blockField.blocks.length * gpu.cityPartCount);
-  } else if (gpu.pipelines.form === "circuit") {
+  } else if (gpu.generatorVersion === 1 && gpu.pipelines.form !== "tree") {
+    const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
+    pass.setPipeline(pipeline);
+    const form = gpu.pipelines.form;
+    const vertices =
+      form === "origami" || form === "stained-glass" || form === "constellation" ? 6 : 36;
+    const instances = form === "terrain" || form === "origami" || form === "stained-glass" ? 1 : 2;
+    pass.draw(vertices, gpu.blockField.blocks.length * instances);
+  } else if (gpu.pipelines.form === "circuit" && "circuitBoard" in gpu.pipelines) {
     const circuitBindGroup = gpu.bindGroups.circuit;
     if (!circuitBindGroup) throw new Error("Circuit bind group was not initialized");
     pass.setBindGroup(0, circuitBindGroup);
@@ -1471,7 +1590,7 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
     pass.draw(36, gpu.circuitComponentCount * 12);
     pass.setPipeline(gpu.pipelines.circuitSignals);
     pass.draw(6, gpu.circuitTraceCount);
-  } else if (gpu.pipelines.form === "reef") {
+  } else if (gpu.pipelines.form === "reef" && "reefShelf" in gpu.pipelines) {
     const reefBindGroup = gpu.bindGroups.reef;
     if (!reefBindGroup) throw new Error("Reef bind group was not initialized");
     pass.setBindGroup(0, reefBindGroup);
@@ -1490,7 +1609,7 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
       pass.draw(36, 1, 0, owners);
       pass.draw(36, owners);
     }
-    if (gpu.uniformValues[3]! < 0.99) {
+    if (gpu.uniformValues[3]! < 0.99 && gpu.pipelines.terrainDetails) {
       pass.setPipeline(gpu.pipelines.terrainDetails);
       pass.draw(384, TERRAIN_DETAIL_INSTANCES);
     }
@@ -1566,15 +1685,15 @@ function encodeQrPass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): void {
       depthClearValue: 1,
       depthLoadOp: "clear",
       depthStoreOp: "store",
-      view: targets.depth.createView(),
+      view: targets.depthView,
     },
   });
   const owners = gpu.blockField.blocks.length;
-  if (gpu.pipelines.form === "circuit") {
+  if (gpu.pipelines.form === "circuit" && "circuitBoard" in gpu.pipelines) {
     pass.setPipeline(gpu.pipelines.circuitQr);
     pass.setBindGroup(0, gpu.bindGroups.circuit!);
     pass.draw(36, owners);
-  } else if (gpu.pipelines.form === "reef") {
+  } else if (gpu.pipelines.form === "reef" && "reefShelf" in gpu.pipelines) {
     pass.setPipeline(gpu.pipelines.reefQr);
     pass.setBindGroup(0, gpu.bindGroups.reef!);
     pass.draw(36, owners);
@@ -1638,12 +1757,12 @@ async function initializeGpu(
   cancelled: () => boolean,
 ): Promise<SeedGpuResources> {
   const device = await acquireGpuDevice();
-  const context = canvas.getContext("webgpu") as GPUCanvasContext | null;
-  if (!context) {
-    releaseGpuDevice(device);
-    throw new Error("Could not create a WebGPU canvas context");
-  }
+  let buffers: SeedBuffers | undefined;
+  let circuitMaterial: GPUTexture | undefined;
+  let reefMaterial: GPUTexture | undefined;
   try {
+    const context = canvas.getContext("webgpu") as GPUCanvasContext | null;
+    if (!context) throw new Error("Could not create a WebGPU canvas context");
     if (cancelled()) throw new Error("Renderer initialization cancelled");
     const format = navigator.gpu.getPreferredCanvasFormat();
 
@@ -1667,7 +1786,7 @@ async function initializeGpu(
       reefFishData,
     } = prepared;
     if (cancelled()) throw new Error("Renderer initialization cancelled");
-    const buffers = createBuffers(
+    buffers = createBuffers(
       device,
       blockField,
       scene,
@@ -1678,9 +1797,15 @@ async function initializeGpu(
       reefFishData,
     );
     const sampler = device.createSampler({ magFilter: "linear", minFilter: "linear" });
-    const circuitMaterial =
-      form === "circuit" ? await createCircuitMaterialTexture(device) : undefined;
-    const reefMaterial = form === "reef" ? await createReefMaterialTexture(device) : undefined;
+    circuitMaterial =
+      form === "circuit" && model.generatorVersion !== 1
+        ? await createCircuitMaterialTexture(device)
+        : undefined;
+    reefMaterial =
+      form === "reef" && model.generatorVersion !== 1
+        ? await createReefMaterialTexture(device)
+        : undefined;
+    if (cancelled()) throw new Error("Renderer initialization cancelled");
     const bindGroups = createBindGroups(
       device,
       layouts,
@@ -1689,9 +1814,11 @@ async function initializeGpu(
       circuitMaterial,
       sampler,
       reefMaterial,
+      model.generatorVersion,
     );
     const palette = createPalette(sceneConfig);
     return {
+      generatorVersion: model.generatorVersion,
       artDirection: resolveArtDirection(sceneConfig, form),
       uniformValues: new Float32Array(UNIFORM_FLOATS),
       bindGroups,
@@ -1702,7 +1829,10 @@ async function initializeGpu(
       circuitComponentCount,
       circuitMaterial,
       circuitTraceCount,
-      clearColor: createFormClearColor(sceneConfig, form),
+      clearColor:
+        model.generatorVersion === 1
+          ? createClearColor(sceneConfig)
+          : createFormClearColor(sceneConfig, form),
       worldClearColor: createFormClearColor(sceneConfig, form),
       scanClearColor: createClearColor(sceneConfig),
       context,
@@ -1723,6 +1853,9 @@ async function initializeGpu(
       zoom: 1,
     };
   } catch (error) {
+    circuitMaterial?.destroy();
+    reefMaterial?.destroy();
+    if (buffers) for (const buffer of Object.values(buffers)) buffer.destroy();
     releaseGpuDevice(device);
     throw error;
   }
@@ -1731,7 +1864,8 @@ async function initializeGpu(
 function updateGpuScene(gpu: SeedGpuResources, scene: SeedSceneConfig): void {
   gpu.artDirection = resolveArtDirection(scene, gpu.form);
   const palette = createPalette(scene);
-  gpu.clearColor = createFormClearColor(scene, gpu.form);
+  gpu.clearColor =
+    gpu.generatorVersion === 1 ? createClearColor(scene) : createFormClearColor(scene, gpu.form);
   gpu.worldClearColor = createFormClearColor(scene, gpu.form);
   gpu.scanClearColor = createClearColor(scene);
   gpu.palette = palette;
@@ -1782,9 +1916,7 @@ function animate(canvas: HTMLCanvasElement, state: RendererState, now: number): 
         requestFrame(canvas, state);
       }
     },
-    () => {
-      state.submitting = false;
-    },
+    (reason: unknown) => state.fail(reason),
   );
 }
 
@@ -1796,13 +1928,18 @@ function requestFrame(canvas: HTMLCanvasElement, state: RendererState): void {
   }
   state.frame = requestAnimationFrame((now) => {
     state.frame = 0;
-    animate(canvas, state, now);
+    try {
+      animate(canvas, state, now);
+    } catch (reason) {
+      state.fail(reason);
+    }
   });
 }
 
 function createInitialState(): RendererState {
   const now = performance.now();
   return {
+    fail: () => undefined,
     submitting: false,
     needsFrame: false,
     closed: false,
@@ -1850,8 +1987,32 @@ export function mountSeed(
     requestFrame(canvas, state);
   };
   motionPreference?.addEventListener("change", resumeMotion);
+  const dispose = () => {
+    if (state.closed) return;
+    state.closed = true;
+    if (typeof document !== "undefined") document.removeEventListener("visibilitychange", resume);
+    motionPreference?.removeEventListener("change", resumeMotion);
+    visibilityObserver?.disconnect();
+    if (state.frame) cancelAnimationFrame(state.frame);
+    state.frame = 0;
+    const gpu = state.gpu;
+    state.gpu = undefined;
+    destroyGpuResources(gpu);
+  };
+  state.fail = (reason) => {
+    if (state.closed) return;
+    const error = reason instanceof Error ? reason : new Error("WebGPU renderer failed");
+    dispose();
+    canvas.dataset["renderer"] = "webgpu-error";
+    options.onError?.(error);
+  };
   const resolveScene = (value: SeedSceneConfig): SeedSceneConfig => {
-    if ((!isStagedWorld(form) && form !== "terrain") || value.palette) return value;
+    if (
+      model.generatorVersion === 1 ||
+      (!isStagedWorld(form) && form !== "terrain") ||
+      value.palette
+    )
+      return value;
     const preset = selectWorldPalette(form, model.morphSeed);
     return {
       ...value,
@@ -1868,43 +2029,24 @@ export function mountSeed(
         destroyGpuResources(gpu);
         return;
       }
-      updateGpuScene(gpu, sceneConfig);
-      gpu.zoom = state.zoom;
       state.gpu = gpu;
       contextOwners.set(gpu.context, gpu);
+      updateGpuScene(gpu, sceneConfig);
+      gpu.zoom = state.zoom;
       state.readyTime = performance.now();
       canvas.dataset["renderer"] = "webgpu-wgsl";
       canvas.dataset["renderedForm"] = form;
       void gpu.device.lost.then(() => {
         if (state.closed || state.gpu !== gpu) return;
-        cancelAnimationFrame(state.frame);
-        state.frame = 0;
-        destroyGpuResources(gpu);
-        state.gpu = undefined;
-        canvas.dataset["renderer"] = "webgpu-error";
-        options.onError?.(new Error("Graphics device was lost. Reload to restore the 3D world."));
+        state.fail(new Error("Graphics device was lost. Reload to restore the 3D world."));
       });
       resizeGpuCanvas(canvas, gpu);
       requestFrame(canvas, state);
       options.onReady?.();
     })
-    .catch((reason: unknown) => {
-      if (state.closed) return;
-      const error = reason instanceof Error ? reason : new Error("WebGPU initialization failed");
-      canvas.dataset["renderer"] = "webgpu-error";
-      console.error("WebGPU renderer initialization failed:", error);
-      options.onError?.(error);
-    });
+    .catch((reason: unknown) => state.fail(reason));
   return {
-    dispose: () => {
-      state.closed = true;
-      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", resume);
-      motionPreference?.removeEventListener("change", resumeMotion);
-      visibilityObserver?.disconnect();
-      cancelAnimationFrame(state.frame);
-      destroyGpuResources(state.gpu);
-      state.gpu = undefined;
-    },
+    dispose,
     resize: () => {
       state.resizePending = true;
       requestFrame(canvas, state);

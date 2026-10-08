@@ -1,5 +1,9 @@
 import { COLONY_PALETTES } from "./colony-palette.js";
+import { WAVES_PALETTES } from "./waves-palettes.js";
+import { CRYSTALLINE_PALETTES } from "./crystalline-palettes.js";
+import { MECHANICAL_PALETTES } from "./mechanical-palettes.js";
 import { DIORAMA_PALETTES } from "./diorama-palettes.js";
+import { SUPPLEMENTAL_PALETTES } from "./supplemental-palettes.js";
 import type { SeedScenePalette } from "./renderer.js";
 import type { SeedForm } from "./seed-model.js";
 
@@ -13,6 +17,9 @@ export type WorldPalettePreset = {
 };
 
 const BASE_PALETTES: Readonly<Record<SeedForm, readonly WorldPalettePreset[]>> = {
+  waves: WAVES_PALETTES,
+  crystalline: CRYSTALLINE_PALETTES,
+  mechanical: MECHANICAL_PALETTES,
   circuit: [
     {
       id: "emerald-pcb",
@@ -197,15 +204,18 @@ const LEGACY_MATERIALS: Partial<Record<SeedForm, readonly string[]>> = {
 export const WORLD_PALETTES = Object.fromEntries(
   Object.entries(BASE_PALETTES).map(([form, presets]) => [
     form,
-    presets.map((preset, artDirection) =>
-      preset.artDirection === undefined
-        ? {
-            ...preset,
-            artDirection,
-            description: LEGACY_MATERIALS[form as SeedForm]?.[artDirection],
-          }
-        : preset,
-    ),
+    [
+      ...presets.map((preset, artDirection) =>
+        preset.artDirection === undefined
+          ? {
+              ...preset,
+              artDirection,
+              description: LEGACY_MATERIALS[form as SeedForm]?.[artDirection],
+            }
+          : preset,
+      ),
+      ...(SUPPLEMENTAL_PALETTES[form as SeedForm] ?? []),
+    ],
   ]),
 ) as unknown as Readonly<Record<SeedForm, readonly WorldPalettePreset[]>>;
 

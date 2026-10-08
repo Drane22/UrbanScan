@@ -37,7 +37,13 @@ async function buildScene(model: SeedModel, form: SeedForm) {
   let reefCoralData: Float32Array<ArrayBufferLike> = new Float32Array();
   let reefFishData: Float32Array<ArrayBufferLike> = new Float32Array();
 
-  if (form === "city") {
+  if (model.generatorVersion === 1) {
+    if (form === "waves" || form === "crystalline" || form === "mechanical") {
+      throw new RangeError(`World ${form} requires generator version 2`);
+    }
+    const legacy = await import("./generator-v1/prepared-layout.js");
+    ({ modelData, cityPartCount } = await legacy.prepareVersionOneLayout(model, form));
+  } else if (form === "city") {
     const cityModule = await import("./city-model.js");
     modelData = cityModule.createCityLayout(model).lotData;
     cityPartCount = cityModule.CITY_PARTS_PER_LOT;
@@ -48,6 +54,15 @@ async function buildScene(model: SeedModel, form: SeedForm) {
     circuitTraceData = circuit.traceData;
     circuitComponentCount = circuit.components.length;
     circuitTraceCount = circuit.traces.length;
+  } else if (form === "waves") {
+    const m = await import("./waves-model.js");
+    modelData = m.createWavesLayout(model).waveData;
+  } else if (form === "crystalline") {
+    const m = await import("./crystalline-model.js");
+    modelData = m.createCrystallineLayout(model).crystalData;
+  } else if (form === "mechanical") {
+    const m = await import("./mechanical-model.js");
+    modelData = m.createMechanicalLayout(model).machineData;
   } else if (isStagedWorld(form) || form === "terrain") {
     const { createDioramaLayout } = await import("./diorama-layout.js");
     modelData = createDioramaLayout(model, form);

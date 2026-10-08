@@ -32,6 +32,9 @@ export type EveryQRCodeModel =
   | "stained-glass"
   | "terrain"
   | "toy-block"
+  | "waves"
+  | "crystalline"
+  | "mechanical"
   | "tree";
 export type EveryQRCodeSceneConfig = SeedSceneConfig;
 export type EveryQRCodeGeneratorVersion = GeneratorVersion;
@@ -46,10 +49,14 @@ export type EveryQRCodeProps = {
   readonly model?: EveryQRCodeModel;
   readonly onError?: (error: Error) => void;
   readonly onIdentity?: (identity: EveryQRCodeIdentity, morphSeed: number) => void;
+  readonly onReady?: () => void;
   readonly onViewChange?: (view: EveryQRCodeView) => void;
+  readonly onZoomChange?: (zoom: number) => void;
   readonly scene?: EveryQRCodeSceneConfig;
   readonly style?: CSSProperties;
   readonly url: string;
+  readonly view?: EveryQRCodeView;
+  readonly zoom?: number;
 };
 
 type SeedRenderer = {
@@ -67,6 +74,7 @@ type PreparedSeed = {
     canvas: HTMLCanvasElement,
     scene: EveryQRCodeSceneConfig,
     onError: (error: Error) => void,
+    onReady: () => void,
   ) => SeedRenderer;
   readonly qr: QRSvgPath;
 };
@@ -126,15 +134,22 @@ function useSeedZoom(options: {
   readonly generatorVersion: EveryQRCodeGeneratorVersion;
   readonly initialZoom: number;
   readonly model: EveryQRCodeModel;
+  readonly onZoomChange?: ((zoom: number) => void) | undefined;
   readonly rendererRef: { current: SeedRenderer | null };
   readonly url: string;
+  readonly zoom?: number | undefined;
 }): {
   readonly handleKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void;
   readonly zoom: number;
   readonly zoomRef: { current: number };
 } {
   const zoomRef = useRef(clampZoom(options.initialZoom));
-  const [zoom, setZoom] = useState(zoomRef.current);
+  const [internalZoom, setZoom] = useState(zoomRef.current);
+  const zoom = clampZoom(options.zoom ?? internalZoom);
+  const onZoomChangeRef = useRef(options.onZoomChange);
+  useEffect(() => {
+    onZoomChangeRef.current = options.onZoomChange;
+  }, [options.onZoomChange]);
   useEffect(
     () => setZoom(clampZoom(options.initialZoom)),
     [options.generatorVersion, options.initialZoom, options.model, options.url],
@@ -149,7 +164,10 @@ function useSeedZoom(options: {
     const direction = positive ? 1 : negative ? -1 : 0;
     if (direction === 0 && event.key !== "0") return;
     event.preventDefault();
-    setZoom((current) => (event.key === "0" ? 1 : clampZoom(current + direction * 0.1)));
+    const next = event.key === "0" ? 1 : clampZoom(zoomRef.current + direction * 0.1);
+    zoomRef.current = next;
+    setZoom(next);
+    onZoomChangeRef.current?.(next);
   }, []);
   return { handleKeyDown, zoom, zoomRef };
 }
@@ -157,6 +175,7 @@ function useSeedZoom(options: {
 function useMountedRenderer(options: {
   readonly canvasRef: { current: HTMLCanvasElement | null };
   readonly onRendererError: (error: Error) => void;
+  readonly onRendererReady: () => void;
   readonly prepared: PreparedSeed | null;
   readonly rendererRef: { current: SeedRenderer | null };
   readonly sceneRef: { current: EveryQRCodeSceneConfig | undefined };
@@ -170,6 +189,7 @@ function useMountedRenderer(options: {
       canvas,
       options.sceneRef.current ?? {},
       options.onRendererError,
+      options.onRendererReady,
     );
     const observer =
       typeof ResizeObserver === "undefined" ? null : new ResizeObserver(renderer.resize);
@@ -186,6 +206,7 @@ function useMountedRenderer(options: {
   }, [
     options.canvasRef,
     options.onRendererError,
+    options.onRendererReady,
     options.prepared,
     options.rendererRef,
     options.sceneRef,
@@ -218,8 +239,9 @@ async function prepareSeed(
           canvas: HTMLCanvasElement,
           scene: EveryQRCodeSceneConfig,
           onError: (error: Error) => void,
+          onReady: () => void,
           form: EveryQRCodeModel,
-        ) => mountSeed(canvas, seed, scene, form, { onError }),
+        ) => mountSeed(canvas, seed, scene, form, { onError, onReady }),
         qr: createQRSvgPath(identity.qr),
       };
     })();
@@ -233,7 +255,7 @@ async function prepareSeed(
   return {
     identity: value.identity,
     morphSeed: value.morphSeed,
-    mount: (canvas, scene, onError) => value.mount(canvas, scene, onError, model),
+    mount: (canvas, scene, onError, onReady) => value.mount(canvas, scene, onError, onReady, model),
     qr: value.qr,
   };
 }
@@ -247,6 +269,7 @@ const preparedSources = new Map<
       canvas: HTMLCanvasElement,
       scene: EveryQRCodeSceneConfig,
       onError: (error: Error) => void,
+      onReady: () => void,
       form: EveryQRCodeModel,
     ) => SeedRenderer;
     qr: QRSvgPath;
@@ -263,34 +286,49 @@ export function EveryQRCode({
   model = "tree",
   onError,
   onIdentity,
+  onReady,
   onViewChange,
+  onZoomChange,
   scene,
   style,
   url,
+  view: controlledView,
+  zoom: controlledZoom,
 }: EveryQRCodeProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const onErrorRef = useRef(onError);
   const onIdentityRef = useRef(onIdentity);
+  const onReadyRef = useRef(onReady);
   const rendererRef = useRef<SeedRenderer | null>(null);
   const sceneRef = useRef(scene);
   const [error, setError] = useState<Error | null>(null);
   const [prepared, setPrepared] = useState<PreparedSeed | null>(null);
-  const [view, setView] = useState<EveryQRCodeView>(initialView);
+  const [internalView, setView] = useState<EveryQRCodeView>(initialView);
+  const view = controlledView ?? internalView;
+  const [ready, setReady] = useState(false);
   const { handleKeyDown, zoom, zoomRef } = useSeedZoom({
     generatorVersion,
     initialZoom,
     model,
+    onZoomChange,
     rendererRef,
     url,
+    zoom: controlledZoom,
   });
   const handleRendererError = useCallback((reason: Error) => {
     const nextError = errorFrom(reason);
     setError(nextError);
+    setReady(false);
     onErrorRef.current?.(nextError);
+  }, []);
+  const handleRendererReady = useCallback(() => {
+    setReady(true);
+    onReadyRef.current?.();
   }, []);
   useMountedRenderer({
     canvasRef,
     onRendererError: handleRendererError,
+    onRendererReady: handleRendererReady,
     prepared,
     rendererRef,
     sceneRef,
@@ -306,12 +344,17 @@ export function EveryQRCode({
     onIdentityRef.current = onIdentity;
   }, [onIdentity]);
 
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  }, [onReady]);
+
   useEffect(() => setView(initialView), [generatorVersion, initialView, url]);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
     setPrepared(null);
+    setReady(false);
     void prepareSeed(generatorVersion, identityScope, url, model)
       .then((nextPrepared) => {
         if (cancelled) return;
@@ -348,7 +391,7 @@ export function EveryQRCode({
 
   return (
     <button
-      aria-busy={!prepared && !error}
+      aria-busy={!ready && !error}
       aria-disabled={!interactive || Boolean(error)}
       aria-keyshortcuts="+ - 0"
       aria-label={
@@ -360,6 +403,7 @@ export function EveryQRCode({
       }
       className={className}
       data-every-qrcode-fallback={fallback ? "qr" : undefined}
+      data-every-qrcode-status={error ? "error" : ready ? "ready" : "loading"}
       data-every-qrcode-generator-version={generatorVersion}
       data-every-qrcode-model={model}
       data-every-qrcode-view={view}
