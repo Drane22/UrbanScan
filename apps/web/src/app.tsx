@@ -61,6 +61,21 @@ const PRESET_URLS = [
   { label: "Kyoto", url: "https://kyoto.travel" },
 ];
 
+let themeWarmTimer: ReturnType<typeof setTimeout> | undefined;
+function cancelThemeWarmup(): void {
+  clearTimeout(themeWarmTimer);
+}
+function warmTheme(model: EveryQRCodeModel): void {
+  cancelThemeWarmup();
+  themeWarmTimer = setTimeout(() => {
+    void import("@every-qrcode/renderer-webgpu")
+      .then((renderer) => renderer.preloadSeedTheme(model))
+      .catch(() => {
+        // A real mount retries failed preparation and reports its own error.
+      });
+  }, 120);
+}
+
 export function App(): React.JSX.Element {
   const [input, setInput] = useState(DEFAULT_LINK);
   const [model, setModel] = useState<EveryQRCodeModel>("circuit");
@@ -134,6 +149,10 @@ export function App(): React.JSX.Element {
                 className="model-pill"
                 key={option}
                 onClick={() => handleSelectModel(option)}
+                onPointerEnter={() => warmTheme(option)}
+                onPointerLeave={cancelThemeWarmup}
+                onFocus={() => warmTheme(option)}
+                onBlur={cancelThemeWarmup}
                 title={info.desc}
                 type="button"
               >

@@ -10,18 +10,13 @@ import {
   SCULPTURE_PARTS,
   SCULPTURE_VERTICES,
 } from "./diorama-population.js";
-import { createSeedGpuScene, type SeedGpuScene } from "./gpu-scene.js";
+import type { SeedGpuScene } from "./gpu-scene.js";
+import { prepareScene } from "./prepared-scene.js";
 import { acquireGpuDevice, releaseGpuDevice } from "./gpu-session.js";
 import { getPalettesForModel } from "./world-palettes.js";
 import { isStagedWorld, selectWorldPalette } from "./staged-world.js";
-import {
-  createSeedBlockField,
-  type SeedBlockField,
-  type SeedForm,
-  type SeedModel,
-} from "./seed-model.js";
+import { type SeedBlockField, type SeedForm, type SeedModel } from "./seed-model.js";
 import { createTerrainPalette, type TerrainScenePalette } from "./terrain-palette.js";
-import { QR_RELIEF_LAYERS } from "./tree-morph.js";
 import { TERRAIN_DETAIL_INSTANCES } from "./terrain-population.js";
 
 export type SeedRenderer = {
@@ -426,6 +421,8 @@ type RenderTargets = {
   readonly postBindGroup: GPUBindGroup;
   readonly scene: GPUTexture;
   readonly sceneView: GPUTextureView;
+  readonly qr: GPUTexture | undefined;
+  readonly qrView: GPUTextureView;
 };
 
 type SeedGpuResources = {
@@ -704,6 +701,7 @@ function createLayouts(device: GPUDevice): PipelineLayouts {
       { binding: 0, buffer: { type: "uniform" }, visibility },
       { binding: 1, texture: { sampleType: "float" }, visibility: SHADER_STAGE.fragment },
       { binding: 2, sampler: { type: "filtering" }, visibility: SHADER_STAGE.fragment },
+      { binding: 3, texture: { sampleType: "float" }, visibility: SHADER_STAGE.fragment },
     ],
   });
   const layouts = { blocks, circuit, items, post, reef };
@@ -844,6 +842,15 @@ async function createCityPipelines(
   return { ...shared, city, form: sources.form };
 }
 
+async function resolvePipelines<T extends Record<string, Promise<GPURenderPipeline>>>(
+  entries: T,
+): Promise<{ [K in keyof T]: GPURenderPipeline }> {
+  const values = await Promise.all(
+    Object.entries(entries).map(async ([name, value]) => [name, await value] as const),
+  );
+  return Object.fromEntries(values) as { [K in keyof T]: GPURenderPipeline };
+}
+
 async function createCircuitPipelines(
   device: GPUDevice,
   format: GPUTextureFormat,
@@ -860,36 +867,38 @@ async function createCircuitPipelines(
   ]);
   return {
     ...shared,
-    circuitBoard: await createScenePipeline(device, format, {
-      blend: ALPHA_BLEND,
-      label: "every-qrcode-circuit-board-pipeline",
-      layout: layouts.circuit,
-      module: board,
-    }),
-    circuitComponents: await createScenePipeline(device, format, {
-      label: "every-qrcode-circuit-components-pipeline",
-      layout: layouts.circuit,
-      module: components,
-    }),
-    circuitQr: await createScenePipeline(device, format, {
-      blend: ALPHA_BLEND,
-      label: "every-qrcode-circuit-qr-pipeline",
-      layout: layouts.circuit,
-      module: qr,
-    }),
-    circuitSignals: await createScenePipeline(device, format, {
-      blend: ALPHA_BLEND,
-      depthWrite: false,
-      label: "every-qrcode-circuit-signals-pipeline",
-      layout: layouts.circuit,
-      module: signals,
-    }),
-    circuitTraces: await createScenePipeline(device, format, {
-      blend: ALPHA_BLEND,
-      label: "every-qrcode-circuit-traces-pipeline",
-      layout: layouts.circuit,
-      module: traces,
-    }),
+    ...(await resolvePipelines({
+      circuitBoard: createScenePipeline(device, format, {
+        blend: ALPHA_BLEND,
+        label: "every-qrcode-circuit-board-pipeline",
+        layout: layouts.circuit,
+        module: board,
+      }),
+      circuitComponents: createScenePipeline(device, format, {
+        label: "every-qrcode-circuit-components-pipeline",
+        layout: layouts.circuit,
+        module: components,
+      }),
+      circuitQr: createScenePipeline(device, format, {
+        blend: ALPHA_BLEND,
+        label: "every-qrcode-circuit-qr-pipeline",
+        layout: layouts.circuit,
+        module: qr,
+      }),
+      circuitSignals: createScenePipeline(device, format, {
+        blend: ALPHA_BLEND,
+        depthWrite: false,
+        label: "every-qrcode-circuit-signals-pipeline",
+        layout: layouts.circuit,
+        module: signals,
+      }),
+      circuitTraces: createScenePipeline(device, format, {
+        blend: ALPHA_BLEND,
+        label: "every-qrcode-circuit-traces-pipeline",
+        layout: layouts.circuit,
+        module: traces,
+      }),
+    })),
     form: sources.form,
   };
 }
@@ -921,22 +930,24 @@ async function createReefPipelines(
     });
   return {
     ...shared,
+    ...(await resolvePipelines({
+      reefCorals: create("every-qrcode-reef-coral-pipeline", corals, true),
+      reefFish: create("every-qrcode-reef-fish-pipeline", fish, true),
+      reefQr: createScenePipeline(device, format, {
+        blend: ALPHA_BLEND,
+        label: "every-qrcode-reef-qr-pipeline",
+        layout: layouts.reef,
+        module: qr,
+      }),
+      reefShelf: createScenePipeline(device, format, {
+        blend: ALPHA_BLEND,
+        label: "every-qrcode-reef-shelf-pipeline",
+        layout: layouts.reef,
+        module: shelf,
+      }),
+      reefWater: create("every-qrcode-reef-water-pipeline", water, true),
+    })),
     form: sources.form,
-    reefCorals: await create("every-qrcode-reef-coral-pipeline", corals, true),
-    reefFish: await create("every-qrcode-reef-fish-pipeline", fish, true),
-    reefQr: await createScenePipeline(device, format, {
-      blend: ALPHA_BLEND,
-      label: "every-qrcode-reef-qr-pipeline",
-      layout: layouts.reef,
-      module: qr,
-    }),
-    reefShelf: await createScenePipeline(device, format, {
-      blend: ALPHA_BLEND,
-      label: "every-qrcode-reef-shelf-pipeline",
-      layout: layouts.reef,
-      module: shelf,
-    }),
-    reefWater: await create("every-qrcode-reef-water-pipeline", water, true),
   };
 }
 
@@ -965,46 +976,46 @@ async function createTreePipelines(
     grassModule,
     shadowModule,
   ] = modules;
-  const blocks = await createScenePipeline(device, format, {
+  const blocks = createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     label: "every-qrcode-block-pipeline",
     layout: layouts.blocks,
     module: blockModule,
   });
-  const branches = await createScenePipeline(device, format, {
+  const branches = createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     label: "every-qrcode-branch-pipeline",
     layout: layouts.items,
     module: branchModule,
   });
-  const butterflies = await createScenePipeline(device, format, {
+  const butterflies = createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     depthWrite: false,
     label: "every-qrcode-butterfly-pipeline",
     layout: layouts.items,
     module: butterflyModule,
   });
-  const fallingPetals = await createScenePipeline(device, format, {
+  const fallingPetals = createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     depthWrite: false,
     label: "every-qrcode-falling-petal-pipeline",
     layout: layouts.items,
     module: fallingPetalModule,
   });
-  const flowers = await createScenePipeline(device, format, {
+  const flowers = createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     depthWrite: true,
     label: "every-qrcode-flower-pipeline",
     layout: layouts.items,
     module: flowerModule,
   });
-  const grass = await createScenePipeline(device, format, {
+  const grass = createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     label: "every-qrcode-grass-pipeline",
     layout: layouts.items,
     module: grassModule,
   });
-  const shadow = await createScenePipeline(device, format, {
+  const shadow = createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     depthWrite: false,
     label: "every-qrcode-shadow-pipeline",
@@ -1013,14 +1024,16 @@ async function createTreePipelines(
   });
   return {
     ...shared,
-    blocks,
-    branches,
-    butterflies,
-    fallingPetals,
-    flowers,
+    ...(await resolvePipelines({
+      blocks,
+      branches,
+      butterflies,
+      fallingPetals,
+      flowers,
+      grass,
+      shadow,
+    })),
     form: sources.form,
-    grass,
-    shadow,
   };
 }
 
@@ -1062,6 +1075,24 @@ async function createPipelines(
     void result.catch(() => cache!.delete(key));
   }
   return result;
+}
+
+export async function preloadSeedTheme(
+  form: SeedForm,
+  generatorVersion: GeneratorVersion = CURRENT_GENERATOR_VERSION,
+): Promise<void> {
+  const device = await acquireGpuDevice();
+  try {
+    await createPipelines(
+      device,
+      navigator.gpu.getPreferredCanvasFormat(),
+      createLayouts(device),
+      form,
+      generatorVersion,
+    );
+  } finally {
+    releaseGpuDevice(device);
+  }
 }
 
 async function buildPipelines(
@@ -1273,8 +1304,15 @@ function createBindGroups(
 function destroyTargets(targets: RenderTargets | undefined): void {
   targets?.depth.destroy();
   targets?.scene.destroy();
+  targets?.qr?.destroy();
 }
 
+function usesDirectMorph(form: SeedForm): boolean {
+  return isStagedWorld(form) || form === "terrain" || form === "reef" || form === "circuit";
+}
+function premultiplied(color: GPUColorDict): GPUColorDict {
+  return { r: color.r * color.a, g: color.g * color.a, b: color.b * color.a, a: color.a };
+}
 function createTargets(gpu: SeedGpuResources, width: number, height: number): RenderTargets {
   const scene = gpu.device.createTexture({
     format: gpu.format,
@@ -1289,6 +1327,15 @@ function createTargets(gpu: SeedGpuResources, width: number, height: number): Re
     usage: TEXTURE_USAGE.renderAttachment,
   });
   const sceneView = scene.createView();
+  const qr = usesDirectMorph(gpu.form)
+    ? gpu.device.createTexture({
+        format: gpu.format,
+        label: "every-qrcode-flat-ink",
+        size: [width, height],
+        usage: TEXTURE_USAGE.renderAttachment | TEXTURE_USAGE.textureBinding,
+      })
+    : undefined;
+  const qrView = qr?.createView() ?? sceneView;
   const postBindGroup = gpu.device.createBindGroup({
     label: "every-qrcode-post-bind-group",
     layout: gpu.layouts.post,
@@ -1296,9 +1343,10 @@ function createTargets(gpu: SeedGpuResources, width: number, height: number): Re
       { binding: 0, resource: { buffer: gpu.buffers.uniforms } },
       { binding: 1, resource: sceneView },
       { binding: 2, resource: gpu.sampler },
+      { binding: 3, resource: qrView },
     ],
   });
-  return { depth, postBindGroup, scene, sceneView };
+  return { depth, postBindGroup, scene, sceneView, qr, qrView };
 }
 
 function resizeGpuCanvas(canvas: HTMLCanvasElement, gpu: SeedGpuResources): void {
@@ -1319,7 +1367,6 @@ function writeUniforms(
   progress: number,
   time: number,
   toggleAge: number,
-  target: number,
   sceneAge: number,
 ): void {
   const idle = 1 - progress;
@@ -1374,7 +1421,8 @@ function writeUniforms(
     values[offset + 3] = 1;
   }
   values[56] = gpu.zoom;
-  values[57] = target;
+  // camera.y selects independent world/ink compositing; it is not motion direction.
+  values[57] = usesDirectMorph(gpu.form) ? 1 : 0;
   values[59] = gpu.artDirection;
   const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
   values[58] = reduced ? 10 : sceneAge;
@@ -1389,11 +1437,11 @@ function writeUniforms(
 
 function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): void {
   const targets = gpu.targets;
-  if (!targets) return;
+  if (!targets || (usesDirectMorph(gpu.form) && gpu.uniformValues[3]! >= 0.92)) return;
   const pass = encoder.beginRenderPass({
     colorAttachments: [
       {
-        clearValue: gpu.clearColor,
+        clearValue: usesDirectMorph(gpu.form) ? premultiplied(gpu.worldClearColor) : gpu.clearColor,
         loadOp: "clear",
         storeOp: "store",
         view: targets.sceneView,
@@ -1423,12 +1471,6 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
     pass.draw(36, gpu.circuitComponentCount * 12);
     pass.setPipeline(gpu.pipelines.circuitSignals);
     pass.draw(6, gpu.circuitTraceCount);
-    pass.setPipeline(gpu.pipelines.circuitQr);
-    if (gpu.uniformValues[3]! > 0)
-      pass.draw(
-        36,
-        gpu.blockField.blocks.length * (gpu.uniformValues[3] === 1 ? 1 : QR_RELIEF_LAYERS),
-      );
   } else if (gpu.pipelines.form === "reef") {
     const reefBindGroup = gpu.bindGroups.reef;
     if (!reefBindGroup) throw new Error("Reef bind group was not initialized");
@@ -1441,12 +1483,6 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
     pass.draw(6);
     pass.setPipeline(gpu.pipelines.reefFish);
     pass.draw(36, gpu.reefFishCount);
-    pass.setPipeline(gpu.pipelines.reefQr);
-    if (gpu.uniformValues[3]! > 0)
-      pass.draw(
-        36,
-        gpu.blockField.blocks.length * (gpu.uniformValues[3] === 1 ? 1 : QR_RELIEF_LAYERS),
-      );
   } else if (gpu.pipelines.form === "terrain") {
     pass.setPipeline(gpu.pipelines.terrain);
     const owners = gpu.blockField.blocks.length;
@@ -1454,8 +1490,6 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
       pass.draw(36, 1, 0, owners);
       pass.draw(36, owners);
     }
-    if (gpu.uniformValues[3]! > 0)
-      pass.draw(36, owners * (gpu.uniformValues[3] === 1 ? 1 : QR_RELIEF_LAYERS), 0, owners + 1);
     if (gpu.uniformValues[3]! < 0.99) {
       pass.setPipeline(gpu.pipelines.terrainDetails);
       pass.draw(384, TERRAIN_DETAIL_INSTANCES);
@@ -1486,27 +1520,19 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
   } else if (isStagedWorld(gpu.pipelines.form)) {
     const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
     pass.setPipeline(pipeline);
-    if (gpu.uniformValues[3] === 1) pass.draw(6, gpu.blockField.blocks.length);
-    else {
-      const owners = gpu.blockField.blocks.length;
-      const primary = Math.min(gpu.worldPopulation.primary, owners);
-      pass.draw(SCULPTURE_VERTICES, 1, 0, owners * SCULPTURE_PARTS);
-      pass.draw(SCULPTURE_VERTICES, primary * SCULPTURE_PARTS);
-      if (gpu.uniformValues[3]! < 0.99)
-        pass.draw(
-          SCULPTURE_VERTICES,
-          gpu.worldPopulation.ambient * SCULPTURE_PARTS,
-          0,
-          owners * SCULPTURE_PARTS + 1,
-        );
-      if (gpu.uniformValues[3]! > 0)
-        pass.draw(
-          36,
-          owners * QR_RELIEF_LAYERS,
-          0,
-          owners * SCULPTURE_PARTS + 1 + SCULPTURE_AMBIENT_INSTANCES,
-        );
-    }
+    const owners = gpu.blockField.blocks.length;
+    pass.draw(SCULPTURE_VERTICES, 1, 0, owners * SCULPTURE_PARTS);
+    const glass = gpu.pipelines.form === "stained-glass";
+    pass.draw(
+      glass ? 144 : SCULPTURE_VERTICES,
+      Math.min(gpu.worldPopulation.primary, owners) * SCULPTURE_PARTS,
+    );
+    pass.draw(
+      glass ? 96 : SCULPTURE_VERTICES,
+      gpu.worldPopulation.ambient * SCULPTURE_PARTS,
+      0,
+      owners * SCULPTURE_PARTS + 1,
+    );
   } else {
     const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
     pass.setPipeline(pipeline);
@@ -1519,6 +1545,47 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
     pass.setPipeline(gpu.pipelines.butterflies);
     pass.setBindGroup(0, gpu.bindGroups.butterflies);
     pass.draw(gpu.scene.butterflyCount * 6);
+  }
+  pass.end();
+}
+
+function encodeQrPass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): void {
+  const targets = gpu.targets;
+  if (!targets?.qr || gpu.uniformValues[3]! <= 0.18) return;
+  const pass = encoder.beginRenderPass({
+    label: "every-qrcode-ink-pass",
+    colorAttachments: [
+      {
+        clearValue: premultiplied(gpu.scanClearColor),
+        loadOp: "clear",
+        storeOp: "store",
+        view: targets.qrView,
+      },
+    ],
+    depthStencilAttachment: {
+      depthClearValue: 1,
+      depthLoadOp: "clear",
+      depthStoreOp: "store",
+      view: targets.depth.createView(),
+    },
+  });
+  const owners = gpu.blockField.blocks.length;
+  if (gpu.pipelines.form === "circuit") {
+    pass.setPipeline(gpu.pipelines.circuitQr);
+    pass.setBindGroup(0, gpu.bindGroups.circuit!);
+    pass.draw(36, owners);
+  } else if (gpu.pipelines.form === "reef") {
+    pass.setPipeline(gpu.pipelines.reefQr);
+    pass.setBindGroup(0, gpu.bindGroups.reef!);
+    pass.draw(36, owners);
+  } else if (gpu.pipelines.form === "terrain") {
+    pass.setPipeline(gpu.pipelines.terrain);
+    pass.setBindGroup(0, gpu.bindGroups.blocks);
+    pass.draw(6, owners, 0, owners + 1);
+  } else if (isStagedWorld(gpu.pipelines.form)) {
+    pass.setPipeline(Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline);
+    pass.setBindGroup(0, gpu.bindGroups.blocks);
+    pass.draw(6, owners, 0, owners * SCULPTURE_PARTS + 1 + SCULPTURE_AMBIENT_INSTANCES);
   }
   pass.end();
 }
@@ -1545,6 +1612,7 @@ function encodePostPass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): void
 function renderGpuFrame(gpu: SeedGpuResources): void {
   const encoder = gpu.device.createCommandEncoder({ label: "every-qrcode-frame" });
   encodeScenePass(encoder, gpu);
+  encodeQrPass(encoder, gpu);
   encodePostPass(encoder, gpu);
   gpu.device.queue.submit([encoder.finish()]);
 }
@@ -1578,45 +1646,26 @@ async function initializeGpu(
   try {
     if (cancelled()) throw new Error("Renderer initialization cancelled");
     const format = navigator.gpu.getPreferredCanvasFormat();
-    const blockField = createSeedBlockField(model, form);
-    const scene = createSeedGpuScene(model, form);
-    let modelData: Float32Array<ArrayBufferLike> = new Float32Array();
-    let cityPartCount = 0;
-    let circuitComponentCount = 0;
-    let circuitTraceCount = 0;
-    let circuitTraceData: Float32Array<ArrayBufferLike> = new Float32Array();
-    let reefCoralCount = 0;
-    let reefFishCount = 0;
-    let reefShelfData: Float32Array<ArrayBufferLike> = new Float32Array();
-    let reefCoralData: Float32Array<ArrayBufferLike> = new Float32Array();
-    let reefFishData: Float32Array<ArrayBufferLike> = new Float32Array();
-
-    if (form === "city") {
-      const cityModule = await import("./city-model.js");
-      modelData = cityModule.createCityLayout(model).lotData;
-      cityPartCount = cityModule.CITY_PARTS_PER_LOT;
-    } else if (form === "circuit") {
-      const m = await import("./circuit-model.js");
-      const circuit = m.createCircuitLayout(model);
-      modelData = circuit.componentData;
-      circuitTraceData = circuit.traceData;
-      circuitComponentCount = circuit.components.length;
-      circuitTraceCount = circuit.traces.length;
-    } else if (isStagedWorld(form) || form === "terrain") {
-      const { createDioramaLayout } = await import("./diorama-layout.js");
-      modelData = createDioramaLayout(model, form);
-    } else if (form === "reef") {
-      const m = await import("./reef-model.js");
-      const reef = m.createReefLayout(model);
-      reefShelfData = reef.shelf.shelfData;
-      reefCoralData = reef.coralData;
-      reefFishData = reef.fishData;
-      reefCoralCount = reef.colonies.length;
-      reefFishCount = reef.fishPaths.length;
-    }
 
     const layouts = createLayouts(device);
-    const pipelines = await createPipelines(device, format, layouts, form, model.generatorVersion);
+    const [prepared, pipelines] = await Promise.all([
+      prepareScene(model, form),
+      createPipelines(device, format, layouts, form, model.generatorVersion),
+    ]);
+    const {
+      blockField,
+      scene,
+      modelData,
+      cityPartCount,
+      circuitComponentCount,
+      circuitTraceCount,
+      circuitTraceData,
+      reefCoralCount,
+      reefFishCount,
+      reefShelfData,
+      reefCoralData,
+      reefFishData,
+    } = prepared;
     if (cancelled()) throw new Error("Renderer initialization cancelled");
     const buffers = createBuffers(
       device,
@@ -1718,7 +1767,6 @@ function animate(canvas: HTMLCanvasElement, state: RendererState, now: number): 
     state.progress,
     time,
     toggleAge,
-    state.target,
     Math.max(0, (now - state.readyTime) / 1000),
   );
   renderGpuFrame(gpu);
@@ -1728,7 +1776,8 @@ function animate(canvas: HTMLCanvasElement, state: RendererState, now: number): 
   void gpu.device.queue.onSubmittedWorkDone().then(
     () => {
       state.submitting = false;
-      if (state.needsFrame || state.progress !== 1 || state.target !== 1) {
+      const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+      if (state.needsFrame || state.progress !== state.target || (state.target === 0 && !reduced)) {
         state.needsFrame = false;
         requestFrame(canvas, state);
       }
@@ -1792,6 +1841,15 @@ export function mountSeed(
     if (!document.hidden) requestFrame(canvas, state);
   };
   if (typeof document !== "undefined") document.addEventListener("visibilitychange", resume);
+  const motionPreference =
+    typeof window !== "undefined"
+      ? window.matchMedia?.("(prefers-reduced-motion: reduce)")
+      : undefined;
+  const resumeMotion = () => {
+    if (motionPreference?.matches) state.transitionDuration = 0;
+    requestFrame(canvas, state);
+  };
+  motionPreference?.addEventListener("change", resumeMotion);
   const resolveScene = (value: SeedSceneConfig): SeedSceneConfig => {
     if ((!isStagedWorld(form) && form !== "terrain") || value.palette) return value;
     const preset = selectWorldPalette(form, model.morphSeed);
@@ -1841,6 +1899,7 @@ export function mountSeed(
     dispose: () => {
       state.closed = true;
       if (typeof document !== "undefined") document.removeEventListener("visibilitychange", resume);
+      motionPreference?.removeEventListener("change", resumeMotion);
       visibilityObserver?.disconnect();
       cancelAnimationFrame(state.frame);
       destroyGpuResources(state.gpu);

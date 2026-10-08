@@ -231,6 +231,7 @@ struct PostOutput {
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var sceneTexture: texture_2d<f32>;
 @group(0) @binding(2) var sceneSampler: sampler;
+@group(0) @binding(3) var qrTexture: texture_2d<f32>;
 
 @vertex
 fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> PostOutput {
@@ -248,6 +249,14 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> PostOutput {
 
 @fragment
 fn fragmentMain(input: PostOutput) -> @location(0) vec4f {
+  if(uniforms.camera.y>0.5){
+    let blend=smoothstep(0.18,0.92,uniforms.progress);
+    if(blend>=1.0){return textureSampleLevel(qrTexture,sceneSampler,input.uv,0);}
+    let world=textureSampleLevel(sceneTexture,sceneSampler,input.uv,0);
+    if(blend<=0.0){return world;}
+    return mix(world,textureSampleLevel(qrTexture,sceneSampler,input.uv,0),blend);
+  }
+  if(uniforms.progress==0.0 || uniforms.progress==1.0){return textureSampleLevel(sceneTexture,sceneSampler,input.uv,0);}
   let center = vec2f(0.5);
   let strength = sin(uniforms.progress * 3.14159265) * 0.006;
   let direction = (input.uv - center) * strength;

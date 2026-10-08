@@ -98,22 +98,30 @@ fn dtPaper(color:vec3f,q:vec2f,uv:vec2f,pixel:f32,foundation:bool)->vec3f {
   }
   return out;
 }
-fn dtGlass(color:vec3f,q:vec2f,n:vec3f,pixel:f32,foundation:bool)->vec3f {
-  let warp=vec2f(dtFbm(q*0.40),dtFbm(q*0.40+vec2f(18,7)));
-  let cloud=dtFbm(q*1.7+warp*2.8);
-  if(foundation){
-    let marble=dtFbm(q*0.71+warp*3.4);
-    let vein=dtLine(marble-0.50,0.023,pixel*0.6);
-    let hairline=dtLine(marble-0.62,0.009,pixel*0.6);
-    return color*(0.89+cloud*0.17-vein*0.22-hairline*0.11);
-  }
-  let ripples=dtCells(q*4.0+warp);
-  let bubbles=dtDot(q,5.2,0.06,pixel,0.79);
-  let scratch=dtLine(fract(q.x*2.7+dtNoise(q*vec2f(0.1,1.9))*0.25)-0.5,0.008,pixel*2.7);
-  let sheen=pow(max(dot(n,normalize(vec3f(-0.42,0.86,0.32))),0.0),18.0);
-  var out=color*(0.80+cloud*0.34+ripples.x*0.09-bubbles*0.12);
-  out+=mix(color,vec3f(1.0),0.40)*(sheen*0.17+scratch*0.06);
-  return out;
+fn dtGlass(color:vec3f,q:vec2f,n:vec3f,uv:vec2f,pixel:f32,part:u32)->vec3f {
+ let grain=dtNoise(q*8.0);let cloud=dtNoise(q*1.4+vec2f(dtNoise(q*.37)));
+ if(part==9u || part==7u){
+  let marble=sin(q.x*.55+q.y*.70+cloud*4.0);
+  let vein=dtLine(marble,.065,pixel);return color*(.87+cloud*.18-vein*.16);
+ }
+ if(part==1u || part==2u || part==3u){return color*(.88+grain*.15);}
+ var pigment=color*(.82+cloud*.25+grain*.07);
+ if(part==0u){
+  let point=(uv-vec2f(.5,.57))*vec2f(1,1.1);let r=length(point);let a=atan2(point.y,point.x);
+  let petals=6.0+floor(worldDNA(12u).w*4.0);
+  let rose=.22+.070*cos(a*petals);let ring=dtLine(r-rose,.006,pixel*.08);
+  let inner=dtLine(r-.12,.005,pixel*.08);let outer=dtLine(r-.38,.005,pixel*.08);
+  let rays=dtLine(sin(a*petals*.5)*r,.005,pixel*.08)*step(.12,r)*(1.0-step(.38,r));
+  let diamond=dtLine(abs(point.x)+abs(point.y)-.48,.006,pixel*.08);
+  let lead=clamp(ring+inner+outer+rays+diamond,0,1);
+  let panel=select(palette(1),palette(2),sin(a*petals)>0.0);
+  pigment=mix(pigment,mix(color,panel,.45),(1.0-smoothstep(.28,.40,r))*.75);
+  let bevel=dtLine(r-rose,.017,pixel*.08)*(1.0-lead);
+  pigment+=mix(color,uniforms.themeFifth.rgb,.35)*bevel*.15;
+  pigment=mix(pigment,palette(0)*.23,lead*.96);
+ }
+ let ripple=sin(q.x*2.8+sin(q.y*2.1)*.38)*.035;
+ return pigment*(1.0+ripple);
 }
 fn dtFungus(color:vec3f,q:vec2f,p:vec3f,pixel:f32,part:u32,up:f32)->vec3f {
   let warp=vec2f(dtFbm(q*0.65),dtFbm(q*0.65+vec2f(9,23)))-0.5;
@@ -197,7 +205,7 @@ fn dioramaTexture(color:vec3f,p:vec3f,n:vec3f,uv:vec2f,part:u32)->vec3f {
   if(MATERIAL_KIND==0u){out=dtEarth(color,q,p,up,pixel,part);}
   else if(MATERIAL_KIND==1u){out=dtStone(color,q,pixel,foundation);}
   else if(MATERIAL_KIND==2u){out=dtPaper(color,q,uv,pixel,foundation);}
-  else if(MATERIAL_KIND==3u){out=dtGlass(color,q,n,pixel,foundation);}
+  else if(MATERIAL_KIND==3u){out=dtGlass(color,q,n,uv,pixel,part);}
   else if(MATERIAL_KIND==4u){out=dtFungus(color,q,p,pixel,part,up);}
   else if(MATERIAL_KIND==5u){out=dtCosmic(color,q,n,pixel,foundation);}
   else {out=dtPlastic(color,q,n,pixel,foundation);}

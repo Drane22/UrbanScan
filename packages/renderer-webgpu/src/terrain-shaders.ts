@@ -1,4 +1,3 @@
-import { QR_RELIEF_WGSL } from "./tree-morph.js";
 import { STAGED_PROJECTION_WGSL } from "./staged-world-shaders.js";
 import { DIORAMA_MATERIALS_WGSL } from "./diorama-materials.js";
 
@@ -144,7 +143,6 @@ struct TerrainOutput {
 @group(0) @binding(2) var<storage, read> blockPositions: array<vec4f>;
 @group(0) @binding(3) var<storage, read> blockHeights: array<f32>;
 ${TERRAIN_RELIEF_WGSL}
-${QR_RELIEF_WGSL}
 
 fn terrainHeightAt(column: i32, row: i32) -> f32 {
   let size = i32(uniforms.gridSize);
@@ -230,18 +228,15 @@ fn vertexMain(
   let uv = quad[quadIndex];
   let count=u32(uniforms.gridSize*uniforms.gridSize);
   if(instanceIndex>count){
-    let slot=instanceIndex-count-1u;let owner=slot%count;let layer=slot/count;
+    let owner=instanceIndex-count-1u;
+    if(owner>=count || blockTypes[owner]==0u){output.position=vec4f(2,2,2,1);return output;}
     let cell=blockPositions[owner].xy+vec2f(0.5)-vec2f(uniforms.gridSize*0.5);
-    let cap=select(1u,1u+u32(clamp(blockHeights[owner]*10.0,1.0,11.0)),blockTypes[owner]!=0u);
-    if(layer>=cap || treeSemanticAbsorb()<0.001 || (layer>0u && treeLayerRise(f32(layer))<0.001)){
-      output.position=vec4f(2,2,2,1);return output;
-    }
-    output.world=qrReliefPoint(vertexIndex,cell,layer)*uniforms.blockSize;
-    output.position=terrainProject(output.world);output.uv=qrReliefUv(vertexIndex);
+    output.world=vec3f(cell.x+uv.x-0.5,0,cell.y+uv.y-0.5)*uniforms.blockSize;
+    output.position=terrainProject(output.world);output.uv=uv;
     output.blockType=blockTypes[owner];output.neighborMask=u32(blockPositions[owner].w);
-    output.foundation=2u;output.faceIndex=faceIndex;output.normal=qrReliefNormal(vertexIndex);
-    output.shade=1.0;return output;
+    output.foundation=2u;output.faceIndex=0u;output.normal=vec3f(0,1,0);output.shade=1.0;return output;
   }
+
   if(instanceIndex==u32(uniforms.gridSize*uniforms.gridSize)){
     let n=uniforms.gridSize;let base=1.05*n/25.0*treeFoliageVisibility();
     let extent=n*uniforms.blockSize;
@@ -368,21 +363,17 @@ fn fragmentMain(input: TerrainOutput) -> @location(0) vec4f {
     let layers=sin(coord.y*14.0+sin(coord.x*0.7)*1.3)*0.5+0.5;
     let pores=terrainHash(floor(coord.xz*18.0)+vec2f(floor(coord.y*21.0)));
     let stone=mix(uniforms.themePrimary.rgb,uniforms.themeThird.rgb,0.10+layers*0.25)*(0.84+pores*0.22)*input.shade;
-    let alpha=1.0-smoothstep(0.64,0.96,progress);
+    let alpha=1.0;
     if(alpha<0.001){discard;}
     return vec4f(stone,alpha);
   }
   if(input.foundation==2u){
     let coverage=f32(input.blockType!=0u)*terrainQrMask(input.uv,input.neighborMask);
-    let reveal=smoothstep(0.64,0.96,progress);
-    let light=0.48+max(dot(input.normal,normalize(vec3f(-0.41,0.86,-0.30))),0.0)*0.52;
-    let pigment=mix(terrainGrassColor(),uniforms.themeThird.rgb,f32(input.blockType%3u)*0.13);
-    let material=mix(uniforms.themeFifth.rgb*0.86,pigment*light,select(0.38,1.0,input.blockType!=0u));
+    if(coverage<0.5){discard;}
     let ink=qrModuleMaterial(input.blockType,input.world.xz/uniforms.blockSize);
-    let alpha=mix(1.0,coverage,reveal)*treeSemanticAbsorb();
-    if(alpha<0.001){discard;}
-    return vec4f(mix(material,ink,reveal),alpha);
+    return vec4f(ink,1);
   }
+
   var terrainColor = terrainBandColor(input.heightValue);
   // Ground cover spans the whole square, including corners and river banks.
   let river=terrainRiver(coord.xz);
@@ -423,7 +414,7 @@ fn fragmentMain(input: TerrainOutput) -> @location(0) vec4f {
   let snowCover = sceneSnow() * topFace * (1.0 - progress)
     * smoothstep(0.42 + snowNoise * 0.1, 0.72, input.heightValue);
   terrainColor = mix(terrainColor, terrainPaper(), snowCover * 0.88);
-  let alpha=1.0-smoothstep(0.64,0.96,progress);
+  let alpha=1.0;
   if(alpha<0.001){discard;}
   var color=terrainColor+(noise-0.5)*0.022*(1.0-progress);
   return vec4f(clamp(color,vec3f(0),vec3f(1)),alpha);

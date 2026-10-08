@@ -27,35 +27,3 @@ fn treeCameraView(p:vec3f,worldScale:f32,qrScale:f32,worldShift:vec2f,qrShift:ve
   (y+shift.y)*scale/max(1.0/uniforms.aspectRatio,1.0),depth*0.01+0.5,1.0);
 }
 `;
-
-/** Enough height bands to preserve Tree's rising/absorbing relief handoff. */
-export const QR_RELIEF_LAYERS = 12;
-export const QR_RELIEF_WGSL = /* wgsl */ `
-// A fixed topology throughout the transition; no interpolation between unrelated meshes.
-fn qrReliefCube(v:u32,size:vec3f)->vec3f {
- let maskedUv=qrReliefUv(v);let face=(v%36u)/6u;
- let uv=select(maskedUv,vec2f(maskedUv.x,1.0-maskedUv.y),face==1u);
- if(face==0u){return vec3f((uv.x-0.5)*size.x,size.y,(uv.y-0.5)*size.z);}
- if(face==1u){return vec3f((uv.x-0.5)*size.x,0,(0.5-uv.y)*size.z);}
- if(face==2u){return vec3f((uv.x-0.5)*size.x,uv.y*size.y,size.z*0.5);}
- if(face==3u){return vec3f((0.5-uv.x)*size.x,uv.y*size.y,-size.z*0.5);}
- if(face==4u){return vec3f(size.x*0.5,uv.y*size.y,(uv.x-0.5)*size.z);}
- return vec3f(-size.x*0.5,uv.y*size.y,(0.5-uv.x)*size.z);
-}
-fn qrReliefUv(v:u32)->vec2f {
- let q=array<vec2f,6>(vec2f(0,0),vec2f(1,0),vec2f(0,1),vec2f(0,1),vec2f(1,0),vec2f(1,1));
- let uv=q[v%6u];return select(uv,vec2f(uv.x,1.0-uv.y),(v%36u)/6u==1u);
-}
-fn qrReliefNormal(v:u32)->vec3f {
- let face=(v%36u)/6u;
- let normals=array<vec3f,6>(vec3f(0,1,0),vec3f(0,-1,0),vec3f(0,0,1),vec3f(0,0,-1),vec3f(1,0,0),vec3f(-1,0,0));
- return normals[face];
-}
-fn qrReliefPoint(v:u32,cell:vec2f,layer:u32)->vec3f {
- let rise=treeLayerRise(f32(layer));
- let scale=select(1.0,rise*treeSemanticAbsorb(),layer>0u);
- let h=select((1.0-uniforms.progress)*0.30,1.0,layer>0u);
- let p=qrReliefCube(v,vec3f(scale,h*scale,scale));
- return vec3f(cell.x,f32(layer)*rise,cell.y)+p;
-}
-`;

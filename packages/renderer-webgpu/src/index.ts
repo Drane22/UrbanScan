@@ -11,6 +11,7 @@ export {
   evaluateMorphCurve,
   minimumStorageBufferByteLength,
   mountSeed,
+  preloadSeedTheme,
   seedSceneEffectCode,
   stepTerrainSpring,
   type SeedRenderer,

@@ -1,6 +1,5 @@
 import { DIORAMA_MATERIALS_WGSL } from "./diorama-materials.js";
 import { STAGED_PROJECTION_WGSL } from "./staged-world-shaders.js";
-import { QR_RELIEF_WGSL } from "./tree-morph.js";
 
 const REEF_COMMON = /* wgsl */ `
 struct Uniforms {
@@ -43,7 +42,6 @@ struct Uniforms {
 @group(0) @binding(7) var reefSampler: sampler;
 ${DIORAMA_MATERIALS_WGSL}
 ${STAGED_PROJECTION_WGSL}
-${QR_RELIEF_WGSL}
 
 fn reefTempo()->f32 {return select(select(1.0,0.65,uniforms.camera.w==1.0),select(0.85,1.15,uniforms.camera.w==3.0),uniforms.camera.w>=2.0);}
 fn reefStage(start: f32, end: f32) -> f32 {
@@ -779,20 +777,13 @@ struct Output {
 @vertex
 fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) instanceIndex: u32) -> Output {
   var output: Output;output.position=vec4f(2,2,2,1);
-  let count=u32(uniforms.gridSize*uniforms.gridSize);let owner=instanceIndex%count;let layer=instanceIndex/count;
-  let position=blockPositions[owner];let blockType=blockTypes[owner];
-  let cell=position.xy+vec2f(0.5)-vec2f(uniforms.gridSize*0.5);
-  let profile=1.0-smoothstep(0.15,0.49,length(cell)/uniforms.gridSize);
-  let jitter=fract(sin(position.x*17.3+position.y*31.1 + 9.7)*43758.5);
-  let cap=1u+u32(profile*(4.0+jitter*6.0));
-  if(blockType==0u || layer>=cap || treeSemanticAbsorb()<0.001 || (layer>0u && treeLayerRise(f32(layer))<0.001)){return output;}
-  var local=qrReliefPoint(vertexIndex,vec2f(0),layer)*uniforms.blockSize;
-  // Retain the original shallow scan plaque at the locked endpoint.
-  if(layer==0u && vertexIndex/6u==0u){local.y+=0.052*uniforms.blockSize;}
-  else if(layer==0u && vertexIndex/6u>=2u){local.y+=qrReliefUv(vertexIndex).y*0.052*uniforms.blockSize;}
-  output.position=reefProject(reefPoint(position.x,position.y,0.10)+local);
-  output.normal=qrReliefNormal(vertexIndex);output.uv=qrReliefUv(vertexIndex);
-  output.molten=1.0-reefStage(0.64,0.96);output.tint=jitter;
+  let owner=instanceIndex;let position=blockPositions[owner];let blockType=blockTypes[owner];
+  if(blockType==0u){return output;}
+  let face=vertexIndex/6u;let uv=quadUv(vertexIndex);
+  let geometry=boxGeometry(face,uv,vec3f(uniforms.blockSize,0.052*uniforms.blockSize,uniforms.blockSize));
+  output.position=reefProject(reefPoint(position.x,position.y,0.10)+geometry[0]);
+  output.normal=geometry[1];output.uv=select(uv,vec2f(uv.x,1.0-uv.y),face==1u);
+  output.molten=0.0;output.tint=fract(sin(position.x*17.3+position.y*31.1 + 9.7)*43758.5);
   output.visible=1u;output.neighborMask=u32(position.w);
   output.finderRole=finderRole(position.x,position.y);output.blockType=blockType;output.cell=position.xy;
   return output;
@@ -802,9 +793,9 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32, @builtin(instance_index) 
 fn fragmentMain(input: Output) -> @location(0) vec4f {
   if (input.visible == 0u) { discard; }
 
-  let lock = reefStage(0.64, 0.96);
+  let lock = 1.0;
   let organicMask = qrModuleMask(input.uv, input.neighborMask);
-  if (uniforms.progress > 0.94 && abs(input.normal.y) > 0.5 && organicMask < 0.5) {
+  if (abs(input.normal.y) > 0.5 && organicMask < 0.5) {
     discard;
   }
 
@@ -824,6 +815,6 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let ink = qrModuleMaterial(input.blockType, input.cell);
   let scanColor = select(ink * 0.84, ink, input.normal.y > 0.5);
   let finalColor = mix(livingColor, scanColor, lock);
-  return vec4f(finalColor, treeSemanticAbsorb());
+  return vec4f(finalColor, 1.0);
 }
 `;
