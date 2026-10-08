@@ -44,6 +44,9 @@ export type EveryQRCodeModel =
   | "stained-glass"
   | "terrain"
   | "toy-block"
+  | "waves"
+  | "crystalline"
+  | "mechanical"
   | "tree";
 
 type SeedRenderer = {
@@ -82,6 +85,9 @@ const VALID_MODELS: ReadonlySet<string> = new Set([
   "stained-glass",
   "terrain",
   "toy-block",
+  "waves",
+  "crystalline",
+  "mechanical",
   "tree",
 ]);
 

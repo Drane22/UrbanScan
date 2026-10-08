@@ -36,6 +36,9 @@ const POPULATIONS: readonly Population[] = [
     ambient: [384, 0, 0],
   },
   { form: "toy-block", primary: 136, ambient: [384, 0, 0] },
+  { form: "waves", primary: 12, ambient: [136, 0, 0] },
+  { form: "crystalline", primary: 64, ambient: [184, 0, 0] },
+  { form: "mechanical", primary: 64, ambient: [68, 0, 0] },
 ];
 function countWgsl([base, gene, spread]: Count): string {
   return spread ? `${base}u+u32(worldDNA(${gene}u).w*${spread}.0)` : `${base}u`;

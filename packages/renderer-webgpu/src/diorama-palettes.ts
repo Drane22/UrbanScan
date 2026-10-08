@@ -1,6 +1,9 @@
 import type { SeedForm } from "./seed-model.js";
 import type { WorldPalettePreset } from "./world-palettes.js";
-type DioramaForm = Exclude<SeedForm, "tree" | "city" | "circuit">;
+type DioramaForm = Exclude<
+  SeedForm,
+  "tree" | "city" | "circuit" | "waves" | "crystalline" | "mechanical"
+>;
 type Family = readonly [string, string, readonly [string, string, string, string, string], string];
 const rgb = (hex: string): readonly [number, number, number] => {
   const value = Number.parseInt(hex.slice(1), 16);
@@ -8,7 +11,7 @@ const rgb = (hex: string): readonly [number, number, number] => {
 };
 // Structural shadow, accent, main surface, environment and pale highlight.
 // The main material owns the scene; accents are used for recognizable details.
-function families(rows: readonly Family[]): readonly WorldPalettePreset[] {
+export function families(rows: readonly Family[]): readonly WorldPalettePreset[] {
   return rows.map(([id, name, colors, description], artDirection) => ({
     id,
     name,

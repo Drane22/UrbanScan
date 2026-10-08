@@ -191,6 +191,25 @@ fn dtPlastic(color:vec3f,q:vec2f,n:vec3f,pixel:f32,foundation:bool)->vec3f {
   }
   return out;
 }
+fn dtWater(color:vec3f,q:vec2f,pixel:f32,part:u32)->vec3f {
+ let time=uniforms.time*motionTempo()*alive();
+ let ripple=sin(q.x*1.8+sin(q.y*0.9-time*0.3)*0.7-time*0.55);
+ let caustic=dtLine(ripple,0.055,pixel*2.0);
+ let drift=dtNoise(q*2.2+vec2f(time*0.04,0));
+ return color*(0.88+drift*0.16)+mix(color,uniforms.themeFifth.rgb,0.48)*caustic*select(0.15,0.05,part==1u);
+}
+fn dtMineral(color:vec3f,q:vec2f,pixel:f32,foundation:bool)->vec3f {
+ let vein=dtLine(sin(q.x*1.1+q.y*0.7+dtNoise(q*0.5)*0.8),0.035,pixel);
+ let inclusion=dtDot(q,4.2,0.05,pixel,0.87);
+ return color*(0.90+dtNoise(q*9.0)*0.12-vein*select(0.10,0.24,foundation))+palette(1)*inclusion*0.15;
+}
+fn dtMachine(color:vec3f,q:vec2f,pixel:f32,foundation:bool)->vec3f {
+ let p=fract(q*0.4);let edge=min(min(p.x,1.0-p.x),min(p.y,1.0-p.y));
+ let seam=dtLine(edge,0.012,pixel*0.4);
+ let brush=sin(q.x*55.0+dtNoise(q*2.0)*0.5)*0.018;
+ let rivet=dtDot(q,0.8,0.07,pixel,0.35);
+ return color*(0.89+brush+dtNoise(q*5.0)*0.10-seam*select(0.08,0.24,foundation))+uniforms.themeFifth.rgb*rivet*0.07;
+}
 fn dioramaTexture(color:vec3f,p:vec3f,n:vec3f,uv:vec2f,part:u32)->vec3f {
   // World-space projection keeps textures continuous across adjacent meshes.
   let an=abs(n);var q=p.xz;
@@ -208,6 +227,9 @@ fn dioramaTexture(color:vec3f,p:vec3f,n:vec3f,uv:vec2f,part:u32)->vec3f {
   else if(MATERIAL_KIND==3u){out=dtGlass(color,q,n,uv,pixel,part);}
   else if(MATERIAL_KIND==4u){out=dtFungus(color,q,p,pixel,part,up);}
   else if(MATERIAL_KIND==5u){out=dtCosmic(color,q,n,pixel,foundation);}
+  else if(MATERIAL_KIND==7u){out=dtWater(color,q,pixel,part);}
+  else if(MATERIAL_KIND==8u){out=dtMineral(color,q,pixel,foundation);}
+  else if(MATERIAL_KIND==9u){out=dtMachine(color,q,pixel,foundation);}
   else {out=dtPlastic(color,q,n,pixel,foundation);}
   let style=materialStyle();let time=uniforms.time*motionTempo();
   // Material families have different finishes and localized ambient motion;
@@ -236,6 +258,18 @@ fn dioramaTexture(color:vec3f,p:vec3f,n:vec3f,uv:vec2f,part:u32)->vec3f {
     if(style==1u && !foundation){out+=uniforms.themeFifth.rgb*pow(max(n.y,0.0),12.0)*.14;}
     if(style==2u && foundation){let gas=smoothstep(.55,.8,dtFbm(q*.3+vec2f(time*.025,0)));out+=palette(2)*gas*.16;}
     if(style==3u){let dust=dtDot(q,2.0,.04,pixel,.85);out+=palette(1)*dust*(.10+.12*sin(q.x+time*.7));}
+  }else if(MATERIAL_KIND==7u){
+    if(style==1u){out*=0.92;}
+    if(style==2u){out+=palette(1)*dtLine(sin(q.x+q.y-time*.12),.04,pixel)*.07;}
+    if(style==3u){out+=uniforms.themeFifth.rgb*dtDot(q,2.5,.03,pixel,.9)*.12;}
+  }else if(MATERIAL_KIND==8u){
+    if(style==1u){out+=uniforms.themeFifth.rgb*.025;}
+    if(style==2u){out*=.92+dtNoise(q*18.0)*.12;}
+    if(style==3u){out+=palette(1)*dtLine(sin(q.y*1.7),.025,pixel)*.10;}
+  }else if(MATERIAL_KIND==9u){
+    if(style==1u){out=mix(out,color,.20);}
+    if(style==2u){out+=palette(1)*dtDot(q,2.0,.045,pixel,.75)*.08;}
+    if(style==3u){out*=.96+dtNoise(q*12.0)*.08;}
   }else{
     if(style==1u){out=mix(out,color,.32);}
     if(style==2u){let metal=pow(max(dot(n,normalize(vec3f(-.4,.8,.35))),0.0),18.0);out+=uniforms.themeFifth.rgb*metal*.17;}
@@ -263,7 +297,10 @@ fn dioramaLighting(color:vec3f,p:vec3f,normal:vec3f,part:u32,key:vec3f)->vec3f {
   if(foundation){return color;}
   let atmosphere=mix(palette(2),palette(3),0.45)*fresnel*0.22;
   return color*(0.28+max(dot(n,key),0.0)*0.82)+atmosphere;
- }else{finish=select(0.28,0.14,foundation);power=42.0;rim=0.035;}
+ }else if(MATERIAL_KIND==7u){finish=0.32;power=64.0;rim=0.12;}
+ else if(MATERIAL_KIND==8u){finish=select(0.38,0.05,foundation);power=74.0;rim=0.16;}
+ else if(MATERIAL_KIND==9u){finish=select(0.30,0.13,foundation);power=48.0;rim=0.02;}
+ else{finish=select(0.28,0.14,foundation);power=42.0;rim=0.035;}
  let specular=pow(cosine,power)*finish;
  var reflection=mix(color,vec3f(1.0),0.68)*(specular+fresnel*rim);
  if(MATERIAL_KIND==3u && !foundation){
