@@ -1,280 +1,441 @@
-import type { EveryQRCodeIdentity } from "@every-qrcode/core";
-import { EveryQRCode, type EveryQRCodeModel } from "@every-qrcode/react";
+import { parseLink, type EveryQRCodeIdentity } from "@every-qrcode/core";
+import { EveryQRCode, type EveryQRCodeModel, type EveryQRCodeView } from "@every-qrcode/react";
 import {
   getDefaultPaletteForModel,
-  selectWorldPalette,
-  isStagedWorld,
   getPalettesForModel,
-  type WorldPalettePreset,
+  selectWorldPalette,
 } from "@every-qrcode/renderer-webgpu/world-options";
-import { useCallback, useEffect, useMemo, useState } from "react";
-
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QRDetailsDialog } from "@/qr-details-dialog";
+import { APPEARANCES, readAppearance, saveAppearance } from "@/studio-preferences";
+import { StudioIcon } from "@/studio-icon";
+import {
+  getWorldOption,
+  WORLD_CATALOG,
+  WORLD_CATEGORIES,
+  type WorldCategory,
+} from "@/world-catalog";
 
 const DEFAULT_LINK = "https://example.com";
-
-const MODELS: readonly EveryQRCodeModel[] = [
-  "tree",
-  "terrain",
-  "city",
-  "circuit",
-  "reef",
-  "colony",
-  "dungeon",
-  "origami",
-  "stained-glass",
-  "mycelium",
-  "constellation",
-  "toy-block",
+const SAMPLES = [
+  { name: "Tokyo", url: "https://metro.tokyo.jp" },
+  { name: "NASA", url: "https://nasa.gov" },
+  { name: "GitHub", url: "https://github.com" },
 ];
-
-const MODEL_INFO: Readonly<
-  Record<EveryQRCodeModel, { label: string; icon: string; desc: string }>
-> = {
-  city: { desc: "Skyscrapers & plazas", icon: "🏙️", label: "City" },
-  circuit: { desc: "Motherboard & IC chips", icon: "⚡", label: "Circuit" },
-  colony: { desc: "Underground chambers & tunnels", icon: "🧫", label: "Colony" },
-  constellation: {
-    desc: "Fantasy planets, moons and cosmic flybys",
-    icon: "🪐",
-    label: "Solar System",
-  },
-  dungeon: { desc: "Isometric stone labyrinth", icon: "🗝️", label: "Dungeon" },
-  mycelium: { desc: "Living fungal forest and root chambers", icon: "🍄", label: "Mycelium" },
-  origami: { desc: "Flying paper cranes and folded gardens", icon: "📄", label: "Origami" },
-  reef: { desc: "Underwater coral aquarium", icon: "🪸", label: "Reef" },
-  "stained-glass": {
-    desc: "Kinetic glass pavilion and hanging prisms",
-    icon: "🔮",
-    label: "Stained Glass",
-  },
-  terrain: { desc: "Surreal crystal ridges and moving rivers", icon: "🏔️", label: "Terrain" },
-  "toy-block": { desc: "Modular brick diorama", icon: "🧱", label: "Toy Block" },
-  tree: { desc: "Procedural blooming tree", icon: "🌳", label: "Tree" },
-};
-
-const PRESET_URLS = [
-  { label: "Tokyo", url: "https://metro.tokyo.jp" },
-  { label: "Wikipedia", url: "https://en.wikipedia.org" },
-  { label: "GitHub", url: "https://github.com" },
-  { label: "NASA", url: "https://nasa.gov" },
-  { label: "Kyoto", url: "https://kyoto.travel" },
-];
-
-let themeWarmTimer: ReturnType<typeof setTimeout> | undefined;
-function cancelThemeWarmup(): void {
-  clearTimeout(themeWarmTimer);
-}
-function warmTheme(model: EveryQRCodeModel): void {
-  cancelThemeWarmup();
-  themeWarmTimer = setTimeout(() => {
-    void import("@every-qrcode/renderer-webgpu")
-      .then((renderer) => renderer.preloadSeedTheme(model))
-      .catch(() => {
-        // A real mount retries failed preparation and reports its own error.
-      });
-  }, 120);
-}
 
 export function App(): React.JSX.Element {
-  const [input, setInput] = useState(DEFAULT_LINK);
+  const [draftUrl, setDraftUrl] = useState(DEFAULT_LINK);
+  const [url, setUrl] = useState(DEFAULT_LINK);
   const [model, setModel] = useState<EveryQRCodeModel>("circuit");
-  const [paletteId, setPaletteId] = useState<string>(() => getDefaultPaletteForModel("circuit").id);
+  const [category, setCategory] = useState<WorldCategory>("All");
+  const [paletteId, setPaletteId] = useState(getDefaultPaletteForModel("circuit").id);
   const [morphSeed, setMorphSeed] = useState<number | null>(null);
-  const [replay, setReplay] = useState(0);
   const [identity, setIdentity] = useState<EveryQRCodeIdentity | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [resolvedInput, setResolvedInput] = useState(DEFAULT_LINK);
-  useEffect(() => {
-    const timer = setTimeout(() => setResolvedInput(input.trim() || DEFAULT_LINK), 350);
-    return () => clearTimeout(timer);
-  }, [input]);
-  const seededDefault = useMemo(
-    () => (morphSeed === null ? null : selectWorldPalette(model, morphSeed)),
-    [model, morphSeed],
-  );
-
-  const currentPalettes = getPalettesForModel(model);
-  const currentPalette: WorldPalettePreset =
-    currentPalettes.find((p) => p.id === paletteId) ??
-    (isStagedWorld(model) || model === "terrain" ? seededDefault : null) ??
-    currentPalettes[0]!;
-
-  const handleSelectModel = (nextModel: EveryQRCodeModel) => {
-    setModel(nextModel);
-    const defaultForNext = getDefaultPaletteForModel(nextModel);
-    setPaletteId(
-      isStagedWorld(nextModel) || nextModel === "terrain" ? "seeded" : defaultForNext.id,
-    );
-  };
-
-  useEffect(() => {
-    setIdentity(null);
-    setMorphSeed(null);
-    setError(null);
-  }, [resolvedInput]);
-
-  const handleIdentity = useCallback((nextIdentity: EveryQRCodeIdentity, seed: number) => {
-    setMorphSeed(seed);
-    setIdentity(nextIdentity);
-    setError(null);
-  }, []);
-
+  const [inputError, setInputError] = useState<string | null>(null);
+  const [renderError, setRenderError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const [replay, setReplay] = useState(0);
+  const [zoom, setZoom] = useState(1);
+  const [view, setView] = useState<EveryQRCodeView>("model");
+  const [appearance, setAppearance] = useState(readAppearance);
+  const warmTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const option = getWorldOption(model);
+  const palettes = getPalettesForModel(model);
+  const palette =
+    palettes.find((preset) => preset.id === paletteId) ??
+    (morphSeed === null ? palettes[0]! : selectWorldPalette(model, morphSeed));
   const scene = useMemo(
     () =>
-      (isStagedWorld(model) || model === "terrain") && paletteId === "seeded"
+      paletteId === "seeded"
         ? {}
-        : { palette: currentPalette.palette, artDirection: currentPalette.artDirection ?? 0 },
-    [model, paletteId, currentPalette],
+        : { palette: palette.palette, artDirection: palette.artDirection ?? 0 },
+    [paletteId, palette],
   );
+  useEffect(() => {
+    document.documentElement.dataset["appearance"] = appearance;
+    saveAppearance(appearance);
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute(
+        "content",
+        appearance === "midnight" ? "#13201c" : appearance === "lavender" ? "#f3eff8" : "#f5f1e8",
+      );
+  }, [appearance]);
+  useEffect(() => () => clearTimeout(warmTimer.current), []);
+  const cancelWarmup = () => clearTimeout(warmTimer.current);
+  const warmWorld = (next: EveryQRCodeModel) => {
+    cancelWarmup();
+    warmTimer.current = setTimeout(() => {
+      void import("@every-qrcode/renderer-webgpu")
+        .then((renderer) => renderer.preloadSeedTheme(next))
+        .catch(() => {
+          /* A real mount retries and reports failures. */
+        });
+    }, 120);
+  };
+  const resetPreview = () => {
+    setReady(false);
+    setRenderError(null);
+    setView("model");
+    setZoom(1);
+  };
+  const selectWorld = (next: EveryQRCodeModel) => {
+    if (next === model) return;
+    cancelWarmup();
+    resetPreview();
+    setModel(next);
+    setPaletteId(
+      getWorldOption(next).seededPalette ? "seeded" : getDefaultPaletteForModel(next).id,
+    );
+  };
+  const generate = (value: string) => {
+    try {
+      const submitted = parseLink(value.trim()).payloadUrl;
+      setInputError(null);
+      setDraftUrl(submitted);
+      if (submitted === url) return;
+      resetPreview();
+      setIdentity(null);
+      setMorphSeed(null);
+      setUrl(submitted);
+    } catch (error) {
+      setInputError(error instanceof Error ? error.message : "Enter a valid HTTP or HTTPS link.");
+    }
+  };
+  const handleIdentity = useCallback((next: EveryQRCodeIdentity, seed: number) => {
+    setIdentity(next);
+    setMorphSeed(seed);
+  }, []);
+  const handleReady = useCallback(() => {
+    setReady(true);
+    setRenderError(null);
+  }, []);
+  const retry = () => {
+    resetPreview();
+    setReplay((value) => value + 1);
+  };
 
   return (
-    <main className="demo-shell">
-      <header className="brand-header">
-        <div className="brand-title-row">
-          <h1 className="brand-title">urbanscan</h1>
-          <span className="brand-badge">v1.2</span>
+    <main className="studio-shell">
+      <header className="studio-header">
+        <a className="brand" href="#studio" aria-label="urbanscan studio">
+          <span className="brand-mark">
+            <StudioIcon name="qr" />
+          </span>
+          <span>
+            urbanscan<span className="brand-dot">.</span>
+          </span>
+        </a>
+        <div className="header-tools">
+          <label className="appearance-control">
+            <span className="sr-only">App appearance</span>
+            <select
+              aria-label="App appearance"
+              value={appearance}
+              onChange={(event) =>
+                setAppearance(APPEARANCES.find((value) => value === event.target.value) ?? "paper")
+              }
+            >
+              {APPEARANCES.map((value) => (
+                <option key={value} value={value}>
+                  {value[0]!.toUpperCase() + value.slice(1)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <QRDetailsDialog identity={identity} />
         </div>
-        <p className="brand-attribution">Modified and improved by drane</p>
-        <QRDetailsDialog identity={identity} />
       </header>
-
-      <section className="scene-region">
-        <nav aria-label="World archetype" className="model-picker">
-          {MODELS.map((option) => {
-            const info = MODEL_INFO[option];
-            return (
+      <div className="studio-intro" id="studio">
+        <div>
+          <p className="eyebrow">
+            <span className="status-dot" /> The link-to-world studio
+          </p>
+          <h1>
+            Every link has
+            <br />a little world inside.
+          </h1>
+        </div>
+        <p className="intro-note">
+          Make it yours.
+          <br />
+          Choose a world. Find its colors.
+          <br />
+          Reveal a QR that takes you somewhere.
+        </p>
+      </div>
+      <div className="studio-grid">
+        <section className="preview-shell" aria-label="World preview">
+          <div className="preview-core">
+            <div className="preview-heading">
+              <div>
+                <p className="eyebrow">
+                  {option.category} / {view === "qr" ? "QR view" : "World view"}
+                </p>
+                <h2>
+                  {option.name}
+                  <span className="live-badge">
+                    {renderError ? "Paused" : ready ? "Live" : "Preparing"}
+                  </span>
+                </h2>
+              </div>
+              <span className="preview-symbol">
+                <StudioIcon name={option.mark} />
+              </span>
+            </div>
+            <div className="scene-stage">
+              <EveryQRCode
+                key={replay}
+                className="scene-button"
+                model={model}
+                url={url}
+                scene={scene}
+                zoom={zoom}
+                onZoomChange={setZoom}
+                view={view}
+                onViewChange={setView}
+                onIdentity={handleIdentity}
+                onReady={handleReady}
+                onError={(error) => {
+                  setRenderError(error.message);
+                  setReady(false);
+                }}
+              />
+              {!ready && !renderError && (
+                <div className="scene-loading" role="status">
+                  <span className="loading-orbit" />
+                  <span>Growing your {option.name.toLowerCase()}…</span>
+                </div>
+              )}
+            </div>
+            <div className="preview-caption">
+              <span>{option.description}</span>
+              <span className="tap-hint">
+                {renderError ? "Try again to prepare your world" : "Tap the world to transform it"}
+              </span>
+            </div>
+            <div className="preview-toolbar">
               <button
-                aria-pressed={option === model}
-                className="model-pill"
-                key={option}
-                onClick={() => handleSelectModel(option)}
-                onPointerEnter={() => warmTheme(option)}
-                onPointerLeave={cancelThemeWarmup}
-                onFocus={() => warmTheme(option)}
-                onBlur={cancelThemeWarmup}
-                title={info.desc}
+                className="primary-button reveal-button"
                 type="button"
+                disabled={!ready || Boolean(renderError)}
+                onClick={() => setView(view === "model" ? "qr" : "model")}
               >
-                <span className="model-icon">{info.icon}</span>
-                <span className="model-text">{info.label}</span>
+                <StudioIcon name={view === "model" ? "qr" : option.mark} />
+                <span>{view === "model" ? "Reveal QR" : "Restore world"}</span>
+                <span className="button-island">
+                  <StudioIcon name="arrow" />
+                </span>
               </button>
-            );
-          })}
-        </nav>
-
-        <EveryQRCode
-          key={replay}
-          className="scene-button"
-          model={model}
-          onError={(rendererError) => setError(rendererError.message)}
-          onIdentity={handleIdentity}
-          scene={scene}
-          url={resolvedInput}
-        />
-      </section>
-
-      <div className="input-region">
-        <section className="palette-region" aria-label="Color Palette">
-          <div className="palette-header">
-            <span className="palette-title">{MODEL_INFO[model].label} Palette:</span>
-            <span className="palette-active-name">{currentPalette.name}</span>
-            {(isStagedWorld(model) || model === "terrain") && (
-              <div className="scene-actions">
+              <div className="zoom-controls" aria-label="Preview zoom">
                 <button
-                  className="preset-chip"
+                  aria-label="Zoom out"
                   type="button"
-                  onClick={() => setReplay((value) => value + 1)}
+                  disabled={!ready || zoom <= 0.82}
+                  onClick={() => setZoom((value) => Math.max(0.82, value - 0.1))}
                 >
-                  Replay
+                  <StudioIcon name="minus" />
                 </button>
                 <button
-                  className="preset-chip"
+                  aria-label="Reset zoom"
                   type="button"
-                  aria-pressed={paletteId === "seeded"}
-                  onClick={() => setPaletteId("seeded")}
+                  disabled={!ready}
+                  onClick={() => setZoom(1)}
                 >
-                  Link palette
+                  {Math.round(zoom * 100)}%
+                </button>
+                <button
+                  aria-label="Zoom in"
+                  type="button"
+                  disabled={!ready || zoom >= 1.45}
+                  onClick={() => setZoom((value) => Math.min(1.45, value + 0.1))}
+                >
+                  <StudioIcon name="plus" />
+                </button>
+              </div>
+              {option.replay && (
+                <button
+                  className="icon-button replay-button"
+                  type="button"
+                  aria-label="Replay world construction"
+                  title="Replay construction"
+                  disabled={!ready}
+                  onClick={retry}
+                >
+                  <StudioIcon name="replay" />
+                </button>
+              )}
+            </div>
+            {renderError && (
+              <div className="render-error" role="alert">
+                <p>{renderError}</p>
+                <button className="text-button" type="button" onClick={retry}>
+                  Retry 3D world <StudioIcon name="replay" />
                 </button>
               </div>
             )}
           </div>
-          <div className="palette-selector">
-            {currentPalettes.map((p) => (
-              <button
-                aria-pressed={p.id === currentPalette.id}
-                className="palette-button"
-                key={p.id}
-                onClick={() => setPaletteId(p.id)}
-                title={p.description ?? p.name}
-                type="button"
-              >
-                <div className="palette-swatches">
-                  {p.swatches.map((color, idx) => (
-                    <span className="swatch-dot" key={idx} style={{ backgroundColor: color }} />
-                  ))}
-                </div>
-                <span className="palette-label">{p.name}</span>
-              </button>
-            ))}
+          <div className="preview-footnote">
+            <span className="status-dot" />
+            <span>One link. One identity. A world that is yours.</span>
+            <span>{WORLD_CATALOG.length} worlds to explore</span>
           </div>
         </section>
-
-        <p className="palette-description">{currentPalette.description}</p>
-        <form
-          className="url-input-wrapper"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setResolvedInput(input.trim() || DEFAULT_LINK);
-          }}
-        >
-          <label className="sr-only" htmlFor="qr-content">
-            URL to render
-          </label>
-          <input
-            autoCapitalize="none"
-            autoComplete="off"
-            autoCorrect="off"
-            className="url-input"
-            id="qr-content"
-            inputMode="url"
-            onChange={(event) => {
-              setInput(event.target.value);
-            }}
-            placeholder="https://example.com"
-            spellCheck={false}
-            value={input}
-          />
-          <select
-            aria-label="Try a sample destination"
-            className="sample-select"
-            value=""
-            onChange={(event) => {
-              if (event.target.value) {
-                setInput(event.target.value);
-                setResolvedInput(event.target.value);
-              }
-            }}
-          >
-            <option value="" disabled>
-              Try a link
-            </option>
-            {PRESET_URLS.map((preset) => (
-              <option key={preset.label} value={preset.url}>
-                {preset.label}
-              </option>
-            ))}
-          </select>
-          <button className="generate-button" type="submit">
-            Generate
-          </button>
-        </form>
-        {error && (
-          <p role="alert" className="input-error">
-            {error}
-          </p>
-        )}
+        <aside className="editor-shell" aria-label="World settings">
+          <div className="editor-core">
+            <section className="editor-section destination-section">
+              <div className="section-heading">
+                <span className="step-number">01</span>
+                <h2>Start with a link</h2>
+              </div>
+              <p className="section-description">Where should your world take someone?</p>
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  generate(draftUrl);
+                }}
+              >
+                <label className="field-label" htmlFor="qr-content">
+                  Destination URL
+                </label>
+                <div className="input-bezel">
+                  <input
+                    id="qr-content"
+                    className="url-input"
+                    value={draftUrl}
+                    onChange={(event) => {
+                      setDraftUrl(event.target.value);
+                      setInputError(null);
+                    }}
+                    placeholder="example.com"
+                    inputMode="url"
+                    autoCapitalize="none"
+                    autoComplete="url"
+                    spellCheck={false}
+                    aria-invalid={Boolean(inputError)}
+                    aria-describedby={inputError ? "input-error" : "destination-hint"}
+                  />
+                </div>
+                <p id="destination-hint" className="field-hint">
+                  Editing keeps your current world. Generate when ready.
+                </p>
+                {inputError && (
+                  <p id="input-error" className="input-error" role="alert">
+                    {inputError}
+                  </p>
+                )}
+                <button type="submit" className="primary-button generate-button">
+                  <span>Generate world</span>
+                  <span className="button-island">
+                    <StudioIcon name="arrow" />
+                  </span>
+                </button>
+              </form>
+              <div className="sample-links">
+                <span>Try</span>
+                {SAMPLES.map((sample) => (
+                  <button
+                    type="button"
+                    className="sample-chip"
+                    key={sample.name}
+                    onClick={() => generate(sample.url)}
+                  >
+                    {sample.name}
+                    <span aria-hidden="true">↗</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+            <section className="editor-section">
+              <div className="section-heading">
+                <span className="step-number">02</span>
+                <h2>Choose your world</h2>
+                <span className="section-count">{WORLD_CATALOG.length}</span>
+              </div>
+              <div className="category-tabs" aria-label="World categories">
+                {WORLD_CATEGORIES.map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={category === value}
+                    onClick={() => setCategory(value)}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
+              <div className="world-picker" aria-label="World style">
+                {WORLD_CATALOG.filter(
+                  (world) => category === "All" || world.category === category,
+                ).map((world) => (
+                  <button
+                    key={world.id}
+                    type="button"
+                    className="world-card"
+                    aria-pressed={model === world.id}
+                    title={world.description}
+                    onClick={() => selectWorld(world.id)}
+                    onPointerEnter={() => warmWorld(world.id)}
+                    onPointerLeave={cancelWarmup}
+                    onFocus={() => warmWorld(world.id)}
+                    onBlur={cancelWarmup}
+                  >
+                    <StudioIcon name={world.mark} />
+                    <span>{world.name}</span>
+                    {model === world.id && <span className="selection-dot" />}
+                  </button>
+                ))}
+              </div>
+            </section>
+            <section className="editor-section palette-section">
+              <div className="section-heading">
+                <span className="step-number">03</span>
+                <h2>Find your colors</h2>
+              </div>
+              <div className="palette-heading">
+                <span>{palette.name}</span>
+                {option.seededPalette && (
+                  <button
+                    type="button"
+                    className="text-button"
+                    aria-pressed={paletteId === "seeded"}
+                    onClick={() => setPaletteId("seeded")}
+                  >
+                    Match this link <span aria-hidden="true">↗</span>
+                  </button>
+                )}
+              </div>
+              <div className="palette-picker" aria-label="World palette">
+                {palettes.map((preset) => (
+                  <button
+                    type="button"
+                    key={preset.id}
+                    className="palette-card"
+                    aria-pressed={paletteId !== "seeded" && palette.id === preset.id}
+                    title={preset.description}
+                    onClick={() => setPaletteId(preset.id)}
+                  >
+                    <span className="palette-swatches" aria-hidden="true">
+                      {preset.swatches.map((color, index) => (
+                        <span key={index} style={{ backgroundColor: color }} />
+                      ))}
+                    </span>
+                    <span>{preset.name}</span>
+                    {paletteId !== "seeded" && palette.id === preset.id && (
+                      <span className="selection-dot" />
+                    )}
+                  </button>
+                ))}
+              </div>
+              <p className="palette-description">{palette.description}</p>
+            </section>
+          </div>
+        </aside>
       </div>
+      <footer className="studio-footer">
+        <span>Procedural worlds. Real destinations.</span>
+        <span>Made with curiosity · improved by drane</span>
+      </footer>
     </main>
   );
 }
