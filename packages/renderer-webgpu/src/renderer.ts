@@ -12,6 +12,11 @@ import {
 } from "./diorama-population.js";
 import type { SeedGpuScene } from "./gpu-scene.js";
 import { prepareScene } from "./prepared-scene.js";
+import {
+  isCandidateWorld,
+  validateWorldDrawPlan,
+  type WorldDrawPlan,
+} from "./generator-v3/world-draw.js";
 import { acquireGpuDevice, releaseGpuDevice } from "./gpu-session.js";
 import { getPalettesForModel } from "./world-palettes.js";
 import { isStagedWorld, selectWorldPalette } from "./staged-world.js";
@@ -58,6 +63,7 @@ type PipelineLayouts = {
 };
 
 type SharedPipelines = {
+  readonly canonicalQr: GPURenderPipeline | undefined;
   readonly post: GPURenderPipeline;
   readonly rain: GPURenderPipeline;
 };
@@ -411,6 +417,15 @@ const SEED_SHADER_LOADERS = {
     return versionOneShaderLoaders[form as keyof typeof versionOneShaderLoaders]();
   },
   2: (form: SeedForm) => VERSION_TWO_SHADER_LOADERS[form](),
+  3: async (form: SeedForm): Promise<SeedShaderSources> => {
+    if (!isCandidateWorld(form)) return VERSION_TWO_SHADER_LOADERS[form]();
+    const [shared, candidate] = await Promise.all([
+      loadCurrentSharedShaders(),
+      import("./generator-v3/world-shader.js"),
+    ]);
+    const shader = await candidate.loadCandidateWorldShader(form);
+    return { ...shared, form, [form]: shader } as SeedShaderSources;
+  },
 } satisfies Record<GeneratorVersion, (form: SeedForm) => Promise<SeedShaderSources>>;
 
 export async function loadSeedShaderSources(
@@ -442,6 +457,7 @@ type SeedBuffers = {
 };
 
 type SeedBindGroups = {
+  readonly canonicalQr: GPUBindGroup | undefined;
   readonly blocks: GPUBindGroup;
   readonly branches: GPUBindGroup;
   readonly butterflies: GPUBindGroup;
@@ -473,6 +489,7 @@ type SeedGpuResources = {
   readonly buffers: SeedBuffers;
   readonly cityPartCount: number;
   readonly worldPopulation: { primary: number; ambient: number };
+  readonly worldDrawPlan: WorldDrawPlan | undefined;
   readonly circuitComponentCount: number;
   readonly circuitMaterial: GPUTexture | undefined;
   readonly circuitTraceCount: number;
@@ -795,16 +812,17 @@ async function createSharedPipelines(
   format: GPUTextureFormat,
   layouts: PipelineLayouts,
   sources: SharedShaderSources,
+  generatorVersion: GeneratorVersion,
 ): Promise<SharedPipelines> {
   let cache = sharedPipelineCache.get(device);
   if (!cache) {
     cache = new Map();
     sharedPipelineCache.set(device, cache);
   }
-  const key = format + sources.post + sources.weather;
+  const key = generatorVersion + format + sources.post + sources.weather;
   let result = cache.get(key);
   if (!result) {
-    result = buildSharedPipelines(device, format, layouts, sources);
+    result = buildSharedPipelines(device, format, layouts, sources, generatorVersion);
     cache.set(key, result);
     void result.catch(() => cache!.delete(key));
   }
@@ -816,6 +834,7 @@ async function buildSharedPipelines(
   format: GPUTextureFormat,
   layouts: PipelineLayouts,
   sources: SharedShaderSources,
+  generatorVersion: GeneratorVersion,
 ): Promise<SharedPipelines> {
   const [postModule, rainModule] = await Promise.all([
     createShaderModule(device, "every-qrcode-post", sources.post),
@@ -835,7 +854,23 @@ async function buildSharedPipelines(
     primitive: { topology: "triangle-list" },
     vertex: { entryPoint: "vertexMain", module: postModule },
   });
-  return { post, rain };
+  let canonicalQr: GPURenderPipeline | undefined;
+  if (generatorVersion === 1) {
+    const { CANONICAL_QR_SHADER } = await import("./canonical-qr-shader.js");
+    const module = await createShaderModule(
+      device,
+      "every-qrcode-canonical-qr",
+      CANONICAL_QR_SHADER,
+    );
+    canonicalQr = await device.createRenderPipelineAsync({
+      fragment: { entryPoint: "fragmentMain", module, targets: [{ format }] },
+      label: "every-qrcode-canonical-qr-pipeline",
+      layout: device.createPipelineLayout({ bindGroupLayouts: [layouts.blocks] }),
+      primitive: { topology: "triangle-list" },
+      vertex: { entryPoint: "vertexMain", module },
+    });
+  }
+  return { canonicalQr, post, rain };
 }
 
 async function createTerrainPipelines(
@@ -1151,8 +1186,18 @@ async function buildPipelines(
   form: SeedForm,
   generatorVersion: GeneratorVersion,
 ): Promise<SeedPipelines> {
-  const sources = await loadSeedShaderSources(form, generatorVersion);
-  const shared = await createSharedPipelines(device, format, layouts, sources);
+  const rawSources = await loadSeedShaderSources(form, generatorVersion);
+  let sources = rawSources;
+  if (generatorVersion === 1) {
+    const { prepareVersionOneShaderCompilation } = await import("./legacy-wgsl-compat.js");
+    sources = Object.fromEntries(
+      Object.entries(rawSources).map(([name, code]) => [
+        name,
+        prepareVersionOneShaderCompilation(code),
+      ]),
+    ) as SeedShaderSources;
+  }
+  const shared = await createSharedPipelines(device, format, layouts, sources, generatorVersion);
   if (sources.form === "city") {
     return createCityPipelines(device, format, layouts, shared, sources);
   }
@@ -1375,7 +1420,22 @@ function createBindGroups(
           ],
         })
       : undefined;
+  const canonicalQr =
+    generatorVersion === 1
+      ? device.createBindGroup({
+          label: "every-qrcode-canonical-qr-bind-group",
+          layout: layouts.blocks,
+          entries: [
+            uniformEntry,
+            { binding: 1, resource: { buffer: buffers.blockTypes } },
+            { binding: 2, resource: { buffer: buffers.blockPositions } },
+            { binding: 3, resource: { buffer: buffers.blockHeights } },
+            { binding: 4, resource: { buffer: buffers.baseY } },
+          ],
+        })
+      : undefined;
   return {
+    canonicalQr,
     blocks,
     branches,
     butterflies,
@@ -1636,6 +1696,10 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
       pass.setBindGroup(0, gpu.bindGroups.fallingPetals);
       pass.draw(gpu.scene.fallingPetalCount * 24);
     }
+  } else if (gpu.worldDrawPlan) {
+    pass.setPipeline(Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline);
+    for (const batch of gpu.worldDrawPlan.batches)
+      pass.draw(batch.verticesPerInstance, batch.instanceCount, 0, batch.firstInstance);
   } else if (isStagedWorld(gpu.pipelines.form)) {
     const pipeline = Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline;
     pass.setPipeline(pipeline);
@@ -1701,6 +1765,11 @@ function encodeQrPass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): void {
     pass.setPipeline(gpu.pipelines.terrain);
     pass.setBindGroup(0, gpu.bindGroups.blocks);
     pass.draw(6, owners, 0, owners + 1);
+  } else if (gpu.worldDrawPlan) {
+    pass.setPipeline(Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline);
+    pass.setBindGroup(0, gpu.bindGroups.blocks);
+    const qr = gpu.worldDrawPlan.qr;
+    pass.draw(qr.verticesPerInstance, qr.instanceCount, 0, qr.firstInstance);
   } else if (isStagedWorld(gpu.pipelines.form)) {
     pass.setPipeline(Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline);
     pass.setBindGroup(0, gpu.bindGroups.blocks);
@@ -1730,10 +1799,37 @@ function encodePostPass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): void
 
 function renderGpuFrame(gpu: SeedGpuResources): void {
   const encoder = gpu.device.createCommandEncoder({ label: "every-qrcode-frame" });
-  encodeScenePass(encoder, gpu);
-  encodeQrPass(encoder, gpu);
-  encodePostPass(encoder, gpu);
+  if (gpu.generatorVersion === 1 && gpu.uniformValues[3] === 1) {
+    encodeCanonicalQrPass(encoder, gpu);
+  } else {
+    encodeScenePass(encoder, gpu);
+    encodeQrPass(encoder, gpu);
+    encodePostPass(encoder, gpu);
+  }
   gpu.device.queue.submit([encoder.finish()]);
+}
+
+function encodeCanonicalQrPass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): void {
+  const pipeline = gpu.pipelines.canonicalQr;
+  const bindGroup = gpu.bindGroups.canonicalQr;
+  if (!pipeline || !bindGroup) throw new Error("Canonical QR endpoint was not initialized");
+  const pass = encoder.beginRenderPass({
+    label: "every-qrcode-canonical-qr-pass",
+    colorAttachments: [
+      {
+        clearValue: { r: 1, g: 1, b: 1, a: 1 },
+        loadOp: "clear",
+        storeOp: "store",
+        view: gpu.context.getCurrentTexture().createView(),
+      },
+    ],
+  });
+  pass.setPipeline(pipeline);
+  pass.setBindGroup(0, bindGroup);
+  const owners = gpu.blockField.blocks.length;
+  pass.draw(6, 1, 0, owners);
+  pass.draw(6, owners);
+  pass.end();
 }
 
 function destroyGpuResources(gpu: SeedGpuResources | undefined): void {
@@ -1785,6 +1881,12 @@ async function initializeGpu(
       reefCoralData,
       reefFishData,
     } = prepared;
+    const worldDrawPlan = prepared.worldDrawPlan;
+    if (model.generatorVersion === 3 && isCandidateWorld(form)) {
+      if (!worldDrawPlan || worldDrawPlan.form !== form)
+        throw new RangeError("Missing candidate world draw plan");
+      validateWorldDrawPlan(worldDrawPlan, modelData, blockField.blocks.length);
+    }
     if (cancelled()) throw new Error("Renderer initialization cancelled");
     buffers = createBuffers(
       device,
@@ -1826,6 +1928,7 @@ async function initializeGpu(
       buffers,
       cityPartCount,
       worldPopulation: getSculpturalPopulation(modelData, form),
+      worldDrawPlan,
       circuitComponentCount,
       circuitMaterial,
       circuitTraceCount,

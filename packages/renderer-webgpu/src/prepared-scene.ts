@@ -1,29 +1,37 @@
 import { createSeedBlockField, type SeedForm, type SeedModel } from "./seed-model.js";
 import { createSeedGpuScene } from "./gpu-scene.js";
 import { isStagedWorld } from "./staged-world.js";
+import { resolveGeneratorVersion } from "@every-qrcode/core";
+import {
+  isCandidateWorld,
+  prepareCandidateWorld,
+  type WorldDrawPlan,
+} from "./generator-v3/world-draw.js";
 
 // A model owns its prepared worlds. When the caller evicts a model, all its
 // scene arrays are collectible; palette changes never duplicate geometry.
-const scenes = new WeakMap<SeedModel, Map<SeedForm, Promise<PreparedScene>>>();
+const scenes = new WeakMap<SeedModel, Map<string, Promise<PreparedScene>>>();
 type PreparedScene = Awaited<ReturnType<typeof buildScene>>;
 export function prepareScene(model: SeedModel, form: SeedForm): Promise<PreparedScene> {
+  const key = `${resolveGeneratorVersion(model.generatorVersion)}:${form}`;
   let forms = scenes.get(model);
   if (!forms) {
     forms = new Map();
     scenes.set(model, forms);
   }
-  let result = forms.get(form);
+  let result = forms.get(key);
   if (!result) {
     result = Promise.resolve().then(() => buildScene(model, form));
-    forms.set(form, result);
+    forms.set(key, result);
     const pending = result;
     void result.catch(() => {
-      if (forms!.get(form) === pending) forms!.delete(form);
+      if (forms!.get(key) === pending) forms!.delete(key);
     });
   }
   return result;
 }
 async function buildScene(model: SeedModel, form: SeedForm) {
+  let worldDrawPlan: WorldDrawPlan | undefined;
   const blockField = createSeedBlockField(model, form);
   const scene = createSeedGpuScene(model, form);
   let modelData: Float32Array<ArrayBufferLike> = new Float32Array();
@@ -43,6 +51,10 @@ async function buildScene(model: SeedModel, form: SeedForm) {
     }
     const legacy = await import("./generator-v1/prepared-layout.js");
     ({ modelData, cityPartCount } = await legacy.prepareVersionOneLayout(model, form));
+  } else if (model.generatorVersion === 3 && isCandidateWorld(form)) {
+    const candidate = await prepareCandidateWorld(model, form);
+    modelData = candidate.modelData;
+    worldDrawPlan = candidate.drawPlan;
   } else if (form === "city") {
     const cityModule = await import("./city-model.js");
     modelData = cityModule.createCityLayout(model).lotData;
@@ -77,6 +89,7 @@ async function buildScene(model: SeedModel, form: SeedForm) {
   }
 
   return {
+    ...(worldDrawPlan ? { worldDrawPlan } : {}),
     blockField,
     scene,
     modelData,
