@@ -3,6 +3,8 @@ export * from "./generator-version.js";
 export * from "./identity.js";
 export * from "./link-dna.js";
 export * from "./qr.js";
+export * from "./qr-artifact.js";
+export * from "./qr-export.js";
 export * from "./qr-svg.js";
 export * from "./qr-fields.js";
 export * from "./qr-roles.js";
