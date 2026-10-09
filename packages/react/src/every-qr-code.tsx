@@ -345,7 +345,9 @@ export function EveryQRCode({
     setView(next);
     onViewChange?.(next);
   }, [error, interactive, onViewChange, view]);
-  const qr = artifact && (view === "qr" || error || !ready) ? artifact.svg : null;
+  // A healthy canvas owns the entire morph and its canonical QR endpoint.
+  // Covering it immediately on view changes hides the transition and palette.
+  const qr = artifact && (error || !ready) ? artifact.svg : null;
 
   return (
     <button

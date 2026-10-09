@@ -71,11 +71,10 @@ export function oceanCrestPoint(
     const v = Math.max(0, Math.min(1, value));
     return v * v * (3 - 2 * v);
   };
-  const envelope = smooth(u / 0.21) * (1 - smooth((u - 0.65) / 0.35));
+  const envelope = smooth(u / 0.17) * (1 - smooth((u - 0.8) / 0.2));
   const [cross, rise] = profile(t);
   const along = (u - 0.5) * crest.length;
-  const irregular =
-    1 + Math.sin(u * 15 + crest.phase) * 0.045 + Math.sin(u * 31 + crest.phase * 2) * 0.018;
+  const irregular = 1 + Math.sin(u * 7 + crest.phase) * 0.045;
   const across =
     cross * crest.width * (0.4 + envelope * 0.6) * (1 + (crest.curl - 1) * Math.max(0, t - 0.4)) +
     crest.bow * ((u * 2 - 1) ** 2 - 0.35);

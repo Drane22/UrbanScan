@@ -80,9 +80,12 @@ export function createMechanicalLayout(model: SeedModel) {
   const phase = next() * Math.PI * 2;
   const parts: FacetedPart[] = [];
   const base: Mesh = [];
-  box(base, [0, -0.033, 0], [0.98, 0.065, 0.9], 0);
+  box(base, [0, -0.027, 0.01], [0.94, 0.053, 0.8], 0);
   parts.push({ mesh: base });
   const frame: Mesh = [];
+  // A common raised bed ties the two bearing towers and slider rails together.
+  for (const z of [-0.355, 0.335]) box(frame, [0, 0.018, z], [0.85, 0.035, 0.04], 2);
+  for (const x of [-0.405, 0.405]) box(frame, [x, 0.018, -0.01], [0.04, 0.035, 0.65], 1);
   for (const axle of [driver, follower]) {
     box(frame, [axle[0], 0.035, 0.07], [0.115, 0.045, 0.22], 2);
     box(frame, [axle[0], axle[1] / 2, 0.07], [0.047, axle[1], 0.06], 2);
@@ -97,9 +100,24 @@ export function createMechanicalLayout(model: SeedModel) {
   parts.push({ mesh: frame });
   const rotating = (mesh: Mesh, pivot: Vec3, ratio = 1, offset = phase) =>
     parts.push({ mesh, pivot, motion: 1, ratio, phase: offset });
-  rotating(gearMesh(driver, pair.driverRadius, pair.driverTeeth, 0.035, 0.04), driver);
+  const spokedGear = (center: Vec3, radius: number, teeth: number, opening: number) => {
+    const mesh = gearMesh(center, radius, teeth, opening, 0.04);
+    for (let i = 0; i < 3; i++) {
+      const angle = (i * Math.PI * 2) / 3;
+      beam(
+        mesh,
+        center,
+        [center[0] + Math.cos(angle) * opening, center[1] + Math.sin(angle) * opening, center[2]],
+        0.018,
+        0.04,
+        1,
+      );
+    }
+    return mesh;
+  };
+  rotating(spokedGear(driver, pair.driverRadius, pair.driverTeeth, 0.065), driver);
   rotating(
-    gearMesh(follower, pair.followerRadius, pair.followerTeeth, 0.027, 0.04),
+    spokedGear(follower, pair.followerRadius, pair.followerTeeth, 0.044),
     follower,
     -pair.driverTeeth / pair.followerTeeth,
     (-phase * pair.driverTeeth) / pair.followerTeeth + pair.engagementPhase,

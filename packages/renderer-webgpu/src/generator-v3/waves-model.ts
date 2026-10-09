@@ -29,47 +29,31 @@ export function createOceanLayout(model: SeedModel) {
   if (model.generatorVersion !== 3)
     throw new RangeError("Ocean layout requires generator version 3");
   const next = randomStream(model);
-  const side = next() < 0.5 ? -1 : 1;
+  // A broad breaker moves toward the near shoreline; a low offshore swell follows it.
+  const phase = next() * Math.PI * 2;
+  const angle = Math.PI + (next() - 0.5) * 0.12;
   const crests: OceanCrest[] = [
     {
-      center: [side * 0.1 + (next() - 0.5) * 0.09, 0.015 + next() * 0.095],
-      length: 0.5 + next() * 0.18,
-      height: 0.25 + next() * 0.1,
-      width: 0.21 + next() * 0.065,
-      angle: Math.PI - 0.96 + next() * 0.7,
-      bow: -0.02 + next() * 0.13,
-      curl: 0.85 + next() * 0.25,
-      phase: next() * Math.PI * 2,
+      center: [(next() - 0.5) * 0.035, -0.005 + next() * 0.035],
+      length: 0.82 + next() * 0.045,
+      height: 0.2 + next() * 0.025,
+      width: 0.19 + next() * 0.015,
+      angle,
+      bow: 0.04 + next() * 0.025,
+      curl: 1.05 + next() * 0.12,
+      phase,
     },
     {
-      center: [-side * 0.25 + (next() - 0.5) * 0.035, -0.235 + (next() - 0.5) * 0.045],
-      length: 0.28 + next() * 0.07,
-      height: 0.055 + next() * 0.025,
-      width: 0.075 + next() * 0.025,
-      angle: side > 0 ? 3.3 + next() * 0.4 : 1.7 + next() * 0.4,
-      bow: 0.025 + next() * 0.03,
-      curl: 0.7 + next() * 0.15,
-      phase: next() * Math.PI * 2,
+      center: [(next() - 0.5) * 0.075, 0.28],
+      length: 0.68 + next() * 0.08,
+      height: 0.028 + next() * 0.012,
+      width: 0.07,
+      angle: angle + 0.1 + next() * 0.08,
+      bow: 0.04,
+      curl: 0.55,
+      phase: phase + 1,
     },
   ];
-  crests[1] = {
-    ...crests[1]!,
-    angle:
-      side > 0
-        ? Math.max(crests[1]!.angle, crests[0]!.angle + 0.5)
-        : Math.min(crests[1]!.angle, crests[0]!.angle - 0.5),
-  };
-  if (next() > 0.42)
-    crests.push({
-      center: [-side * 0.24 + (next() - 0.5) * 0.035, 0.21 + (next() - 0.5) * 0.035],
-      length: 0.28 + next() * 0.04,
-      height: 0.045 + next() * 0.015,
-      width: 0.06 + next() * 0.025,
-      angle: -0.6 + next() * 0.2,
-      bow: 0.025,
-      curl: 0.72,
-      phase: next() * Math.PI * 2,
-    });
   const baseHeight = (p: Point) => oceanFieldPoint(crests, p[0], p[2])[1];
   const pieces = [
     sampleOceanMesh(

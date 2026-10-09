@@ -26,8 +26,8 @@ fn quad(v:u32)->vec2f {
 fn deform(p:vec3f,n:vec3f,index:u32,base:f32)->mat2x3f {
  let center=worldData[4u+index*3u];let parameters=worldData[5u+index*3u];
  let cycle=uniforms.time*0.62+parameters.w;
- let stretch=1.0+sin(cycle)*0.035;
- let shear=sin(cycle)*0.012/parameters.x;
+ let stretch=1.0+sin(cycle)*0.07;
+ let shear=sin(cycle-0.7)*0.026/parameters.x;
  let direction=vec2f(-sin(center.w),cos(center.w));
  let rise=max(0.0,p.y-base);
  let q=vec3f(p.x+direction.x*rise*shear,base+rise*stretch,p.z+direction.y*rise*shear);
@@ -95,10 +95,11 @@ fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32
 @fragment
 fn fragmentMain(o:OceanOutput)->@location(0) vec4f {
  let phase=worldData[5u+min(o.owner,2u)*3u].w;
- let foamCoord=vec2f(o.uv.x*35.0-uniforms.time*0.22+phase,o.uv.y*22.0+uniforms.time*0.05);
+ let foamCoord=vec2f(o.uv.x*65.0-uniforms.time*0.22+phase,o.uv.y*36.0+uniforms.time*0.05);
  let foamPattern=noise(foamCoord)*0.65+noise(foamCoord*2.1)*0.35;
  let foamAA=max(fwidth(foamPattern),0.025);
  let coordinate=o.world/(uniforms.gridSize*uniforms.blockSize);
+ let shore=coordinate.z+0.285+sin(coordinate.x*5.0+worldData[5].w)*0.028;
  let ripples=sin(coordinate.x*70.0+coordinate.z*30.0-uniforms.time*0.4)*sin(coordinate.x*23.0-coordinate.z*73.0+uniforms.time*0.1);
  let rippleAA=max(fwidth(ripples),0.04);
  if(o.kind==4u){
@@ -112,23 +113,31 @@ fn fragmentMain(o:OceanOutput)->@location(0) vec4f {
  let shade=0.66+0.34*max(0.0,dot(n,light));
  let height=o.world.y/(uniforms.gridSize*uniforms.blockSize);
  let depth=smoothstep(-0.035,0.025,height);
- let water=mix(uniforms.themePrimary.rgb,uniforms.themeThird.rgb,0.40+depth*0.38);
+ let shallows=1.0-smoothstep(0.04,0.60,shore);
+ let water=mix(uniforms.themePrimary.rgb,uniforms.themeThird.rgb,0.52+depth*0.24+shallows*0.15);
  var color=water*shade;
  let fresnel=pow(1.0-max(0.0,dot(n,view)),4.0);
  let reflection=pow(max(0.0,dot(n,normalize(light+view))),72.0);
  color+=uniforms.themeFifth.rgb*(reflection*0.18+fresnel*0.065);
  if(o.kind==0u){
-  color=mix(uniforms.themePrimary.rgb,uniforms.themeThird.rgb,0.18)*0.82;
-  color+=uniforms.themeThird.rgb*exp(-abs(height+0.008)*120.0)*0.12;
+  let sand=vec3f(0.78,0.64,0.42)*shade;
+  color=mix(sand,mix(uniforms.themePrimary.rgb,uniforms.themeThird.rgb,0.35)*0.85,smoothstep(-0.01,0.035,shore));
  } else if(o.kind==1u){
   color+=uniforms.themeFifth.rgb*smoothstep(0.70-rippleAA,0.70+rippleAA,ripples)*0.025*depth;
+  // The same continuous field becomes wet sand and beach; no disconnected shore mesh.
+  let wash=sin(uniforms.time*0.62+worldData[5].w)*0.016;
+  let boundary=shore+wash+sin(coordinate.x*23.0+uniforms.time*0.3)*0.004;
+  let sand=mix(vec3f(0.80,0.68,0.48),vec3f(0.93,0.84,0.65),1.0-smoothstep(-0.10,0.005,shore));
+  color=mix(sand,color,smoothstep(-0.008,0.020,boundary));
+  let foamLine=exp(-pow((boundary-0.027)/0.014,2.0));
+  let washLace=smoothstep(0.38-foamAA,0.38+foamAA,foamPattern);
+  color=mix(color,uniforms.themeFifth.rgb,foamLine*(0.48+0.35*washLace));
  } else if(o.kind==2u){
-  let lip=0.58+sin(o.uv.x*17.0+phase)*0.045+sin(o.uv.x*43.0+phase*0.6)*0.025;
-  let cap=smoothstep(lip-0.13,lip-0.06,o.uv.y)*(1.0-smoothstep(lip+0.20,lip+0.32,o.uv.y));
-  let edge=smoothstep(0.89+sin(o.uv.x*43.0+phase)*0.02,0.97,o.uv.y);
-  let skin=max(cap*0.85,edge*0.9);
-  let threshold=0.57-smoothstep(0.82,1.0,o.uv.y)*0.23;
-  let density=smoothstep(threshold-foamAA,threshold+foamAA,foamPattern);
+  let lip=0.73+sin(o.uv.x*15.0+phase)*0.012;
+  let cap=smoothstep(lip-0.055,lip,o.uv.y)*(1.0-smoothstep(lip+0.10,lip+0.15,o.uv.y));
+  let edge=smoothstep(0.94,0.99,o.uv.y);
+  let skin=max(cap*0.72,edge*0.82);
+  let density=0.72+0.28*smoothstep(0.45-foamAA,0.45+foamAA,foamPattern);
   let taper=smoothstep(0.02,0.16,o.uv.x)*(1.0-smoothstep(0.84,0.98,o.uv.x));
   let foam=skin*density*taper;
   let seafoam=uniforms.themeFifth.rgb*(0.78+0.22*max(0.0,dot(n,light)));
