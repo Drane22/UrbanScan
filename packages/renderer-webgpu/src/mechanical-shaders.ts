@@ -22,8 +22,9 @@ fn worldSurface(v:u32,i:u32,part:u32)->Surface {
   let p=cylinder(v,r,(1.15+stroke/s)*s);return surface(c+vec3f(0.65,0.26,0.35)*s+p,mix(uniforms.themeFifth.rgb,palette(2),select(0.75,0.15,band>1u)),0.02);
  }
  if(i%3u==0u){
-  // Six vent slats above a dark recess.
-  let slat=(v/64u)%6u;let p=cube(v%64u,vec3f(1.45,0.08,0.12)*s)+vec3f(0,0.34,(f32(slat)-2.5)*0.23)*s;
+  // Six complete 36-vertex cubes; unused triangles collapse at their anchor.
+  if(v>=216u){return surface(c,palette(0),0);}
+  let slat=v/36u;let p=cube(v%36u,vec3f(1.45,0.08,0.12)*s)+vec3f(0,0.34,(f32(slat)-2.5)*0.23)*s;
   return surface(c+p,palette(0)*1.8,0);
  }
  let end=worldAnchor(select(i+1u,i,i%8u==7u))+vec3f(0,0.3*s,0);

@@ -1,11 +1,11 @@
 import {
   CURRENT_GENERATOR_VERSION,
-  createEveryQRCodeIdentity,
-  createQRSvgPath,
+  createQRArtifact,
   type EveryQRCodeIdentity,
   type GeneratorVersion,
   type IdentityScope,
   type QRSvgPath,
+  type QRArtifact,
 } from "@every-qrcode/core";
 import type { SeedSceneConfig } from "@every-qrcode/renderer-webgpu";
 import {
@@ -50,6 +50,7 @@ export type EveryQRCodeProps = {
   readonly onError?: (error: Error) => void;
   readonly onIdentity?: (identity: EveryQRCodeIdentity, morphSeed: number) => void;
   readonly onReady?: () => void;
+  readonly onQRReady?: (artifact: QRArtifact) => void;
   readonly onViewChange?: (view: EveryQRCodeView) => void;
   readonly onZoomChange?: (zoom: number) => void;
   readonly scene?: EveryQRCodeSceneConfig;
@@ -172,109 +173,58 @@ function useSeedZoom(options: {
   return { handleKeyDown, zoom, zoomRef };
 }
 
-function useMountedRenderer(options: {
-  readonly canvasRef: { current: HTMLCanvasElement | null };
-  readonly onRendererError: (error: Error) => void;
-  readonly onRendererReady: () => void;
-  readonly prepared: PreparedSeed | null;
-  readonly rendererRef: { current: SeedRenderer | null };
-  readonly sceneRef: { current: EveryQRCodeSceneConfig | undefined };
-  readonly view: EveryQRCodeView;
-  readonly zoomRef: { current: number };
-}): void {
-  useEffect(() => {
-    const canvas = options.canvasRef.current;
-    if (!canvas || !options.prepared) return;
-    const renderer = options.prepared.mount(
-      canvas,
-      options.sceneRef.current ?? {},
-      options.onRendererError,
-      options.onRendererReady,
-    );
-    const observer =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(renderer.resize);
-    options.rendererRef.current = renderer;
-    renderer.setFlat(options.view === "qr");
-    renderer.setZoom(options.zoomRef.current);
-    renderer.resize();
-    observer?.observe(canvas);
-    return () => {
-      observer?.disconnect();
-      renderer.dispose();
-      if (options.rendererRef.current === renderer) options.rendererRef.current = null;
-    };
-  }, [
-    options.canvasRef,
-    options.onRendererError,
-    options.onRendererReady,
-    options.prepared,
-    options.rendererRef,
-    options.sceneRef,
-  ]);
-}
-
 function errorFrom(reason: unknown): Error {
   return reason instanceof Error ? reason : new Error("Every QR Code could not render this URL.");
 }
+
+type PreparedSource = {
+  identity: EveryQRCodeIdentity;
+  morphSeed: number;
+  mount: (
+    canvas: HTMLCanvasElement,
+    scene: EveryQRCodeSceneConfig,
+    onError: (error: Error) => void,
+    onReady: () => void,
+    form: EveryQRCodeModel,
+  ) => SeedRenderer;
+  qr: QRSvgPath;
+};
+const preparedSources = new Map<string, Promise<PreparedSource>>();
 
 async function prepareSeed(
   generatorVersion: EveryQRCodeGeneratorVersion,
   identityScope: IdentityScope,
   url: string,
   model: EveryQRCodeModel,
+  artifact: QRArtifact,
 ): Promise<PreparedSeed> {
   const key = JSON.stringify([generatorVersion, identityScope, url]);
   let source = preparedSources.get(key);
   if (!source) {
     source = (async () => {
-      const [identity, { createSeedModel, mountSeed }] = await Promise.all([
-        createEveryQRCodeIdentity(url, { identityScope }),
-        import("@every-qrcode/renderer-webgpu"),
-      ]);
-      const seed = await createSeedModel(identity, { generatorVersion });
+      const { createSeedModel, mountSeed } = await import("@every-qrcode/renderer-webgpu");
+      const seed = await createSeedModel(artifact.identity, { generatorVersion });
       return {
-        identity,
+        identity: artifact.identity,
         morphSeed: seed.morphSeed,
-        mount: (
-          canvas: HTMLCanvasElement,
-          scene: EveryQRCodeSceneConfig,
-          onError: (error: Error) => void,
-          onReady: () => void,
-          form: EveryQRCodeModel,
-        ) => mountSeed(canvas, seed, scene, form, { onError, onReady }),
-        qr: createQRSvgPath(identity.qr),
-      };
+        qr: artifact.svg,
+        mount: (canvas, scene, onError, onReady, form) =>
+          mountSeed(canvas, seed, scene, form, { onError, onReady }),
+      } satisfies PreparedSource;
     })();
     preparedSources.set(key, source);
     if (preparedSources.size > 8) preparedSources.delete(preparedSources.keys().next().value!);
-    void source.catch(() => {
-      if (preparedSources.get(key) === source) preparedSources.delete(key);
+    const pending = source;
+    void pending.catch(() => {
+      if (preparedSources.get(key) === pending) preparedSources.delete(key);
     });
   }
   const value = await source;
   return {
-    identity: value.identity,
-    morphSeed: value.morphSeed,
+    ...value,
     mount: (canvas, scene, onError, onReady) => value.mount(canvas, scene, onError, onReady, model),
-    qr: value.qr,
   };
 }
-
-const preparedSources = new Map<
-  string,
-  Promise<{
-    identity: EveryQRCodeIdentity;
-    morphSeed: number;
-    mount: (
-      canvas: HTMLCanvasElement,
-      scene: EveryQRCodeSceneConfig,
-      onError: (error: Error) => void,
-      onReady: () => void,
-      form: EveryQRCodeModel,
-    ) => SeedRenderer;
-    qr: QRSvgPath;
-  }>
->();
 
 export function EveryQRCode({
   className,
@@ -287,6 +237,7 @@ export function EveryQRCode({
   onError,
   onIdentity,
   onReady,
+  onQRReady,
   onViewChange,
   onZoomChange,
   scene,
@@ -296,16 +247,27 @@ export function EveryQRCode({
   zoom: controlledZoom,
 }: EveryQRCodeProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const onErrorRef = useRef(onError);
-  const onIdentityRef = useRef(onIdentity);
-  const onReadyRef = useRef(onReady);
   const rendererRef = useRef<SeedRenderer | null>(null);
+  const callbacks = useRef({ onError, onIdentity, onReady, onQRReady });
+  callbacks.current = { onError, onIdentity, onReady, onQRReady };
   const sceneRef = useRef(scene);
-  const [error, setError] = useState<Error | null>(null);
-  const [prepared, setPrepared] = useState<PreparedSeed | null>(null);
+  sceneRef.current = scene;
+  const key = JSON.stringify([generatorVersion, identityScope, model, url]);
+  const currentKey = useRef(key);
+  currentKey.current = key;
+  const [state, setState] = useState<{
+    key: string;
+    artifact: QRArtifact | null;
+    error: Error | null;
+    ready: boolean;
+  }>({ key, artifact: null, error: null, ready: false });
+  const artifact = state.key === key ? state.artifact : null;
+  const error = state.key === key ? state.error : null;
+  const ready = state.key === key && state.ready;
   const [internalView, setView] = useState<EveryQRCodeView>(initialView);
   const view = controlledView ?? internalView;
-  const [ready, setReady] = useState(false);
+  const viewRef = useRef(view);
+  viewRef.current = view;
   const { handleKeyDown, zoom, zoomRef } = useSeedZoom({
     generatorVersion,
     initialZoom,
@@ -315,94 +277,90 @@ export function EveryQRCode({
     url,
     zoom: controlledZoom,
   });
-  const handleRendererError = useCallback((reason: Error) => {
-    const nextError = errorFrom(reason);
-    setError(nextError);
-    setReady(false);
-    onErrorRef.current?.(nextError);
-  }, []);
-  const handleRendererReady = useCallback(() => {
-    setReady(true);
-    onReadyRef.current?.();
-  }, []);
-  useMountedRenderer({
-    canvasRef,
-    onRendererError: handleRendererError,
-    onRendererReady: handleRendererReady,
-    prepared,
-    rendererRef,
-    sceneRef,
-    view,
-    zoomRef,
-  });
-
-  useEffect(() => {
-    onErrorRef.current = onError;
-  }, [onError]);
-
-  useEffect(() => {
-    onIdentityRef.current = onIdentity;
-  }, [onIdentity]);
-
-  useEffect(() => {
-    onReadyRef.current = onReady;
-  }, [onReady]);
 
   useEffect(() => setView(initialView), [generatorVersion, initialView, url]);
-
   useEffect(() => {
-    let cancelled = false;
-    setError(null);
-    setPrepared(null);
-    setReady(false);
-    void prepareSeed(generatorVersion, identityScope, url, model)
-      .then((nextPrepared) => {
-        if (cancelled) return;
-        setError(null);
-        setPrepared(nextPrepared);
-        onIdentityRef.current?.(nextPrepared.identity, nextPrepared.morphSeed);
-      })
-      .catch((reason: unknown) => {
-        if (cancelled) return;
-        const nextError = errorFrom(reason);
-        setError(nextError);
-        onErrorRef.current?.(nextError);
-      });
-    return () => {
-      cancelled = true;
+    let active = true;
+    let failed = false;
+    let renderer: SeedRenderer | null = null;
+    let observer: ResizeObserver | null = null;
+    const current = () => active && currentKey.current === key;
+    const fail = (reason: unknown) => {
+      if (!current() || failed) return;
+      failed = true;
+      const error = errorFrom(reason);
+      setState((state) => ({ ...state, error, ready: false }));
+      observer?.disconnect();
+      renderer?.dispose();
+      if (rendererRef.current === renderer) rendererRef.current = null;
+      callbacks.current.onError?.(error);
     };
-  }, [generatorVersion, identityScope, model, url]);
-
+    setState({ key, artifact: null, error: null, ready: false });
+    void (async () => {
+      const nextArtifact = await createQRArtifact(url, identityScope);
+      if (!current()) return;
+      setState({ key, artifact: nextArtifact, error: null, ready: false });
+      callbacks.current.onQRReady?.(nextArtifact);
+      if (!current()) return;
+      const prepared = await prepareSeed(generatorVersion, identityScope, url, model, nextArtifact);
+      if (!current()) return;
+      callbacks.current.onIdentity?.(prepared.identity, prepared.morphSeed);
+      if (!current() || !canvasRef.current) return;
+      renderer = prepared.mount(canvasRef.current, sceneRef.current ?? {}, fail, () => {
+        if (!current() || failed) return;
+        setState((state) => ({ ...state, ready: true }));
+        callbacks.current.onReady?.();
+      });
+      if (!current() || failed) {
+        renderer.dispose();
+        return;
+      }
+      rendererRef.current = renderer;
+      renderer.setFlat(viewRef.current === "qr");
+      renderer.setZoom(zoomRef.current);
+      renderer.resize();
+      if (typeof ResizeObserver !== "undefined") {
+        observer = new ResizeObserver(() => {
+          if (current() && !failed) renderer?.resize();
+        });
+        observer.observe(canvasRef.current);
+      }
+    })().catch(fail);
+    return () => {
+      active = false;
+      observer?.disconnect();
+      renderer?.dispose();
+      if (rendererRef.current === renderer) rendererRef.current = null;
+    };
+  }, [generatorVersion, identityScope, key, model, url, zoomRef]);
   useEffect(() => {
-    sceneRef.current = scene;
     rendererRef.current?.setScene(scene ?? {});
   }, [scene]);
-
-  useEffect(() => rendererRef.current?.setFlat(view === "qr"), [view]);
-
+  useEffect(() => {
+    rendererRef.current?.setFlat(view === "qr");
+  }, [view]);
   const toggle = useCallback(() => {
     if (!interactive || error) return;
     const next = nextEveryQRCodeView(view);
     setView(next);
     onViewChange?.(next);
   }, [error, interactive, onViewChange, view]);
-
-  const fallback = error && prepared ? prepared.qr : null;
+  const qr = artifact && (view === "qr" || error || !ready) ? artifact.svg : null;
 
   return (
     <button
-      aria-busy={!ready && !error}
+      aria-busy={!artifact && !error}
       aria-disabled={!interactive || Boolean(error)}
       aria-keyshortcuts="+ - 0"
       aria-label={
-        fallback
+        error && qr
           ? "QR code fallback"
           : view === "model"
             ? "Reveal the QR code"
-            : `Restore the ${model}`
+            : "Restore the " + model
       }
       className={className}
-      data-every-qrcode-fallback={fallback ? "qr" : undefined}
+      data-every-qrcode-fallback={error && qr ? "qr" : undefined}
       data-every-qrcode-status={error ? "error" : ready ? "ready" : "loading"}
       data-every-qrcode-generator-version={generatorVersion}
       data-every-qrcode-model={model}
@@ -414,25 +372,25 @@ export function EveryQRCode({
       type="button"
     >
       <canvas
+        key={key}
         data-every-qrcode-canvas={model}
-        hidden={Boolean(fallback)}
         ref={canvasRef}
-        style={CANVAS_STYLE}
+        style={{ ...CANVAS_STYLE, visibility: qr ? "hidden" : "visible" }}
       />
-      {fallback ? (
+      {qr && (
         <svg
           aria-hidden="true"
           shapeRendering="crispEdges"
           style={FALLBACK_STYLE}
-          viewBox={`0 0 ${fallback.size} ${fallback.size}`}
+          viewBox={"0 0 " + qr.size + " " + qr.size}
         >
-          <rect fill="#fff" height={fallback.size} width={fallback.size} />
-          <path d={fallback.path} fill="#111" />
+          <rect fill="#fff" height={qr.size} width={qr.size} />
+          <path d={qr.path} fill="#000" />
         </svg>
-      ) : null}
-      {error && !fallback ? <span style={ERROR_STYLE}>{error.message}</span> : null}
+      )}
+      {error && !qr && <span style={ERROR_STYLE}>{error.message}</span>}
       <span aria-live="polite" style={HIDDEN_STYLE}>
-        {error?.message ?? (view === "model" ? `${model} view` : "QR code view")}
+        {error?.message ?? (view === "model" ? model + " view" : "QR code view")}
       </span>
     </button>
   );

@@ -1,4 +1,4 @@
-export const SUPPORTED_GENERATOR_VERSIONS = [1, 2] as const;
+export const SUPPORTED_GENERATOR_VERSIONS = [1, 2, 3] as const;
 
 export type GeneratorVersion = (typeof SUPPORTED_GENERATOR_VERSIONS)[number];
 

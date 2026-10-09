@@ -623,6 +623,7 @@ type SeedModelFactory = (identity: EveryQRCodeIdentity) => Promise<SeedModel>;
 const SEED_MODEL_FACTORIES = {
   1: createSeedModelV1,
   2: async (identity) => ({ ...(await createSeedModelV1(identity)), generatorVersion: 2 }),
+  3: async (identity) => ({ ...(await createSeedModelV1(identity)), generatorVersion: 3 }),
 } satisfies Record<GeneratorVersion, SeedModelFactory>;
 
 export async function createSeedModel(
