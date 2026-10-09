@@ -42,8 +42,7 @@ export function QRDetailsDialog({
         <div className="qr-details-content">
           <div className="dialog-heading">
             <div>
-              <p className="dialog-eyebrow">Behind this QR</p>
-              <h2 id="qr-details-title">Link identity</h2>
+              <h2 id="qr-details-title">QR information</h2>
             </div>
             <button
               autoFocus

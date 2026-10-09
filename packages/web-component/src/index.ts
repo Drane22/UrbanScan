@@ -1,11 +1,10 @@
 import {
   CURRENT_GENERATOR_VERSION,
-  createEveryQRCodeIdentity,
-  createQRSvgPath,
+  createQRArtifact,
   resolveGeneratorVersion,
   type GeneratorVersion,
   type IdentityScope,
-  type QRSvgPath,
+  type QRArtifact,
 } from "@every-qrcode/core";
 
 import { replaceRendererCanvas } from "./renderer-canvas.js";
@@ -16,10 +15,11 @@ export { CURRENT_GENERATOR_VERSION };
 const TEMPLATE = `
   <style>
     :host { aspect-ratio: 1; display: block; width: 100%; }
-    button { background: transparent; border: 0; cursor: pointer; height: 100%;
+    button { position: relative; background: transparent; border: 0; cursor: pointer; height: 100%;
       padding: 0; width: 100%; }
     button[aria-disabled="true"] { cursor: default; }
     canvas, svg { display: block; height: 100%; width: 100%; }
+    svg { position: absolute; inset: 0; }
     canvas[hidden], svg[hidden] { display: none; }
   </style>
   <button aria-label="Reveal the QR code" type="button">
@@ -53,11 +53,6 @@ type SeedRenderer = {
   dispose: () => void;
   resize: () => void;
   setFlat: (flat: boolean) => void;
-};
-
-type PreparedSeed = {
-  mount: (canvas: HTMLCanvasElement, onError: (error: Error) => void) => SeedRenderer;
-  readonly qr: QRSvgPath;
 };
 
 function readView(element: HTMLElement): EveryQRCodeView {
@@ -110,31 +105,19 @@ function errorFrom(reason: unknown): Error {
   return reason instanceof Error ? reason : new Error("Every QR Code could not render this URL.");
 }
 
-async function prepareSeed(
-  generatorVersion: GeneratorVersion,
-  model: EveryQRCodeModel,
-  identity: Awaited<ReturnType<typeof createEveryQRCodeIdentity>>,
-): Promise<PreparedSeed> {
-  const { createSeedModel, mountSeed } = await import("@every-qrcode/renderer-webgpu");
-  const seed = await createSeedModel(identity, { generatorVersion });
-  return {
-    mount: (canvas, onError) => mountSeed(canvas, seed, {}, model, { onError }),
-    qr: createQRSvgPath(identity.qr),
-  };
-}
-
 function createElementConstructor(): CustomElementConstructor {
   return class EveryQRCodeElement extends HTMLElement {
     static get observedAttributes(): string[] {
       return ["generator-version", "identity-scope", "initial-view", "interactive", "model", "url"];
     }
-
     private readonly button: HTMLButtonElement;
     private canvas: HTMLCanvasElement;
     private readonly fallbackBackground: SVGRectElement;
     private readonly fallbackPath: SVGPathElement;
     private readonly fallbackSvg: SVGSVGElement;
-    private fallbackVisible = false;
+    private artifact: QRArtifact | null = null;
+    private failed = false;
+    private ready = false;
     private renderer: SeedRenderer | null = null;
     private resizeObserver: ResizeObserver | null = null;
     private revision = 0;
@@ -150,35 +133,26 @@ function createElementConstructor(): CustomElementConstructor {
       this.fallbackBackground = root.querySelector("rect") as SVGRectElement;
       this.fallbackPath = root.querySelector("path") as SVGPathElement;
     }
-
     connectedCallback(): void {
       this.button.addEventListener("click", this.toggle);
       this.syncControls();
       void this.renderSeed();
     }
-
     disconnectedCallback(): void {
       this.button.removeEventListener("click", this.toggle);
-      this.revision += 1;
+      this.revision++;
       this.disposeRenderer();
     }
-
     attributeChangedCallback(name: string): void {
       if (!this.isConnected) return;
-      if (
-        name === "generator-version" ||
-        name === "url" ||
-        name === "identity-scope" ||
-        name === "model"
-      ) {
+      if (["generator-version", "url", "identity-scope", "model"].includes(name)) {
         void this.renderSeed();
         return;
       }
       this.syncControls();
     }
-
     private readonly toggle = (): void => {
-      if (!isInteractive(this) || this.fallbackVisible) return;
+      if (!isInteractive(this) || this.failed) return;
       this.view = this.view === "model" ? "qr" : "model";
       this.syncControls(false);
       this.dispatchEvent(
@@ -189,71 +163,95 @@ function createElementConstructor(): CustomElementConstructor {
         }),
       );
     };
-
     private syncControls(resetView = true): void {
       if (resetView) this.view = readView(this);
-      const interactive = isInteractive(this);
-      this.button.ariaDisabled = String(!interactive || this.fallbackVisible);
-      this.button.ariaLabel = this.fallbackVisible
-        ? "QR code fallback"
-        : this.view === "model"
-          ? "Reveal the QR code"
-          : `Restore the ${readModel(this)}`;
+      const visible = this.artifact !== null && (this.view === "qr" || this.failed || !this.ready);
+      this.button.ariaDisabled = String(!isInteractive(this) || this.failed);
+      this.button.ariaBusy = String(!this.artifact && !this.failed);
+      this.button.ariaLabel =
+        this.failed && visible
+          ? "QR code fallback"
+          : this.view === "model"
+            ? "Reveal the QR code"
+            : "Restore the " + readModel(this);
+      this.canvas.style.visibility = visible ? "hidden" : "visible";
+      this.fallbackSvg.toggleAttribute("hidden", !visible);
+      this.dataset["everyQrcodeStatus"] = this.failed ? "error" : this.ready ? "ready" : "loading";
+      if (this.artifact) {
+        const qr = this.artifact.svg;
+        this.fallbackSvg.setAttribute("viewBox", "0 0 " + qr.size + " " + qr.size);
+        this.fallbackBackground.setAttribute("height", String(qr.size));
+        this.fallbackBackground.setAttribute("width", String(qr.size));
+        this.fallbackPath.setAttribute("d", qr.path);
+      } else {
+        this.fallbackPath.removeAttribute("d");
+      }
       this.renderer?.setFlat(this.view === "qr");
     }
-
-    private hideFallback(): void {
-      this.fallbackVisible = false;
-      this.canvas.hidden = false;
-      this.fallbackSvg.setAttribute("hidden", "");
-      this.syncControls(false);
-    }
-
-    private showFallback(qr: QRSvgPath, error: Error): void {
-      this.fallbackVisible = true;
-      this.canvas.hidden = true;
-      this.fallbackSvg.removeAttribute("hidden");
-      this.fallbackSvg.setAttribute("viewBox", `0 0 ${qr.size} ${qr.size}`);
-      this.fallbackBackground.setAttribute("height", String(qr.size));
-      this.fallbackBackground.setAttribute("width", String(qr.size));
-      this.fallbackPath.setAttribute("d", qr.path);
-      this.syncControls(false);
-      this.dispatchEvent(new CustomEvent("every-qrcode-error", { detail: { error } }));
-    }
-
     private async renderSeed(): Promise<void> {
       const revision = ++this.revision;
+      const current = () => revision === this.revision && this.isConnected;
+      this.disposeRenderer();
+      this.artifact = null;
+      this.failed = false;
+      this.ready = false;
       const model = readModel(this);
-      try {
-        const generatorVersion = readGeneratorVersion(this);
-        const identity = await createEveryQRCodeIdentity(this.getAttribute("url") ?? "", {
-          identityScope: readScope(this),
-        });
-        const prepared = await prepareSeed(generatorVersion, model, identity);
-        if (revision !== this.revision || !this.isConnected) return;
+      this.canvas = replaceRendererCanvas(this.canvas, model);
+      this.syncControls();
+      const fail = (reason: unknown) => {
+        if (!current() || this.failed) return;
+        this.failed = true;
+        this.ready = false;
         this.disposeRenderer();
-        this.canvas = replaceRendererCanvas(this.canvas, model);
-        this.hideFallback();
-        this.renderer = prepared.mount(this.canvas, (error) => {
-          if (revision !== this.revision || !this.isConnected) return;
-          this.showFallback(prepared.qr, error);
-        });
-        this.renderer.setFlat(this.view === "qr");
-        this.renderer.resize();
-        if (typeof ResizeObserver !== "undefined") {
-          this.resizeObserver = new ResizeObserver(this.renderer.resize);
-          this.resizeObserver.observe(this.canvas);
-        }
-      } catch (reason: unknown) {
-        if (revision !== this.revision) return;
+        this.syncControls(false);
         this.dispatchEvent(
-          new CustomEvent("every-qrcode-error", {
-            detail: { error: errorFrom(reason) },
+          new CustomEvent("every-qrcode-error", { detail: { error: errorFrom(reason) } }),
+        );
+      };
+      try {
+        const artifact = await createQRArtifact(this.getAttribute("url") ?? "", readScope(this));
+        if (!current()) return;
+        this.artifact = artifact;
+        this.syncControls(false);
+        this.dispatchEvent(
+          new CustomEvent<QRArtifact>("qr-ready", {
+            detail: artifact,
+            bubbles: true,
+            composed: true,
           }),
         );
+        if (!current()) return;
+        const generatorVersion = readGeneratorVersion(this);
+        const { createSeedModel, mountSeed } = await import("@every-qrcode/renderer-webgpu");
+        if (!current()) return;
+        const seed = await createSeedModel(artifact.identity, { generatorVersion });
+        if (!current()) return;
+        const renderer = mountSeed(this.canvas, seed, {}, model, {
+          onError: fail,
+          onReady: () => {
+            if (!current() || this.failed) return;
+            this.ready = true;
+            this.syncControls(false);
+            this.dispatchEvent(new CustomEvent("every-qrcode-ready"));
+          },
+        });
+        if (!current() || this.failed) {
+          renderer.dispose();
+          return;
+        }
+        this.renderer = renderer;
+        this.syncControls(false);
+        renderer.resize();
+        if (typeof ResizeObserver !== "undefined") {
+          this.resizeObserver = new ResizeObserver(() => {
+            if (current() && !this.failed) renderer.resize();
+          });
+          this.resizeObserver.observe(this.canvas);
+        }
+      } catch (reason) {
+        fail(reason);
       }
     }
-
     private disposeRenderer(): void {
       this.resizeObserver?.disconnect();
       this.resizeObserver = null;
