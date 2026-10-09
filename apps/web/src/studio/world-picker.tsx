@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { EveryQRCodeModel } from "@every-qrcode/react";
 import { WORLD_CATALOG, WORLD_CATEGORIES, getWorldOption } from "../world-catalog";
-import { StudioIcon } from "../studio-icon";
 
 export const FEATURED_WORLDS: readonly EveryQRCodeModel[] = [
   "waves",
@@ -59,7 +58,14 @@ export function WorldPicker({
             onClick={() => onSelect(world.id)}
           >
             <span className={"world-thumbnail world-thumbnail--" + world.category.toLowerCase()}>
-              <StudioIcon name={world.mark} />
+              <img
+                src={"/worlds/" + world.id + ".webp"}
+                alt=""
+                width={240}
+                height={240}
+                loading="lazy"
+                decoding="async"
+              />
             </span>
             <span className="choice-label">
               {world.name}

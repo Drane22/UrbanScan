@@ -8,6 +8,7 @@ import {
 } from "@every-qrcode/react";
 import { getWorldOption } from "../world-catalog";
 import { OutputActions } from "./output-actions";
+import { startStudioTiming } from "../studio-diagnostics";
 
 export function ResultPreview({
   artifact,
@@ -27,29 +28,13 @@ export function ResultPreview({
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [zoom, setZoom] = useState(1);
+  const [timing] = useState(startStudioTiming);
   const world = getWorldOption(model);
   return (
     <section className="result-preview" id="result" aria-label="Result">
       <div className="result-heading">
         <h2>{world.name}</h2>
-        <div className="view-controls" aria-label="Preview view">
-          <button
-            type="button"
-            aria-pressed={view === "model"}
-            onClick={() => setView("model")}
-            disabled={!artifact}
-          >
-            World
-          </button>
-          <button
-            type="button"
-            aria-pressed={view === "qr"}
-            onClick={() => setView("qr")}
-            disabled={!artifact}
-          >
-            QR
-          </button>
-        </div>
+        <span className="preview-label">Your preview</span>
       </div>
       <div className="scene-stage">
         {artifact ? (
@@ -58,6 +43,7 @@ export function ResultPreview({
             className="scene-button"
             url={artifact.identity.link.payloadUrl}
             model={model}
+            generatorVersion={3}
             scene={scene}
             view={view}
             onViewChange={setView}
@@ -65,16 +51,24 @@ export function ResultPreview({
             onZoomChange={setZoom}
             onIdentity={(_identity, seed) => onSeed(seed)}
             onReady={() => {
+              timing("world-ready");
               setReady(true);
               setError(null);
             }}
             onError={(reason) => {
+              timing("world-fallback");
               setReady(false);
               setError(reason.message);
             }}
           />
         ) : (
           <p className="empty-result">Preparing QR…</p>
+        )}
+        {artifact && !error && (
+          <span className="preview-caption" aria-hidden="true">
+            {view === "model" ? "Tap to reveal QR" : "Tap to return to world"}
+            <span>↗</span>
+          </span>
         )}
       </div>
       <div className="result-meta">

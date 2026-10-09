@@ -1,4 +1,5 @@
 import { getQRRasterLayout, serializeQRSvg, type QRArtifact } from "@every-qrcode/core";
+import { startStudioTiming } from "./studio-diagnostics";
 
 export const QR_EXPORT_SIZES = [512, 1024, 2048] as const;
 export type QRExportSize = (typeof QR_EXPORT_SIZES)[number];
@@ -65,14 +66,17 @@ export function createQRExportState(encode = encodeQRPNG) {
       publish({ pending: false, prepared: null, error: null });
     },
     async prepare(artifact: QRArtifact, revision: number, size: QRExportSize) {
+      const timing = startStudioTiming();
       const request = ++ticket;
       publish({ pending: true, prepared: null, error: null });
       try {
         const blob = await encode(artifact, size);
         if (request !== ticket) return;
+        timing("png-ready");
         const file = new File([blob], "urbanscan-qr.png", { type: "image/png" });
         publish({ pending: false, prepared: { artifact, revision, size, file }, error: null });
       } catch {
+        if (request === ticket) timing("png-error");
         if (request === ticket)
           publish({ pending: false, prepared: null, error: "Could not prepare PNG. Try again." });
       }

@@ -1,5 +1,6 @@
 import type { QRArtifact } from "@every-qrcode/core";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { recordStudioEvent } from "../studio-diagnostics";
 import {
   canShareQR,
   createQRDownloads,
@@ -63,6 +64,7 @@ export function OutputActions({
         svg ? "urbanscan-qr.svg" : "urbanscan-qr.png",
       );
       setFeedback({ artifact, status: "Download started." });
+      recordStudioEvent("download-started", performance.now());
     } catch {
       fail("Could not start download. Try again.");
     }
@@ -74,6 +76,10 @@ export function OutputActions({
     void result
       .then(
         (outcome) => {
+          recordStudioEvent(
+            outcome === "cancelled" ? "share-cancelled" : "share-completed",
+            performance.now(),
+          );
           if (mounted.current && current.current === artifact)
             setFeedback({
               artifact,
