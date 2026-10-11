@@ -1,0 +1,132 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`freezes the phase 5 Waves ocean geometry and shader checkpoint 1`] = `
+{
+  "layout": "586ef84877287879ef2ab41b0e5e3a1bec4e5b8c8eac25d6e52524facaf8e014",
+  "plan": {
+    "batches": [
+      {
+        "firstInstance": 0,
+        "instanceCount": 1,
+        "requiredDataLength": 52360,
+        "role": "foundation",
+        "verticesPerInstance": 30,
+      },
+      {
+        "firstInstance": 1,
+        "instanceCount": 1,
+        "requiredDataLength": 52360,
+        "role": "surface",
+        "verticesPerInstance": 9600,
+      },
+      {
+        "firstInstance": 2,
+        "instanceCount": 2,
+        "requiredDataLength": 52360,
+        "role": "surface",
+        "verticesPerInstance": 8448,
+      },
+      {
+        "firstInstance": 8,
+        "instanceCount": 42,
+        "requiredDataLength": 52360,
+        "role": "ambient",
+        "verticesPerInstance": 24,
+      },
+      {
+        "firstInstance": 50,
+        "instanceCount": 1,
+        "requiredDataLength": 52360,
+        "role": "ambient",
+        "verticesPerInstance": 243,
+      },
+      {
+        "firstInstance": 51,
+        "instanceCount": 1,
+        "requiredDataLength": 52360,
+        "role": "ambient",
+        "verticesPerInstance": 828,
+      },
+      {
+        "firstInstance": 52,
+        "instanceCount": 5,
+        "requiredDataLength": 52360,
+        "role": "ambient",
+        "verticesPerInstance": 768,
+      },
+    ],
+    "form": "waves",
+    "qr": {
+      "firstInstance": 64,
+      "instanceCount": 841,
+      "verticesPerInstance": 6,
+    },
+    "requiredDataLength": 52360,
+  },
+  "shader": "a3b785393f4de8e5447e4ae7a12f2b96a7f1869e74bca449309843b72b6f77e6",
+}
+`;
+
+exports[`freezes the phase 6 Crystalline facet geometry and shader checkpoint 1`] = `
+{
+  "layout": "d5f3483f34300e6f0b4755aefd0cd44d0577ea0be71ad023e138797cfc6f0b67",
+  "plan": {
+    "batches": [
+      {
+        "firstInstance": 0,
+        "instanceCount": 1,
+        "requiredDataLength": 33744,
+        "role": "foundation",
+        "verticesPerInstance": 210,
+      },
+      {
+        "firstInstance": 1,
+        "instanceCount": 56,
+        "requiredDataLength": 33744,
+        "role": "surface",
+        "verticesPerInstance": 84,
+      },
+    ],
+    "form": "crystalline",
+    "qr": {
+      "firstInstance": 128,
+      "instanceCount": 841,
+      "verticesPerInstance": 6,
+    },
+    "requiredDataLength": 33744,
+  },
+  "shader": "17daef1180cf0b93bca1eb1d2971cf7f9ce555838fbec007c6984e9228276e4b",
+}
+`;
+
+exports[`freezes the phase 7 Mechanical geometry and shader checkpoint 1`] = `
+{
+  "layout": "063b81242e2f1608836d9acc9b560233deeea468c69fda914cd80d3413b2b182",
+  "plan": {
+    "batches": [
+      {
+        "firstInstance": 0,
+        "instanceCount": 1,
+        "requiredDataLength": 112224,
+        "role": "foundation",
+        "verticesPerInstance": 36,
+      },
+      {
+        "firstInstance": 1,
+        "instanceCount": 19,
+        "requiredDataLength": 112224,
+        "role": "surface",
+        "verticesPerInstance": 3096,
+      },
+    ],
+    "form": "mechanical",
+    "qr": {
+      "firstInstance": 128,
+      "instanceCount": 841,
+      "verticesPerInstance": 6,
+    },
+    "requiredDataLength": 112224,
+  },
+  "shader": "93b8c91faad6bb92f245d51ea63991a1d43743bfc2fc50d8dd2e10fc4bfaa4fd",
+}
+`;
