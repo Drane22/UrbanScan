@@ -1,4 +1,5 @@
-import { getQRRasterLayout, serializeQRSvg, type QRArtifact } from "@every-qrcode/core";
+import { getQRRasterLayout } from "@every-qrcode/core";
+import { serializeDesignedQR, type DesignedQRArtifact as QRArtifact } from "./qr-design";
 import { startStudioTiming } from "./studio-diagnostics";
 
 export const QR_EXPORT_SIZES = [512, 1024, 2048] as const;
@@ -15,7 +16,12 @@ export function encodeQRPNG(artifact: QRArtifact, size: QRExportSize): Promise<B
   context.imageSmoothingEnabled = false;
   context.fillStyle = "#fff";
   context.fillRect(0, 0, size, size);
-  context.fillStyle = "#000";
+  const inks = artifact.inks;
+  if (inks) {
+    const gradient = context.createLinearGradient(0, 0, size, size);
+    inks.forEach((color, index) => gradient.addColorStop(index / (inks.length - 1), color));
+    context.fillStyle = gradient;
+  } else context.fillStyle = "#000";
   for (let row = 0; row < matrix.size; row++)
     for (let column = 0; column < matrix.size; column++)
       if (matrix.cells[row * matrix.size + column] === 1)
@@ -35,7 +41,7 @@ export function encodeQRPNG(artifact: QRArtifact, size: QRExportSize): Promise<B
 }
 
 export function encodeQRSVG(artifact: QRArtifact): Blob {
-  return new Blob([serializeQRSvg(artifact)], { type: "image/svg+xml" });
+  return new Blob([serializeDesignedQR(artifact)], { type: "image/svg+xml" });
 }
 
 export type PreparedQRExport = {

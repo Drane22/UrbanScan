@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { QRArtifact } from "@every-qrcode/core";
 import {
   EveryQRCode,
@@ -8,36 +8,53 @@ import {
 } from "@every-qrcode/react";
 import { getWorldOption } from "../world-catalog";
 import { OutputActions } from "./output-actions";
+import type { DesignedQRArtifact } from "../qr-design";
 import { startStudioTiming } from "../studio-diagnostics";
+import { StudioIcon } from "../studio-icon";
 
 export function ResultPreview({
   artifact,
+  exportArtifact,
+  exportError,
   revision,
   model,
   scene,
   onSeed,
 }: {
   artifact: QRArtifact | null;
+  exportArtifact: DesignedQRArtifact | null;
+  exportError: string | null;
   revision: number;
   model: EveryQRCodeModel;
   scene: EveryQRCodeSceneConfig;
   onSeed: (seed: number) => void;
 }): React.JSX.Element {
   const [view, setView] = useState<EveryQRCodeView>("model");
-  const [ready, setReady] = useState(false);
+  const [readyKey, setReadyKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [timing] = useState(startStudioTiming);
+  const gradientId = useId();
+  const key = revision + ":" + model + ":" + retry;
+  const ready = readyKey === key && !error;
   const world = getWorldOption(model);
+  useEffect(() => {
+    setView("model");
+    setError(null);
+    setZoom(1);
+  }, [model, revision]);
+  const shownView = ready ? view : "model";
   return (
     <section className="result-preview" id="result" aria-label="Result">
       <div className="result-heading">
         <h2>{world.name}</h2>
-        <span className="preview-label">Your preview</span>
+        <span className="preview-label">
+          {error ? "QR ready" : ready ? "Live preview" : "Building your world…"}
+        </span>
       </div>
       <div className="scene-stage">
-        {artifact ? (
+        {artifact && (
           <EveryQRCode
             key={retry}
             className="scene-button"
@@ -45,95 +62,149 @@ export function ResultPreview({
             model={model}
             generatorVersion={3}
             scene={scene}
-            view={view}
+            view={shownView}
+            loadingFallback="none"
+            interactive={ready}
             onViewChange={setView}
             zoom={zoom}
             onZoomChange={setZoom}
             onIdentity={(_identity, seed) => onSeed(seed)}
             onReady={() => {
               timing("world-ready");
-              setReady(true);
+              setReadyKey(key);
               setError(null);
             }}
             onError={(reason) => {
               timing("world-fallback");
-              setReady(false);
               setError(reason.message);
             }}
           />
-        ) : (
-          <p className="empty-result">Preparing QR…</p>
         )}
-        {artifact && !error && (
+        {!ready && !error && (
+          <div className="world-loading" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+        )}
+        <div
+          className="designed-qr"
+          data-visible={Boolean(shownView === "qr" || error)}
+          aria-hidden="true"
+        >
+          {exportArtifact && (
+            <svg
+              viewBox={`0 0 ${exportArtifact.svg.size} ${exportArtifact.svg.size}`}
+              shapeRendering="crispEdges"
+            >
+              <defs>
+                <linearGradient
+                  id={gradientId}
+                  gradientUnits="userSpaceOnUse"
+                  x1="0"
+                  y1="0"
+                  x2={exportArtifact.svg.size}
+                  y2={exportArtifact.svg.size}
+                >
+                  {exportArtifact.inks?.map((ink, i) => (
+                    <stop key={i} offset={i * 50 + "%"} stopColor={ink} />
+                  ))}
+                </linearGradient>
+              </defs>
+              <rect width={exportArtifact.svg.size} height={exportArtifact.svg.size} fill="white" />
+              <path d={exportArtifact.svg.path} fill={`url(#${gradientId})`} />
+            </svg>
+          )}
+        </div>
+        {ready && !error && (
           <span className="preview-caption" aria-hidden="true">
-            {view === "model" ? "Tap to reveal QR" : "Tap to return to world"}
+            {shownView === "model" ? "Tap to reveal QR" : "Tap to return to world"}
             <span>↗</span>
           </span>
         )}
-      </div>
-      <div className="result-meta">
-        <p className="committed-destination" aria-label="Committed destination">
-          {artifact?.identity.link.payloadUrl ?? " "}
-        </p>
-        {view === "model" && !ready && !error && artifact && (
-          <p className="render-status" role="status">
-            Preparing 3D…
-          </p>
-        )}
         {error && (
-          <div className="render-status" role="status">
-            <span>3D unavailable. Your QR is ready.</span>
+          <div className="preview-fallback">
+            <span>{exportArtifact ? "3D unavailable. Your QR is ready." : "3D unavailable."}</span>
             <button
               type="button"
               onClick={() => {
-                setReady(false);
                 setError(null);
                 setRetry((value) => value + 1);
               }}
             >
-              Retry 3D
+              Retry
             </button>
           </div>
         )}
-        <div className="result-actions">
-          <OutputActions artifact={artifact} revision={revision} />
-          {view === "model" && ready && world.replay && (
-            <button
-              type="button"
-              aria-label="Replay world construction"
-              onClick={() => {
-                setReady(false);
-                setError(null);
-                setRetry((value) => value + 1);
-              }}
-            >
-              Replay
-            </button>
-          )}
-          {view === "model" && ready && (
-            <div className="zoom-controls" aria-label="World zoom">
-              <button
-                type="button"
-                aria-label="Zoom out"
-                onClick={() => setZoom((value) => Math.max(0.82, value - 0.1))}
-                disabled={zoom <= 0.82}
-              >
-                −
-              </button>
-              <button type="button" aria-label="Reset zoom" onClick={() => setZoom(1)}>
-                {Math.round(zoom * 100)}%
-              </button>
-              <button
-                type="button"
-                aria-label="Zoom in"
-                onClick={() => setZoom((value) => Math.min(1.45, value + 0.1))}
-                disabled={zoom >= 1.45}
-              >
-                +
-              </button>
-            </div>
-          )}
+      </div>
+      <div className="preview-toolbar">
+        <button
+          className="replay-button"
+          type="button"
+          aria-label="Replay world construction"
+          disabled={!ready || shownView !== "model" || !world.replay}
+          onClick={() => {
+            setView("model");
+            setRetry((value) => value + 1);
+          }}
+        >
+          <StudioIcon name="replay" />
+          Replay
+        </button>
+        <div className="zoom-controls" aria-label="World zoom">
+          <button
+            type="button"
+            aria-label="Zoom out"
+            disabled={!ready || shownView !== "model" || zoom <= 0.82}
+            onClick={() => setZoom((value) => Math.max(0.82, value - 0.1))}
+          >
+            −
+          </button>
+          <button
+            type="button"
+            aria-label="Reset zoom"
+            disabled={!ready || shownView !== "model"}
+            onClick={() => setZoom(1)}
+          >
+            {Math.round(zoom * 100)}%
+          </button>
+          <button
+            type="button"
+            aria-label="Zoom in"
+            disabled={!ready || shownView !== "model" || zoom >= 1.45}
+            onClick={() => setZoom((value) => Math.min(1.45, value + 0.1))}
+          >
+            +
+          </button>
         </div>
+      </div>
+      <div className="result-meta">
+        <OutputActions
+          artifact={exportArtifact}
+          revision={revision}
+          destination={artifact?.identity.link.payloadUrl}
+        />
+        <div className="scan-destination">
+          <span>Scan → your world → your link</span>
+          <p className="committed-destination" aria-label="Committed destination">
+            {artifact?.identity.link.payloadUrl ?? " "}
+          </p>
+        </div>
+        {exportArtifact && (
+          <a
+            className="preview-arrival"
+            href={exportArtifact.identity.link.payloadUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Preview scan experience <span aria-hidden="true">↗</span>
+          </a>
+        )}
+        {exportError && (
+          <p className="field-error" role="alert">
+            {exportError}
+          </p>
+        )}
       </div>
     </section>
   );

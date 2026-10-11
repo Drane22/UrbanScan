@@ -74,10 +74,6 @@ export function WorldPicker({
           </button>
         ))}
       </div>
-      <details className="choice-info" key={selected}>
-        <summary>About {selectedWorld.name}</summary>
-        <p>{selectedWorld.description}</p>
-      </details>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import type { QRArtifact } from "@every-qrcode/core";
+import type { DesignedQRArtifact as QRArtifact } from "../qr-design";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { recordStudioEvent } from "../studio-diagnostics";
 import {
@@ -14,9 +14,11 @@ import {
 export function OutputActions({
   artifact,
   revision,
+  destination,
 }: {
   artifact: QRArtifact | null;
   revision: number;
+  destination?: string | undefined;
 }): React.JSX.Element {
   const [size, setSize] = useState<QRExportSize>(1024);
   const [exports] = useState(createQRExportState);
@@ -98,7 +100,7 @@ export function OutputActions({
   const copy = async () => {
     if (!artifact) return;
     try {
-      await navigator.clipboard.writeText(artifact.identity.link.payloadUrl);
+      await navigator.clipboard.writeText(destination ?? artifact.identity.link.payloadUrl);
       if (mounted.current && current.current === artifact)
         setFeedback({ artifact, status: "Link copied." });
     } catch {
@@ -112,61 +114,73 @@ export function OutputActions({
   };
   return (
     <div className="output-actions">
-      <button
-        type="button"
-        className="primary-button"
-        disabled={!prepared}
-        onClick={() => download(false)}
-      >
-        Download PNG
-      </button>
-      <label className="export-size">
-        PNG size
-        <select
-          aria-label="PNG size"
-          value={size}
-          onChange={(event) => setSize(Number(event.target.value) as QRExportSize)}
+      <div className="download-row">
+        <button
+          type="button"
+          className="primary-button"
+          disabled={!prepared}
+          onClick={() => download(false)}
         >
-          {QR_EXPORT_SIZES.map((value) => (
-            <option key={value} value={value}>
-              {value} px
-            </option>
-          ))}
-        </select>
-      </label>
-      <button type="button" disabled={!artifact} onClick={() => download(true)}>
-        Download SVG
-      </button>
-      {prepared && canShareQR(prepared.file) && (
-        <button type="button" disabled={sharing} onClick={share}>
-          {sharing ? "Sharing…" : "Share"}
+          Download PNG
         </button>
-      )}
-      <button type="button" disabled={!artifact} onClick={() => void copy()}>
-        Copy link
-      </button>
-      {state.pending && <span role="status">Preparing PNG…</span>}
-      {state.error && (
-        <p className="field-error" role="alert">
-          {state.error}{" "}
-          <button type="button" onClick={() => setRetry((value) => value + 1)}>
-            Retry PNG
+        <label className="export-size">
+          <span className="sr-only">PNG size</span>
+          <select
+            aria-label="PNG size"
+            value={size}
+            onChange={(event) => setSize(Number(event.target.value) as QRExportSize)}
+          >
+            {QR_EXPORT_SIZES.map((value) => (
+              <option key={value} value={value}>
+                {value} px
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="secondary-actions">
+        <button
+          className="secondary-download"
+          aria-label="Download SVG"
+          type="button"
+          disabled={!artifact}
+          onClick={() => download(true)}
+        >
+          SVG
+        </button>
+        {prepared && canShareQR(prepared.file) && (
+          <button type="button" disabled={sharing} onClick={share}>
+            {sharing ? "Sharing…" : "Share"}
           </button>
-        </p>
-      )}
-      {message?.error && (
-        <p className="field-error" role="alert">
-          {message.error}
-        </p>
-      )}
-      {message?.status && <span role="status">{message.status}</span>}
+        )}
+        <button type="button" disabled={!artifact} onClick={() => void copy()}>
+          Copy link
+        </button>
+      </div>
+      <div className="export-feedback" aria-live="polite">
+        {state.pending && <span role="status">Preparing PNG…</span>}
+        {state.error && (
+          <p className="field-error" role="alert">
+            {state.error}{" "}
+            <button type="button" onClick={() => setRetry((value) => value + 1)}>
+              Retry PNG
+            </button>
+          </p>
+        )}
+        {message?.error && (
+          <p className="field-error" role="alert">
+            {message.error}
+          </p>
+        )}
+        {message?.status && <span role="status">{message.status}</span>}
+      </div>
       {message?.selectable && artifact && (
         <label className="copy-destination">
           Destination
           <input
             aria-label="Copy destination"
             readOnly
-            value={artifact.identity.link.payloadUrl}
+            value={destination ?? artifact.identity.link.payloadUrl}
             onFocus={(event) => event.currentTarget.select()}
           />
         </label>
