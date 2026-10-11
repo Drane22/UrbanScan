@@ -50,8 +50,9 @@ export const MECHANICAL_MOTION_WGSL = /* wgsl */ `
 fn rotateXY(p:vec3f,a:f32)->vec3f {return vec3f(p.x*cos(a)-p.y*sin(a),p.x*sin(a)+p.y*cos(a),p.z);}
 fn movePart(p:vec3f,n:vec3f,instance:u32)->mat2x3f {
  let d=worldData[instance*3u];let pivot=worldData[instance*3u+1u];let link=worldData[instance*3u+2u];
- let angle=uniforms.time*0.48*pivot.w+d.w;
+ let angle=uniforms.time*1.75*pivot.w+d.w;
  if(d.z==1.0){return mat2x3f(pivot.xyz+rotateXY(p-pivot.xyz,angle),rotateXY(n,angle));}
+ if(d.z==4.0){return mat2x3f(p+vec3f(0,sin(angle)*link.x,0),n);}
  if(d.z==2.0||d.z==3.0){
   let crank=vec3f(link.x*cos(angle),link.x*sin(angle),0);
   let slide=link.x*cos(angle)+sqrt(link.y*link.y-link.x*link.x*sin(angle)*sin(angle));

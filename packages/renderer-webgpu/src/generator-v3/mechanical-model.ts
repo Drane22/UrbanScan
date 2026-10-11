@@ -2,6 +2,7 @@ import type { SeedModel } from "../seed-model.js";
 import {
   box,
   face,
+  triangle,
   packFacetedWorld,
   worldRandom,
   type Mesh,
@@ -20,7 +21,7 @@ export function gearMesh(
   material = 1,
 ): Mesh {
   const mesh: Mesh = [];
-  const segments = teeth > 0 ? teeth * 4 : 24;
+  const segments = teeth > 0 ? teeth * 4 : 16;
   const point = (i: number, outer: boolean, front: boolean): Vec3 => {
     const a = ((i - (teeth > 0 ? 0.5 : 0)) * Math.PI * 2) / segments;
     const r = outer ? radius + (teeth > 0 ? [1, 1, -1, -1][i % 4]! * GEAR_MODULE * 0.43 : 0) : hole;
@@ -39,7 +40,19 @@ export function gearMesh(
       f = point(i + 1, true, false),
       g = point(i + 1, false, false),
       h = point(i, false, false);
-    face(mesh, a, d, c, b, material);
+    const bevel = Math.min(0.0035, thickness * 0.15, (radius - hole) * 0.15);
+    const inset = (p: Vec3, amount: number): Vec3 => {
+      const radial = Math.hypot(p[0] - center[0], p[1] - center[1]);
+      return [
+        center[0] + ((p[0] - center[0]) * (radial + amount)) / radial,
+        center[1] + ((p[1] - center[1]) * (radial + amount)) / radial,
+        p[2] - bevel,
+      ];
+    };
+    const af = inset(a, -bevel),
+      bf = inset(b, -bevel);
+    face(mesh, af, d, c, bf, material);
+    face(mesh, a, af, bf, b, material);
     face(mesh, e, f, g, h, material);
     face(mesh, a, b, f, e, material);
     face(mesh, d, h, g, c, material);
@@ -69,20 +82,62 @@ function beam(mesh: Mesh, a: Vec3, b: Vec3, width: number, depth: number, materi
   mesh.push(...local);
 }
 
+function tube(mesh: Mesh, a: Vec3, b: Vec3, radius: number, material: number, sides = 8) {
+  const delta = b.map((value, i) => value - a[i]!) as unknown as Vec3;
+  const length = Math.hypot(...delta);
+  const axis = delta.map((value) => value / length) as unknown as Vec3;
+  const cross = (u: Vec3, v: Vec3): Vec3 => [
+    u[1] * v[2] - u[2] * v[1],
+    u[2] * v[0] - u[0] * v[2],
+    u[0] * v[1] - u[1] * v[0],
+  ];
+  const perpendicular = cross(axis, Math.abs(axis[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]);
+  const size = Math.hypot(...perpendicular);
+  const u = perpendicular.map((value) => value / size) as unknown as Vec3;
+  const v = cross(axis, u);
+  const point = (center: Vec3, i: number): Vec3 =>
+    center.map(
+      (value, n) =>
+        value +
+        radius *
+          (Math.cos((i * Math.PI * 2) / sides) * u[n]! +
+            Math.sin((i * Math.PI * 2) / sides) * v[n]!),
+    ) as unknown as Vec3;
+  for (let i = 0; i < sides; i++) {
+    const p = point(a, i),
+      q = point(a, i + 1),
+      r = point(b, i + 1),
+      s = point(b, i);
+    face(mesh, p, q, r, s, material);
+    triangle(mesh, a, q, p, material);
+    triangle(mesh, b, s, r, material);
+  }
+}
+
 export function createMechanicalLayout(model: SeedModel) {
   const next = worldRandom(model, 0x4d454333);
-  const pair = createGearPair(next() < 0.5 ? 20 : 24, next() < 0.5 ? 12 : 16);
-  const shift = (next() - 0.5) * 0.055;
-  const driver: Vec3 = [-0.22 + shift, 0.265 + next() * 0.025, -0.075];
+  const pair = createGearPair(
+    [16, 20, 24][Math.floor(next() * 3)]!,
+    [12, 16, 20][Math.floor(next() * 3)]!,
+  );
+  const shift = (next() - 0.5) * 0.09;
+  const driver: Vec3 = [-0.2 + shift, 0.23 + next() * (0.235 - pair.driverRadius), -0.075];
   const follower: Vec3 = [driver[0] + pair.centerDistance, driver[1], driver[2]];
   const crank: Vec3 = [driver[0], driver[1], -0.285];
-  const linkage = createSliderLinkage(0.045 + next() * 0.012, 0.39 + next() * 0.018);
+  const linkage = createSliderLinkage(0.034 + next() * 0.027, 0.3 + next() * 0.09);
+  const spokeCount = 3 + Math.floor(next() * 4);
+  const flySpokes = 4 + Math.floor(next() * 5);
+  const pumpCount = 1 + Math.floor(next() * 3);
+  const towerHeight = 0.24 + next() * 0.22;
   const phase = next() * Math.PI * 2;
   const parts: FacetedPart[] = [];
   const base: Mesh = [];
-  box(base, [0, -0.033, 0], [0.98, 0.065, 0.9], 0);
+  box(base, [0, -0.027, 0.01], [0.94, 0.053, 0.8], 0);
   parts.push({ mesh: base });
   const frame: Mesh = [];
+  // A common raised bed ties the two bearing towers and slider rails together.
+  for (const z of [-0.355, 0.335]) box(frame, [0, 0.018, z], [0.85, 0.035, 0.04], 2);
+  for (const x of [-0.405, 0.405]) box(frame, [x, 0.018, -0.01], [0.04, 0.035, 0.65], 1);
   for (const axle of [driver, follower]) {
     box(frame, [axle[0], 0.035, 0.07], [0.115, 0.045, 0.22], 2);
     box(frame, [axle[0], axle[1] / 2, 0.07], [0.047, axle[1], 0.06], 2);
@@ -97,9 +152,24 @@ export function createMechanicalLayout(model: SeedModel) {
   parts.push({ mesh: frame });
   const rotating = (mesh: Mesh, pivot: Vec3, ratio = 1, offset = phase) =>
     parts.push({ mesh, pivot, motion: 1, ratio, phase: offset });
-  rotating(gearMesh(driver, pair.driverRadius, pair.driverTeeth, 0.035, 0.04), driver);
+  const spokedGear = (center: Vec3, radius: number, teeth: number, opening: number) => {
+    const mesh = gearMesh(center, radius, teeth, opening, 0.04);
+    for (let i = 0; i < spokeCount; i++) {
+      const angle = (i * Math.PI * 2) / spokeCount;
+      beam(
+        mesh,
+        center,
+        [center[0] + Math.cos(angle) * opening, center[1] + Math.sin(angle) * opening, center[2]],
+        0.018,
+        0.04,
+        1,
+      );
+    }
+    return mesh;
+  };
+  rotating(spokedGear(driver, pair.driverRadius, pair.driverTeeth, 0.065), driver);
   rotating(
-    gearMesh(follower, pair.followerRadius, pair.followerTeeth, 0.027, 0.04),
+    spokedGear(follower, pair.followerRadius, pair.followerTeeth, 0.044),
     follower,
     -pair.driverTeeth / pair.followerTeeth,
     (-phase * pair.driverTeeth) / pair.followerTeeth + pair.engagementPhase,
@@ -114,8 +184,8 @@ export function createMechanicalLayout(model: SeedModel) {
     0.035,
     2,
   );
-  for (let i = 0; i < 5; i++) {
-    const angle = (i * Math.PI * 2) / 5;
+  for (let i = 0; i < flySpokes; i++) {
+    const angle = (i * Math.PI * 2) / flySpokes;
     beam(
       flywheel,
       flyCenter,
@@ -152,7 +222,7 @@ export function createMechanicalLayout(model: SeedModel) {
     box(rail, [x, (crank[1] - 0.055) / 2, -0.285], [0.035, crank[1] - 0.055, 0.15], 2);
   parts.push({ mesh: rail });
   // A secondary motor connects to the follower via two equal-radius pulleys.
-  const motor: Vec3 = [0.3 + shift, 0.145, 0.18];
+  const motor: Vec3 = [0.27 + shift, 0.1 + next() * 0.09, 0.18];
   const housing: Mesh = [];
   box(housing, [motor[0], 0.08, 0.28], [0.2, 0.16, 0.21], 2);
   for (let i = 0; i < 4; i++)
@@ -207,6 +277,61 @@ export function createMechanicalLayout(model: SeedModel) {
   const rearShaft: Mesh = [];
   box(rearShaft, [follower[0], follower[1], 0.07], [0.024, 0.024, 0.24], 1);
   parts.push({ mesh: rearShaft });
+  // A lower reduction train fills the engine bed and drives the auxiliary pumps.
+  for (let i = 0; i < 2; i++) {
+    const center: Vec3 = [-0.34 + i * 0.168, 0.11, -0.19];
+    rotating(
+      spokedGear(center, 0.084, 12, 0.033),
+      center,
+      i === 0 ? 0.5 : -0.5,
+      i === 0 ? phase : -phase + Math.PI - Math.PI / 12,
+    );
+  }
+  const plumbing: Mesh = [];
+  const pumpXs = Array.from({ length: pumpCount }, (_, i) => 0.09 + i * 0.12);
+  for (const [i, x] of pumpXs.entries()) {
+    const z = 0.045;
+    tube(plumbing, [x, 0.04, z], [x, 0.195, z], 0.046, 2, 8);
+    tube(plumbing, [x, 0.045, z], [x, 0.061, z], 0.055, 1, 8);
+    tube(plumbing, [x, 0.18, z], [x, 0.197, z], 0.055, 1, 8);
+    const piston: Mesh = [];
+    tube(piston, [x, 0.15, z], [x, 0.31, z], 0.016, 1);
+    box(piston, [x, 0.3, z], [0.07, 0.025, 0.055], 3);
+    parts.push({
+      mesh: piston,
+      motion: 4,
+      phase: phase + i * Math.PI,
+      parameters: [0.034, 0, 0, 0],
+    });
+    tube(plumbing, [x, 0.1, z + 0.045], [x, 0.1, 0.33], 0.014, 3);
+    tube(plumbing, [x, 0.1, 0.33], [x, 0.04, 0.33], 0.014, 3);
+  }
+  tube(plumbing, [-0.36, 0.025, 0.26], [-0.36, towerHeight, 0.26], 0.026, 3);
+  tube(plumbing, [-0.36, towerHeight, 0.26], [0.13, towerHeight, 0.26], 0.018, 3);
+  tube(plumbing, [0.13, towerHeight, 0.26], [0.13, 0.2, 0.26], 0.018, 3);
+  // Some URLs grow a pressure vessel; others expose the entire gear train.
+  const vessel = next() > 0.48;
+  if (vessel) {
+    const radius = 0.045 + next() * 0.03;
+    const height = 0.16 + next() * 0.19;
+    tube(plumbing, [-0.22, 0.04, 0.26], [-0.22, height, 0.26], radius, 2, 10);
+    for (const y of [0.055, height - 0.02])
+      tube(plumbing, [-0.22, y, 0.26], [-0.22, y + 0.014, 0.26], radius + 0.006, 1, 10);
+    tube(plumbing, [-0.22, height, 0.26], [-0.22, height + 0.05, 0.26], 0.018, 3);
+  }
+  const details: Mesh = [];
+  for (const x of [-0.41, 0.41])
+    for (const z of [-0.33, 0.32]) {
+      box(details, [x, 0.045, z], [0.024, 0.014, 0.024], 1);
+      box(details, [x, 0.053, z], [0.017, 0.003, 0.004], 4);
+    }
+  for (let i = 0; i < 8; i++)
+    box(details, [-0.04 + i * 0.032, 0.025, 0.31], [0.014, 0.014, 0.12], 1);
+  box(details, [-0.365, 0.075, -0.3], [0.11, 0.1, 0.055], 2);
+  box(details, [-0.365, 0.095, -0.331], [0.071, 0.032, 0.009], 5);
+  for (let i = 0; i < 3; i++)
+    box(details, [-0.39 + i * 0.025, 0.055, -0.332], [0.012, 0.012, 0.008], 3);
+  parts.push({ mesh: plumbing }, { mesh: details });
   return {
     ...packFacetedWorld(model, "mechanical", parts),
     pair,
@@ -218,5 +343,6 @@ export function createMechanicalLayout(model: SeedModel) {
     beltEndpoints,
     pulleys: [pulleyA, motor],
     parts,
+    composition: { spokeCount, flySpokes, pumpCount, towerHeight, vessel },
   };
 }

@@ -24,7 +24,7 @@ export type WorldDrawPlan = {
     readonly firstInstance: number;
   };
 };
-/** Per canvas: max eight batches, 256 KiB world upload, and the finite budgets below.
+/** Per canvas: max eight batches, 512 KiB world upload, and the finite budgets below.
  * Limits leave room for sampled crests/facets/gears without unlimited GPU work.
  */
 export const WORLD_DRAW_LIMITS = {
@@ -32,7 +32,7 @@ export const WORLD_DRAW_LIMITS = {
   crystalline: { verticesPerInstance: 3072, instances: 1024, totalVertices: 1000000 },
   mechanical: { verticesPerInstance: 12288, instances: 1024, totalVertices: 2000000 },
 } as const;
-export const MAX_WORLD_DATA_FLOATS = 65536;
+export const MAX_WORLD_DATA_FLOATS = 131072;
 const MAX_QR_OWNERS = 177 * 177;
 const MAX_FIRST_INSTANCE = MAX_QR_OWNERS * 4 + 1 + MAX_LEGACY_AMBIENT_INSTANCES;
 function integer(value: number, min: number, max: number): boolean {
