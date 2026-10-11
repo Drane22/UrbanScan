@@ -1,5 +1,8 @@
 import type { SeedModel } from "../seed-model.js";
 import type { WorldDrawPlan } from "./world-draw.js";
+import { createOceanActors } from "./ocean-actors.js";
+import { worldRandom } from "./faceted-mesh.js";
+import { createCrabMesh, createCrabTracks } from "./ocean-crabs.js";
 
 import {
   oceanCrestPoint,
@@ -15,61 +18,35 @@ export const OCEAN_CREST_LENGTH_SEGMENTS = 44;
 export const OCEAN_CREST_PROFILE_SEGMENTS = 32;
 export const OCEAN_HEADER_FLOATS = 64;
 export const OCEAN_QR_FIRST_INSTANCE = 64;
-function randomStream(model: SeedModel) {
-  let state = (0x57415633 ^ model.qrSize ^ Math.floor(model.morphSeed * 0xffffffff)) >>> 0;
-  for (const module of model.modules) state = Math.imul(state ^ module.index, 16777619) >>> 0;
-  return () => {
-    state = (state + 0x6d2b79f5) >>> 0;
-    let value = Math.imul(state ^ (state >>> 15), 1 | state);
-    value ^= value + Math.imul(value ^ (value >>> 7), 61 | value);
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
-  };
-}
 export function createOceanLayout(model: SeedModel) {
   if (model.generatorVersion !== 3)
     throw new RangeError("Ocean layout requires generator version 3");
-  const next = randomStream(model);
-  const side = next() < 0.5 ? -1 : 1;
+  const next = worldRandom(model, 0x57415633);
+  // A broad breaker moves toward the near shoreline; a low offshore swell follows it.
+  const phase = next() * Math.PI * 2;
+  const angle = Math.PI - 0.48 + (next() - 0.5) * 0.5;
   const crests: OceanCrest[] = [
     {
-      center: [side * 0.1 + (next() - 0.5) * 0.09, 0.015 + next() * 0.095],
-      length: 0.5 + next() * 0.18,
-      height: 0.25 + next() * 0.1,
-      width: 0.21 + next() * 0.065,
-      angle: Math.PI - 0.96 + next() * 0.7,
-      bow: -0.02 + next() * 0.13,
-      curl: 0.85 + next() * 0.25,
-      phase: next() * Math.PI * 2,
+      center: [(next() - 0.5) * 0.07, 0.035 + next() * 0.07],
+      length: 0.66 + next() * 0.18,
+      height: 0.23 + next() * 0.08,
+      width: 0.125 + next() * 0.05,
+      angle,
+      bow: 0.015 + next() * 0.065,
+      curl: 1.05 + next() * 0.3,
+      phase,
     },
     {
-      center: [-side * 0.25 + (next() - 0.5) * 0.035, -0.235 + (next() - 0.5) * 0.045],
-      length: 0.28 + next() * 0.07,
-      height: 0.055 + next() * 0.025,
-      width: 0.075 + next() * 0.025,
-      angle: side > 0 ? 3.3 + next() * 0.4 : 1.7 + next() * 0.4,
-      bow: 0.025 + next() * 0.03,
-      curl: 0.7 + next() * 0.15,
-      phase: next() * Math.PI * 2,
+      center: [(next() - 0.5) * 0.12, 0.29],
+      length: 0.32 + next() * 0.18,
+      height: 0.035 + next() * 0.055,
+      width: 0.06,
+      angle: angle + (next() - 0.5) * 0.2,
+      bow: 0.04,
+      curl: 0.55,
+      phase: phase + 1,
     },
   ];
-  crests[1] = {
-    ...crests[1]!,
-    angle:
-      side > 0
-        ? Math.max(crests[1]!.angle, crests[0]!.angle + 0.5)
-        : Math.min(crests[1]!.angle, crests[0]!.angle - 0.5),
-  };
-  if (next() > 0.42)
-    crests.push({
-      center: [-side * 0.24 + (next() - 0.5) * 0.035, 0.21 + (next() - 0.5) * 0.035],
-      length: 0.28 + next() * 0.04,
-      height: 0.045 + next() * 0.015,
-      width: 0.06 + next() * 0.025,
-      angle: -0.6 + next() * 0.2,
-      bow: 0.025,
-      curl: 0.72,
-      phase: next() * Math.PI * 2,
-    });
   const baseHeight = (p: Point) => oceanFieldPoint(crests, p[0], p[2])[1];
   const pieces = [
     sampleOceanMesh(
@@ -87,11 +64,12 @@ export function createOceanLayout(model: SeedModel) {
       ),
     ),
   ];
-  const sprayCount = 12 + (crests.length - 1) * 6;
-  const spray = new Float32Array(sprayCount * 8);
+  const sprayCount = 32;
+  const rockCount = 10;
+  const spray = new Float32Array((sprayCount + rockCount) * 8);
   for (let i = 0; i < sprayCount; i++) {
-    const index = i < 12 ? 0 : 1 + Math.floor((i - 12) / 6);
-    const origin = oceanCrestPoint(crests, index, 0.15 + next() * 0.7, 0.82 + next() * 0.08);
+    const index = i < 24 ? 0 : 1;
+    const origin = oceanCrestPoint(crests, index, 0.15 + next() * 0.62, 0.58 + next() * 0.14);
     const crest = crests[index]!;
     spray.set(
       [
@@ -100,13 +78,44 @@ export function createOceanLayout(model: SeedModel) {
         -Math.sin(crest.angle),
         Math.cos(crest.angle),
         index,
-        0.002 + next() * 0.0025,
+        0.0025 + next() * 0.0035,
       ],
       i * 8,
     );
   }
+  for (let i = 0; i < rockCount; i++) {
+    const side = i % 2 ? 1 : -1;
+    spray.set(
+      [
+        side * (0.3 + next() * 0.14),
+        0.009 + next() * 0.008,
+        -0.31 - next() * 0.025,
+        0,
+        0.012 + next() * 0.02,
+        0.01 + next() * 0.02,
+        99,
+        next() * 6,
+      ],
+      (sprayCount + i) * 8,
+    );
+  }
+  const actors = [...createOceanActors(), createCrabMesh()];
+  const crabs = createCrabTracks(next);
+  const crabData = crabs.flatMap((crab) => [
+    ...crab.center,
+    crab.travel,
+    crab.phase,
+    crab.scale,
+    crab.speed,
+    0,
+    0,
+  ]);
   const modelData = new Float32Array(
-    OCEAN_HEADER_FLOATS + pieces.reduce((sum, data) => sum + data.length, 0) + spray.length,
+    OCEAN_HEADER_FLOATS +
+      pieces.reduce((sum, data) => sum + data.length, 0) +
+      spray.length +
+      actors.reduce((sum, mesh) => sum + mesh.length, 0) +
+      crabData.length,
   );
   let offset = OCEAN_HEADER_FLOATS;
   modelData.set([offset / 4, OCEAN_FIELD_SEGMENTS, OCEAN_FIELD_SEGMENTS, crests.length], 0);
@@ -134,6 +143,21 @@ export function createOceanLayout(model: SeedModel) {
   });
   modelData.set([offset / 4, sprayCount, OCEAN_QR_FIRST_INSTANCE, 0], 4);
   modelData.set(spray, offset);
+  offset += spray.length;
+  actors.forEach((mesh, i) => {
+    modelData.set([offset / 4, mesh.length / 8, 0, 0], (i < 2 ? 2 + i : 13) * 4);
+    modelData.set(mesh, offset);
+    offset += mesh.length;
+  });
+  modelData.set([offset / 4, crabs.length, 0, 0], 14 * 4);
+  modelData.set(crabData, offset);
+  const facePoint = oceanCrestPoint(crests, 0, 0.68, 0.2);
+  const rider: Point = [
+    facePoint[0] - Math.sin(angle) * 0.1,
+    facePoint[1],
+    facePoint[2] + Math.cos(angle) * 0.1,
+  ];
+  modelData.set([...rider, baseHeight(rider)], 12 * 4);
   const batch = (
     role: "foundation" | "surface" | "ambient",
     verticesPerInstance: number,
@@ -158,7 +182,10 @@ export function createOceanLayout(model: SeedModel) {
         crests.length,
         2,
       ),
-      batch("ambient", 24, sprayCount, 8),
+      batch("ambient", 24, sprayCount + rockCount, 8),
+      ...actors.map((mesh, i) =>
+        batch("ambient", mesh.length / 8, i === 2 ? crabs.length : 1, 50 + i),
+      ),
     ],
     qr: {
       verticesPerInstance: 6,
@@ -166,5 +193,5 @@ export function createOceanLayout(model: SeedModel) {
       firstInstance: OCEAN_QR_FIRST_INSTANCE,
     },
   };
-  return { modelData, drawPlan, crests };
+  return { modelData, drawPlan, crests, crabs };
 }

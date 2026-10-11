@@ -58,6 +58,7 @@ export function ResultPreview({
             className="scene-button"
             url={artifact.identity.link.payloadUrl}
             model={model}
+            generatorVersion={3}
             scene={scene}
             view={view}
             onViewChange={setView}

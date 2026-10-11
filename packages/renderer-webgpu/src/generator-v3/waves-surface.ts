@@ -9,19 +9,19 @@ export type OceanCrest = {
   readonly curl: number;
   readonly phase: number;
 };
-// An open breaking sheet: rising back, rounded crown, descending overhang,
-// then an inward-turning lip. This is a curl, not a closed tube or repeated ridge.
+// The concave face rises back from its forward trough, then folds over it.
+// This C-shaped section leaves a visible barrel below the falling lip.
 const PROFILE = [
-  [-1, 0],
-  [-0.78, 0.015],
-  [-0.4, 0.23],
-  [-0.18, 0.66],
-  [0, 0.96],
-  [0.28, 1],
-  [0.62, 0.92],
-  [0.78, 0.73],
-  [0.68, 0.55],
-  [0.38, 0.56],
+  [1.35, 0],
+  [0.53, 0.055],
+  [-0.18, 0.26],
+  [-0.44, 0.57],
+  [-0.25, 0.86],
+  [0.18, 1],
+  [0.72, 0.96],
+  [1.06, 0.79],
+  [0.96, 0.61],
+  [0.56, 0.6],
 ] as const;
 
 function profile(t: number): readonly [number, number] {
@@ -71,18 +71,26 @@ export function oceanCrestPoint(
     const v = Math.max(0, Math.min(1, value));
     return v * v * (3 - 2 * v);
   };
-  const envelope = smooth(u / 0.21) * (1 - smooth((u - 0.65) / 0.35));
-  const [cross, rise] = profile(t);
+  // The near end stays open so the barrel has a readable C-shaped silhouette.
+  // Collapsing both ends to sea level seals that opening with a sloping curtain.
+  const envelope =
+    index === 0
+      ? smooth(u / 0.2) * (1 - smooth((u - 0.72) / 0.28) * 0.18)
+      : smooth(u / 0.16) * (1 - smooth((u - 0.84) / 0.16));
+  const [cross, rise] = index === 0 ? profile(t) : [-1 + t * 2, Math.sin(t * Math.PI)];
   const along = (u - 0.5) * crest.length;
   const irregular =
-    1 + Math.sin(u * 15 + crest.phase) * 0.045 + Math.sin(u * 31 + crest.phase * 2) * 0.018;
+    0.94 + Math.sin(u * 5 + crest.phase) * 0.12 + Math.sin(u * 15 + crest.phase) * 0.035;
+  const breaking = smooth((t - 0.58) / 0.35) * envelope;
+  const fingers = Math.sin(u * 47 + crest.phase) * 0.008 + Math.sin(u * 83 - crest.phase) * 0.004;
   const across =
     cross * crest.width * (0.4 + envelope * 0.6) * (1 + (crest.curl - 1) * Math.max(0, t - 0.4)) +
-    crest.bow * ((u * 2 - 1) ** 2 - 0.35);
+    crest.bow * ((u * 2 - 1) ** 2 - 0.35) +
+    fingers * breaking;
   const x = crest.center[0] + along * Math.cos(crest.angle) - across * Math.sin(crest.angle);
   const z = crest.center[1] + along * Math.sin(crest.angle) + across * Math.cos(crest.angle);
   const base = oceanFieldPoint(crests, x, z)[1];
-  return [x, base + rise * crest.height * envelope * irregular, z];
+  return [x, base + rise * crest.height * envelope * irregular + fingers * breaking * 0.8, z];
 }
 function unitNormal(a: Point, b: Point): Point {
   const n: Point = [
