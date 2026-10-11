@@ -2,6 +2,7 @@ import type { SeedModel } from "../seed-model.js";
 import {
   box,
   face,
+  triangle,
   packFacetedWorld,
   worldRandom,
   type Mesh,
@@ -67,6 +68,38 @@ function beam(mesh: Mesh, a: Vec3, b: Vec3, width: number, depth: number, materi
     local[i + 5] = (nx * dy) / length + (ny * dx) / length;
   }
   mesh.push(...local);
+}
+
+function tube(mesh: Mesh, a: Vec3, b: Vec3, radius: number, material: number, sides = 10) {
+  const delta = b.map((value, i) => value - a[i]!) as unknown as Vec3;
+  const length = Math.hypot(...delta);
+  const axis = delta.map((value) => value / length) as unknown as Vec3;
+  const cross = (u: Vec3, v: Vec3): Vec3 => [
+    u[1] * v[2] - u[2] * v[1],
+    u[2] * v[0] - u[0] * v[2],
+    u[0] * v[1] - u[1] * v[0],
+  ];
+  const perpendicular = cross(axis, Math.abs(axis[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0]);
+  const size = Math.hypot(...perpendicular);
+  const u = perpendicular.map((value) => value / size) as unknown as Vec3;
+  const v = cross(axis, u);
+  const point = (center: Vec3, i: number): Vec3 =>
+    center.map(
+      (value, n) =>
+        value +
+        radius *
+          (Math.cos((i * Math.PI * 2) / sides) * u[n]! +
+            Math.sin((i * Math.PI * 2) / sides) * v[n]!),
+    ) as unknown as Vec3;
+  for (let i = 0; i < sides; i++) {
+    const p = point(a, i),
+      q = point(a, i + 1),
+      r = point(b, i + 1),
+      s = point(b, i);
+    face(mesh, p, q, r, s, material);
+    triangle(mesh, a, q, p, material);
+    triangle(mesh, b, s, r, material);
+  }
 }
 
 export function createMechanicalLayout(model: SeedModel) {
@@ -225,6 +258,50 @@ export function createMechanicalLayout(model: SeedModel) {
   const rearShaft: Mesh = [];
   box(rearShaft, [follower[0], follower[1], 0.07], [0.024, 0.024, 0.24], 1);
   parts.push({ mesh: rearShaft });
+  // A lower reduction train fills the engine bed and drives the auxiliary pumps.
+  for (let i = 0; i < 2; i++) {
+    const center: Vec3 = [-0.34 + i * 0.168, 0.11, -0.19];
+    rotating(
+      spokedGear(center, 0.084, 12, 0.033),
+      center,
+      i === 0 ? 0.5 : -0.5,
+      i === 0 ? phase : -phase + Math.PI - Math.PI / 12,
+    );
+  }
+  const plumbing: Mesh = [];
+  for (const [i, x] of [0.18, 0.34].entries()) {
+    const z = 0.045;
+    tube(plumbing, [x, 0.04, z], [x, 0.195, z], 0.046, 2, 12);
+    tube(plumbing, [x, 0.045, z], [x, 0.061, z], 0.055, 1, 12);
+    tube(plumbing, [x, 0.18, z], [x, 0.197, z], 0.055, 1, 12);
+    const piston: Mesh = [];
+    tube(piston, [x, 0.15, z], [x, 0.31, z], 0.016, 1);
+    box(piston, [x, 0.3, z], [0.07, 0.025, 0.055], 3);
+    parts.push({
+      mesh: piston,
+      motion: 4,
+      phase: phase + i * Math.PI,
+      parameters: [0.034, 0, 0, 0],
+    });
+    tube(plumbing, [x, 0.1, z + 0.045], [x, 0.1, 0.33], 0.014, 3);
+    tube(plumbing, [x, 0.1, 0.33], [x, 0.04, 0.33], 0.014, 3);
+  }
+  tube(plumbing, [-0.36, 0.025, 0.26], [-0.36, 0.35, 0.26], 0.026, 3);
+  tube(plumbing, [-0.36, 0.35, 0.26], [0.13, 0.35, 0.26], 0.018, 3);
+  tube(plumbing, [0.13, 0.35, 0.26], [0.13, 0.26, 0.26], 0.018, 3);
+  const details: Mesh = [];
+  for (const x of [-0.41, 0.41])
+    for (const z of [-0.33, 0.32]) {
+      box(details, [x, 0.045, z], [0.024, 0.014, 0.024], 1);
+      box(details, [x, 0.053, z], [0.017, 0.003, 0.004], 4);
+    }
+  for (let i = 0; i < 8; i++)
+    box(details, [-0.04 + i * 0.032, 0.025, 0.31], [0.014, 0.014, 0.12], 1);
+  box(details, [-0.365, 0.075, -0.3], [0.11, 0.1, 0.055], 2);
+  box(details, [-0.365, 0.095, -0.331], [0.071, 0.032, 0.009], 5);
+  for (let i = 0; i < 3; i++)
+    box(details, [-0.39 + i * 0.025, 0.055, -0.332], [0.012, 0.012, 0.008], 3);
+  parts.push({ mesh: plumbing }, { mesh: details });
   return {
     ...packFacetedWorld(model, "mechanical", parts),
     pair,

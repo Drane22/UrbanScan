@@ -25,22 +25,26 @@ fn quad(v:u32)->vec2f {
 }
 fn deform(p:vec3f,n:vec3f,index:u32,base:f32)->mat2x3f {
  let center=worldData[4u+index*3u];let parameters=worldData[5u+index*3u];
- let cycle=uniforms.time*0.62+parameters.w;
- let stretch=1.0+sin(cycle)*0.07;
- let shear=sin(cycle-0.7)*0.026/parameters.x;
+ let cycle=fract(uniforms.time*0.23+parameters.w*0.15915494+f32(index)*0.34);
+ let gather=smoothstep(0.0,0.30,cycle);
+ let collapse=1.0-smoothstep(0.58,0.94,cycle);
+ let stretch=0.055+gather*collapse*1.10;
+ let shear=(smoothstep(0.25,0.76,cycle)*0.12-0.025)/parameters.x;
  let direction=vec2f(-sin(center.w),cos(center.w));
  let rise=max(0.0,p.y-base);
- let q=vec3f(p.x+direction.x*rise*shear,base+rise*stretch,p.z+direction.y*rise*shear);
+ let travel=(cycle-0.30)*0.23;
+ let q=vec3f(p.x+direction.x*(rise*shear+travel),base+rise*stretch,p.z+direction.y*(rise*shear+travel));
  let normal=normalize(vec3f(n.x,(n.y-dot(n.xz,direction)*shear)/stretch,n.z));
  return mat2x3f(q,normal);
 }
 fn quietRipple(p:vec3f,n:vec3f)->mat2x3f {
- let a=p.x*12.0+uniforms.time*0.4;let b=p.z*9.0-uniforms.time*0.3;
+ let a=p.x*18.0+uniforms.time*1.8;let b=p.z*14.0-uniforms.time*2.1;
  let ex=1.0-pow(abs(p.x*2.0),8.0);let ez=1.0-pow(abs(p.z*2.0),8.0);
  let edge=max(0.0,ex*ez);
  let dx=0.018*cos(a)*cos(b)*edge-0.024*sin(a)*cos(b)*pow(abs(p.x*2.0),7.0)*sign(p.x)*ez;
  let dz=-0.0135*sin(a)*sin(b)*edge-0.024*sin(a)*cos(b)*pow(abs(p.z*2.0),7.0)*sign(p.z)*ex;
- return mat2x3f(p+vec3f(0,sin(a)*cos(b)*0.0015*edge,0),normalize(vec3f(n.x-n.y*dx,n.y,n.z-n.y*dz)));
+ let wet=smoothstep(-0.31,-0.20,p.z);
+ return mat2x3f(p+vec3f(0,sin(a)*cos(b)*0.004*edge*wet,0),normalize(vec3f(n.x-n.y*dx,n.y,n.z-n.y*dz)));
 }
 @vertex
 fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32)->OceanOutput {
@@ -77,16 +81,23 @@ fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32
  } else {
   let record=u32(worldData[1].x)+(instance-8u)*2u;
   let origin=worldData[record];let info=worldData[record+1u];
-  let moved=deform(origin.xyz,vec3f(0,1,0),u32(info.z),origin.w);
-  let rippled=quietRipple(moved[0],moved[1]);
-  let cycle=fract(uniforms.time*0.24+info.w*117.1+f32(instance)*0.713);let radius=info.w*sin(cycle*PI);
   let corners=array<vec3f,6>(vec3f(1,0,0),vec3f(0,1,0),vec3f(0,0,1),vec3f(-1,0,0),vec3f(0,-1,0),vec3f(0,0,-1));
   let triangles=array<u32,24>(0u,1u,2u,2u,1u,3u,3u,1u,5u,5u,1u,0u,0u,2u,4u,2u,3u,4u,3u,5u,4u,5u,0u,4u);
   normal=corners[triangles[v%24u]];
-  p=rippled[0]+vec3f(info.x*cycle*0.025,sin(cycle*PI)*0.025,info.y*cycle*0.025)+normal*radius;
-  o.kind=3u;
+  if(info.z>90.0){
+   p=origin.xyz+normal*vec3f(info.x,info.y,info.x*0.8);o.kind=5u;
+  }else{
+   let moved=deform(origin.xyz,vec3f(0,1,0),u32(info.z),origin.w);
+   let rippled=quietRipple(moved[0],moved[1]);
+   let cycle=fract(uniforms.time*1.15+info.w*117.1+f32(instance)*0.713);
+   let crestCycle=fract(uniforms.time*0.23+worldData[5u+u32(info.z)*3u].w*0.15915494+info.z*0.34);
+   let burst=smoothstep(0.30,0.48,crestCycle)*(1.0-smoothstep(0.80,0.96,crestCycle));
+   let radius=info.w*sin(cycle*PI)*burst;
+   p=rippled[0]+vec3f(info.x*cycle*0.085,sin(cycle*PI)*0.045,info.y*cycle*0.085)+normal*radius;
+   o.kind=3u;
+  }
  }
- let build=smoothstep(0.05,1.8,uniforms.camera.z);
+ let build=smoothstep(0.02,0.85,uniforms.camera.z);
  let visibility=1.0-smoothstep(0.08,0.88,uniforms.progress);
  p.y*=build*visibility;
  o.world=p*grid*size;o.normal=normal;o.uv=uv;
@@ -95,12 +106,12 @@ fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32
 @fragment
 fn fragmentMain(o:OceanOutput)->@location(0) vec4f {
  let phase=worldData[5u+min(o.owner,2u)*3u].w;
- let foamCoord=vec2f(o.uv.x*65.0-uniforms.time*0.22+phase,o.uv.y*36.0+uniforms.time*0.05);
+ let foamCoord=vec2f(o.uv.x*65.0-uniforms.time*2.2+phase,o.uv.y*36.0+uniforms.time*1.5);
  let foamPattern=noise(foamCoord)*0.65+noise(foamCoord*2.1)*0.35;
  let foamAA=max(fwidth(foamPattern),0.025);
  let coordinate=o.world/(uniforms.gridSize*uniforms.blockSize);
  let shore=coordinate.z+0.285+sin(coordinate.x*5.0+worldData[5].w)*0.028;
- let ripples=sin(coordinate.x*70.0+coordinate.z*30.0-uniforms.time*0.4)*sin(coordinate.x*23.0-coordinate.z*73.0+uniforms.time*0.1);
+ let ripples=sin(coordinate.x*70.0+coordinate.z*30.0-uniforms.time*2.4)*sin(coordinate.x*23.0-coordinate.z*73.0+uniforms.time*1.1);
  let rippleAA=max(fwidth(ripples),0.04);
  if(o.kind==4u){
   let outside=any(o.uv<vec2f(0))||any(o.uv>vec2f(1));
@@ -125,13 +136,17 @@ fn fragmentMain(o:OceanOutput)->@location(0) vec4f {
  } else if(o.kind==1u){
   color+=uniforms.themeFifth.rgb*smoothstep(0.70-rippleAA,0.70+rippleAA,ripples)*0.025*depth;
   // The same continuous field becomes wet sand and beach; no disconnected shore mesh.
-  let wash=sin(uniforms.time*0.62+worldData[5].w)*0.016;
-  let boundary=shore+wash+sin(coordinate.x*23.0+uniforms.time*0.3)*0.004;
+  let wash=sin(uniforms.time*1.445+worldData[5].w)*0.043;
+  let boundary=shore+wash+sin(coordinate.x*23.0+uniforms.time*1.2)*0.009;
   let sand=mix(vec3f(0.80,0.68,0.48),vec3f(0.93,0.84,0.65),1.0-smoothstep(-0.10,0.005,shore));
   color=mix(sand,color,smoothstep(-0.008,0.020,boundary));
+  let grain=noise(coordinate.xz*320.0)*0.03;
+  color-=grain*(1.0-smoothstep(-0.02,0.02,boundary));
   let foamLine=exp(-pow((boundary-0.027)/0.014,2.0));
   let washLace=smoothstep(0.38-foamAA,0.38+foamAA,foamPattern);
   color=mix(color,uniforms.themeFifth.rgb,foamLine*(0.48+0.35*washLace));
+  let trailing=exp(-pow((boundary-0.075)/0.030,2.0))*smoothstep(0.55-foamAA,0.55+foamAA,foamPattern);
+  color=mix(color,uniforms.themeFifth.rgb,trailing*0.24);
  } else if(o.kind==2u){
   let lip=0.73+sin(o.uv.x*15.0+phase)*0.012;
   let cap=smoothstep(lip-0.055,lip,o.uv.y)*(1.0-smoothstep(lip+0.10,lip+0.15,o.uv.y));
@@ -143,7 +158,13 @@ fn fragmentMain(o:OceanOutput)->@location(0) vec4f {
   let seafoam=uniforms.themeFifth.rgb*(0.78+0.22*max(0.0,dot(n,light)));
   color=mix(color,seafoam,foam*0.96);
  } else if(o.kind==3u){color=uniforms.themeFifth.rgb*shade;}
- return vec4f(color,1.0-smoothstep(0.60,0.88,uniforms.progress));
+ else if(o.kind==5u){color=mix(vec3f(0.40,0.38,0.32),vec3f(0.67,0.61,0.49),o.normal.y*0.4+0.4)*shade;}
+ var opacity=1.0;
+ if(o.kind==2u){
+  let cycle=fract(uniforms.time*0.23+phase*0.15915494+f32(o.owner)*0.34);
+  opacity=smoothstep(0.01,0.15,cycle)*(1.0-smoothstep(0.75,0.96,cycle));
+ }
+ return vec4f(color,opacity*(1.0-smoothstep(0.60,0.88,uniforms.progress)));
 }
 fn hash(p:vec2f)->f32 {return fract(sin(dot(p,vec2f(127.1,311.7)))*43758.5453);}
 fn noise(p:vec2f)->f32 {

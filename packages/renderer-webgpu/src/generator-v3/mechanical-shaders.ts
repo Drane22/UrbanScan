@@ -22,7 +22,11 @@ fn faceMaterial(o:FacetOutput)->vec3f {
   color=uniforms.themeThird.rgb*diffuse+uniforms.themeFifth.rgb*spec*0.12;
  }else if(o.material==3u){
   color=uniforms.themeFourth.rgb*diffuse+uniforms.themeFifth.rgb*spec*0.22;
- }else if(o.material==4u){color=mix(uniforms.themePrimary.rgb,vec3f(0.025),0.70)*diffuse;}
+ }else if(o.material==4u){
+  let p=o.world/(uniforms.gridSize*uniforms.blockSize);
+  let tread=0.90+0.10*sin((p.x+p.y)*280.0-uniforms.time*18.0);
+  color=mix(uniforms.themePrimary.rgb,vec3f(0.025),0.70)*diffuse*tread;
+ }else if(o.material==5u){color=mix(uniforms.themeThird.rgb,uniforms.themeFifth.rgb,0.62);}
  return color;
 }
 `,

@@ -39,7 +39,7 @@ ${motion}
  let descriptor=worldData[instance*3u];if(v>=u32(descriptor.y)){return o;}
  let record=u32(descriptor.x)+v*2u;let point=worldData[record];let normal=worldData[record+1u];
  let moved=movePart(point.xyz,normal.xyz,instance);
- var p=moved[0];p.y*=smoothstep(0.05,1.8,uniforms.camera.z)*(1.0-smoothstep(0.08,0.88,uniforms.progress));
+ var p=moved[0];p.y*=smoothstep(0.02,0.85,uniforms.camera.z)*(1.0-smoothstep(0.08,0.88,uniforms.progress));
  o.world=p*grid*size;o.normal=moved[1];o.phase=normal.w;o.material=u32(point.w);
  o.position=worldProject(o.world,1.68,grid*size*0.045);return o;
 }

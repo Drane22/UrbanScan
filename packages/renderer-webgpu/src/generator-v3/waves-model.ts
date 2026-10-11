@@ -46,8 +46,8 @@ export function createOceanLayout(model: SeedModel) {
     {
       center: [(next() - 0.5) * 0.075, 0.28],
       length: 0.68 + next() * 0.08,
-      height: 0.028 + next() * 0.012,
-      width: 0.07,
+      height: 0.065 + next() * 0.025,
+      width: 0.095,
       angle: angle + 0.1 + next() * 0.08,
       bow: 0.04,
       curl: 0.55,
@@ -71,10 +71,11 @@ export function createOceanLayout(model: SeedModel) {
       ),
     ),
   ];
-  const sprayCount = 12 + (crests.length - 1) * 6;
-  const spray = new Float32Array(sprayCount * 8);
+  const sprayCount = 32;
+  const rockCount = 10;
+  const spray = new Float32Array((sprayCount + rockCount) * 8);
   for (let i = 0; i < sprayCount; i++) {
-    const index = i < 12 ? 0 : 1 + Math.floor((i - 12) / 6);
+    const index = i < 24 ? 0 : 1;
     const origin = oceanCrestPoint(crests, index, 0.15 + next() * 0.7, 0.82 + next() * 0.08);
     const crest = crests[index]!;
     spray.set(
@@ -84,9 +85,25 @@ export function createOceanLayout(model: SeedModel) {
         -Math.sin(crest.angle),
         Math.cos(crest.angle),
         index,
-        0.002 + next() * 0.0025,
+        0.0025 + next() * 0.0035,
       ],
       i * 8,
+    );
+  }
+  for (let i = 0; i < rockCount; i++) {
+    const side = i % 2 ? 1 : -1;
+    spray.set(
+      [
+        side * (0.3 + next() * 0.14),
+        0.009 + next() * 0.008,
+        -0.34 - next() * 0.11,
+        0,
+        0.012 + next() * 0.02,
+        0.01 + next() * 0.02,
+        99,
+        next() * 6,
+      ],
+      (sprayCount + i) * 8,
     );
   }
   const modelData = new Float32Array(
@@ -142,7 +159,7 @@ export function createOceanLayout(model: SeedModel) {
         crests.length,
         2,
       ),
-      batch("ambient", 24, sprayCount, 8),
+      batch("ambient", 24, sprayCount + rockCount, 8),
     ],
     qr: {
       verticesPerInstance: 6,

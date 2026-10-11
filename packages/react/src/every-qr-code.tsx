@@ -46,6 +46,8 @@ export type EveryQRCodeProps = {
   readonly initialView?: EveryQRCodeView;
   readonly initialZoom?: number;
   readonly interactive?: boolean;
+  /** Keep the world loading state clear; genuine rendering errors still expose the QR. */
+  readonly loadingFallback?: "qr" | "none";
   readonly model?: EveryQRCodeModel;
   readonly onError?: (error: Error) => void;
   readonly onIdentity?: (identity: EveryQRCodeIdentity, morphSeed: number) => void;
@@ -233,6 +235,7 @@ export function EveryQRCode({
   initialView = "model",
   initialZoom = 1,
   interactive = true,
+  loadingFallback = "qr",
   model = "tree",
   onError,
   onIdentity,
@@ -347,7 +350,7 @@ export function EveryQRCode({
   }, [error, interactive, onViewChange, view]);
   // A healthy canvas owns the entire morph and its canonical QR endpoint.
   // Covering it immediately on view changes hides the transition and palette.
-  const qr = artifact && (error || !ready) ? artifact.svg : null;
+  const qr = artifact && (error || (!ready && loadingFallback === "qr")) ? artifact.svg : null;
 
   return (
     <button

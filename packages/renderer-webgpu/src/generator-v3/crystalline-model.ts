@@ -1,12 +1,12 @@
 import type { SeedModel } from "../seed-model.js";
 import {
-  box,
   face,
   triangle,
   packFacetedWorld,
   worldRandom,
   type Mesh,
   type Vec3,
+  type FacetedPart,
 } from "./faceted-mesh.js";
 
 export type Crystal = {
@@ -61,15 +61,15 @@ export function createCrystallineLayout(model: SeedModel) {
   const centers = [rotate(-0.13, 0.12), rotate(0.25, 0.03), rotate(-0.19, -0.25)];
   const crystals: Crystal[] = [];
   centers.forEach((center, cluster) => {
-    const count = cluster === 0 ? 8 : 5;
+    const count = cluster === 0 ? 16 : 10;
     for (let i = 0; i < count; i++) {
       const angle = next() * Math.PI * 2;
-      const reach = i === 0 ? 0 : 0.075 + next() * 0.08;
+      const reach = i === 0 ? 0 : 0.045 + Math.sqrt(next()) * 0.12;
       const hero = i === 0;
       crystals.push({
         center: [center[0] + Math.cos(angle) * reach, 0.013, center[1] + Math.sin(angle) * reach],
         radius: hero ? 0.054 + next() * 0.023 : 0.022 + next() * 0.018,
-        height: hero ? (cluster === 0 ? 0.36 : 0.22) + next() * 0.1 : 0.07 + next() * 0.15,
+        height: hero ? (cluster === 0 ? 0.4 : 0.26) + next() * 0.07 : 0.055 + next() * 0.19,
         sides: next() > 0.25 ? 6 : 5,
         angle: next() * Math.PI,
         lean: [(next() - 0.5) * 0.4, (next() - 0.5) * 0.4],
@@ -79,8 +79,21 @@ export function createCrystallineLayout(model: SeedModel) {
     }
   });
   const base: Mesh = [];
-  box(base, [0, -0.035, 0], [0.98, 0.075, 0.98]);
-  // Low mineral hosts follow the three clusters, leaving the spaces between them open.
+  const rim = Array.from({ length: 14 }, (_, i): Vec3 => {
+    const a = (i * Math.PI * 2) / 14;
+    const radius = 0.43 + next() * 0.045;
+    return [Math.cos(a) * radius, 0.006 + next() * 0.014, Math.sin(a) * radius];
+  });
+  for (let i = 0; i < rim.length; i++) {
+    const a = rim[i]!,
+      b = rim[(i + 1) % rim.length]!;
+    const innerA: Vec3 = [a[0] * 0.83, 0.034, a[2] * 0.83];
+    const innerB: Vec3 = [b[0] * 0.83, 0.034, b[2] * 0.83];
+    face(base, a, innerA, innerB, b, 3, i);
+    triangle(base, innerA, [0, 0.005, 0], innerB, 0, i);
+    face(base, a, b, [b[0] * 0.88, -0.09, b[2] * 0.88], [a[0] * 0.88, -0.09, a[2] * 0.88], 0, i);
+  }
+  // The fractured stone rim and three interlocking clusters form a single mineral island.
   const hosts = centers.map((center, cluster) =>
     crystalMesh({
       center: [center[0], 0, center[1]],
@@ -93,12 +106,49 @@ export function createCrystallineLayout(model: SeedModel) {
       cluster,
     }),
   );
+  const parts: FacetedPart[] = [
+    { mesh: base },
+    ...hosts.map((mesh) => ({ mesh })),
+    ...crystals.map((c) => ({ mesh: crystalMesh(c) })),
+  ];
+  for (let i = 0; i < 24; i++) {
+    const angle = (i * Math.PI * 2) / 24 + next() * 0.12;
+    const reach = 0.32 + next() * 0.08;
+    const chip: Crystal = {
+      center: [Math.cos(angle) * reach, 0.02, Math.sin(angle) * reach],
+      radius: 0.015 + next() * 0.014,
+      height: 0.025 + next() * 0.045,
+      sides: 5,
+      angle,
+      lean: [Math.cos(angle) * 0.4, Math.sin(angle) * 0.4],
+      phase: next() * 6,
+      cluster: 3,
+    };
+    parts.push({ mesh: crystalMesh(chip) });
+  }
+  for (let i = 0; i < 8; i++) {
+    const angle = (i * Math.PI * 2) / 8;
+    const center: Vec3 = [Math.cos(angle) * 0.32, 0.24 + (i % 3) * 0.07, Math.sin(angle) * 0.28];
+    const shard: Crystal = {
+      center,
+      radius: 0.018 + next() * 0.013,
+      height: 0.085 + next() * 0.055,
+      sides: 6,
+      angle,
+      lean: [(next() - 0.5) * 0.7, (next() - 0.5) * 0.7],
+      phase: next() * 6,
+      cluster: 4,
+    };
+    parts.push({
+      mesh: crystalMesh(shard),
+      motion: 1,
+      pivot: center,
+      phase: angle,
+      ratio: 0.7 + next() * 0.5,
+    });
+  }
   return {
-    ...packFacetedWorld(model, "crystalline", [
-      { mesh: base },
-      ...hosts.map((mesh) => ({ mesh })),
-      ...crystals.map((c) => ({ mesh: crystalMesh(c) })),
-    ]),
+    ...packFacetedWorld(model, "crystalline", parts),
     crystals,
     centers,
   };
