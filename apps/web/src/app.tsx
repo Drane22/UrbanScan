@@ -1,28 +1,50 @@
-import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { EveryQRCodeModel } from "@every-qrcode/react";
 import {
   getDefaultPaletteForModel,
   getPalettesForModel,
   selectWorldPalette,
 } from "@every-qrcode/renderer-webgpu/world-options";
-import { QRDetailsDialog } from "./qr-details-dialog";
-import { readAppearance, saveAppearance } from "./studio-preferences";
+import { readAppearance, saveAppearance, type Appearance } from "./studio-preferences";
 import { StudioIcon } from "./studio-icon";
 import { useQRArtifact } from "./use-qr-artifact";
 import { DestinationForm } from "./studio/destination-form";
 import { ResultPreview } from "./studio/result-preview";
-import { WorldPicker } from "./studio/world-picker";
-import { PalettePicker } from "./studio/palette-picker";
+import { ThemeControls } from "./studio/theme-controls";
+import { recordStudioEvent } from "./studio-diagnostics";
 import { StudioSettings } from "./studio/studio-settings";
+import { WORLD_CATALOG } from "./world-catalog";
+import { createDesignedQR } from "./qr-design";
+import { createExperienceURL } from "./experience";
 
 const DEFAULT_LINK = "https://example.com";
 export function App(): React.JSX.Element {
   const qr = useQRArtifact(DEFAULT_LINK);
   const [model, setModel] = useState<EveryQRCodeModel>("circuit");
   const [paletteId, setPaletteId] = useState(getDefaultPaletteForModel("circuit").id);
+  const [paletteChoices, setPaletteChoices] = useState<Record<string, string>>({});
   const [seed, setSeed] = useState<number | null>(null);
-  const [tab, setTab] = useState<"world" | "colors">("world");
-  const [appearance, setAppearance] = useState(readAppearance);
+  const [appearance, setAppearance] = useState<Appearance>("paper");
+  const [preferencesReady, setPreferencesReady] = useState(false);
+  useEffect(() => {
+    setAppearance(readAppearance());
+    try {
+      const saved = JSON.parse(localStorage.getItem("urbanscan.design") ?? "null");
+      if (saved && WORLD_CATALOG.some((world) => world.id === saved.model)) {
+        const choices = typeof saved.palettes === "object" && saved.palettes ? saved.palettes : {};
+        const valid =
+          choices[saved.model] === "seeded" ||
+          getPalettesForModel(saved.model).some((p) => p.id === choices[saved.model]);
+        setModel(saved.model);
+        setPaletteChoices(choices);
+        setPaletteId(valid ? choices[saved.model] : getDefaultPaletteForModel(saved.model).id);
+      }
+    } catch {
+      /* Storage is optional. */
+    }
+    setPreferencesReady(true);
+    recordStudioEvent("controls-ready");
+  }, []);
   const palettes = getPalettesForModel(model);
   const selected =
     palettes.find((palette) => palette.id === paletteId) ??
@@ -35,6 +57,7 @@ export function App(): React.JSX.Element {
     [paletteId, selected],
   );
   useEffect(() => {
+    if (!preferencesReady) return;
     document.documentElement.dataset["appearance"] = appearance;
     saveAppearance(appearance);
     document
@@ -43,26 +66,40 @@ export function App(): React.JSX.Element {
         "content",
         appearance === "midnight" ? "#13201c" : appearance === "lavender" ? "#f3eff8" : "#f5f1e8",
       );
-  }, [appearance]);
+  }, [appearance, preferencesReady]);
+  const exportArtifact = useMemo(
+    () => (qr.artifact ? createDesignedQR(qr.artifact, selected.swatches) : null),
+    [qr.artifact, selected.swatches],
+  );
+  const experienceUrl = qr.artifact
+    ? createExperienceURL({
+        url: qr.artifact.identity.link.payloadUrl,
+        model,
+        paletteId: selected.id,
+      })
+    : null;
+  useEffect(() => {
+    if (!preferencesReady) return;
+    try {
+      localStorage.setItem(
+        "urbanscan.design",
+        JSON.stringify({ model, palettes: { ...paletteChoices, [model]: paletteId } }),
+      );
+    } catch {
+      /* Storage is optional. */
+    }
+  }, [preferencesReady, model, paletteId, paletteChoices]);
   const selectWorld = (next: EveryQRCodeModel) => {
     if (next === model) return;
     setModel(next);
     setSeed(null);
-    setPaletteId(getDefaultPaletteForModel(next).id);
-  };
-  const tabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-    event.preventDefault();
-    const next =
-      event.key === "Home"
-        ? "world"
-        : event.key === "End"
-          ? "colors"
-          : tab === "world"
-            ? "colors"
-            : "world";
-    setTab(next);
-    document.getElementById(next + "-tab")?.focus();
+    const remembered = paletteChoices[next];
+    setPaletteChoices((choices) => ({ ...choices, [model]: paletteId }));
+    setPaletteId(
+      remembered === "seeded" || getPalettesForModel(next).some((p) => p.id === remembered)
+        ? remembered!
+        : getDefaultPaletteForModel(next).id,
+    );
   };
   return (
     <main className="studio-shell">
@@ -71,10 +108,11 @@ export function App(): React.JSX.Element {
           <StudioIcon name="qr" />
           urbanscan<span className="brand-dot">.</span>
         </span>
+        <StudioSettings appearance={appearance} onAppearance={setAppearance} />
       </header>
       <div className="studio-intro">
-        <h1>QR code generator</h1>
-        <p>Turn a link into a 3D world and a scannable QR.</p>
+        <h1>Give your QR a world.</h1>
+        <p>Choose a world and a palette. Every scan opens your link.</p>
       </div>
       <DestinationForm
         draft={qr.draftUrl}
@@ -84,71 +122,22 @@ export function App(): React.JSX.Element {
         onChange={qr.setDraftUrl}
         onSubmit={qr.submit}
       />
+      <ThemeControls
+        model={model}
+        paletteId={paletteId}
+        selectedPaletteId={selected.id}
+        onWorld={selectWorld}
+        onPalette={setPaletteId}
+      />
       <ResultPreview
         revision={qr.revision}
-        key={qr.revision + ":" + model}
         artifact={qr.artifact}
+        exportArtifact={exportArtifact}
+        experienceUrl={experienceUrl}
         model={model}
         scene={scene}
         onSeed={setSeed}
       />
-      <section className="customization" aria-label="Customize">
-        <div className="customization-tabs" role="tablist" aria-label="Customize">
-          <button
-            id="world-tab"
-            type="button"
-            role="tab"
-            aria-selected={tab === "world"}
-            aria-controls="world-panel"
-            tabIndex={tab === "world" ? 0 : -1}
-            onClick={() => setTab("world")}
-            onKeyDown={tabKeyDown}
-          >
-            World
-          </button>
-          <button
-            id="colors-tab"
-            type="button"
-            role="tab"
-            aria-selected={tab === "colors"}
-            aria-controls="colors-panel"
-            tabIndex={tab === "colors" ? 0 : -1}
-            onClick={() => setTab("colors")}
-            onKeyDown={tabKeyDown}
-          >
-            Colors
-          </button>
-        </div>
-        <div id="world-panel" role="tabpanel" aria-labelledby="world-tab" hidden={tab !== "world"}>
-          <WorldPicker selected={model} onSelect={selectWorld} />
-        </div>
-        <div
-          id="colors-panel"
-          role="tabpanel"
-          aria-labelledby="colors-tab"
-          hidden={tab !== "colors"}
-        >
-          <PalettePicker
-            model={model}
-            selected={selected.id}
-            seeded={paletteId === "seeded"}
-            onSelect={setPaletteId}
-          />
-        </div>
-      </section>
-      <div className="secondary-tools">
-        <QRDetailsDialog identity={qr.artifact?.identity ?? null} />
-        <StudioSettings appearance={appearance} onAppearance={setAppearance} />
-      </div>
-      <footer className="studio-footer">
-        <details>
-          <summary>About</summary>
-          <p>
-            UrbanScan creates a scannable QR and a procedural 3D world from a link. Based on Every
-            QR Code; improved by drane.
-          </p>
-        </details>
-      </footer>
       <span className="sr-only" role="status">
         {qr.artifact ? "QR ready for " + qr.artifact.identity.link.payloadUrl : ""}
       </span>

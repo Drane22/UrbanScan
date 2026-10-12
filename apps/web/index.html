@@ -3,14 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f7f0e3" />
-    <meta
-      name="description"
-      content="urbanscan: Multi-World Procedural QR Generator. Every URL contains a hidden world. Modified and improved by drane."
+    <meta name="theme-color" content="#f5f1e8" />
+    <link
+      rel="preload"
+      href="/fonts/plus-jakarta-sans.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
     />
-    <title>urbanscan — Multi-World Procedural QR Generator</title>
+    <!--studio-metadata-->
   </head>
   <body>
+    <noscript>
+      <p class="javascript-notice">
+        Enable JavaScript to generate, customize and download a QR code. The 3D preview is optional.
+      </p>
+      <style>
+        .empty-result {
+          visibility: hidden;
+        }
+        .destination-form button {
+          pointer-events: none;
+        }
+      </style>
+    </noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

@@ -1,4 +1,5 @@
 import { createQRArtifact, type QRArtifact } from "@every-qrcode/core";
+import { startStudioTiming } from "./studio-diagnostics";
 
 export type QRArtifactState = {
   readonly draftUrl: string;
@@ -41,12 +42,14 @@ export function createQRArtifactState(
       publish({ ...state, pending: false });
     },
     async submit(value = state.draftUrl): Promise<boolean> {
+      const timing = startStudioTiming();
       const ticket = ++request;
       const draftAtSubmit = state.draftUrl;
       publish({ ...state, pending: true, error: null });
       try {
         const artifact = await create(value.trim());
         if (ticket !== request) return false;
+        timing("qr-ready");
         publish({
           ...state,
           artifact,
@@ -59,6 +62,7 @@ export function createQRArtifactState(
         return true;
       } catch (reason) {
         if (ticket !== request) return false;
+        timing("qr-error");
         publish({
           ...state,
           pending: false,

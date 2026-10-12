@@ -1,4 +1,6 @@
-import { getQRRasterLayout, serializeQRSvg, type QRArtifact } from "@every-qrcode/core";
+import { createQRGradientStops, getQRRasterLayout } from "@every-qrcode/core";
+import { serializeDesignedQR, type DesignedQRArtifact as QRArtifact } from "./qr-design";
+import { startStudioTiming } from "./studio-diagnostics";
 
 export const QR_EXPORT_SIZES = [512, 1024, 2048] as const;
 export type QRExportSize = (typeof QR_EXPORT_SIZES)[number];
@@ -14,7 +16,14 @@ export function encodeQRPNG(artifact: QRArtifact, size: QRExportSize): Promise<B
   context.imageSmoothingEnabled = false;
   context.fillStyle = "#fff";
   context.fillRect(0, 0, size, size);
-  context.fillStyle = "#000";
+  const inks = artifact.inks;
+  if (inks) {
+    const gradient = context.createLinearGradient(0, 0, size, size);
+    createQRGradientStops(inks).forEach(({ color, offset }) =>
+      gradient.addColorStop(offset, color),
+    );
+    context.fillStyle = gradient;
+  } else context.fillStyle = "#000";
   for (let row = 0; row < matrix.size; row++)
     for (let column = 0; column < matrix.size; column++)
       if (matrix.cells[row * matrix.size + column] === 1)
@@ -34,7 +43,7 @@ export function encodeQRPNG(artifact: QRArtifact, size: QRExportSize): Promise<B
 }
 
 export function encodeQRSVG(artifact: QRArtifact): Blob {
-  return new Blob([serializeQRSvg(artifact)], { type: "image/svg+xml" });
+  return new Blob([serializeDesignedQR(artifact)], { type: "image/svg+xml" });
 }
 
 export type PreparedQRExport = {
@@ -65,14 +74,17 @@ export function createQRExportState(encode = encodeQRPNG) {
       publish({ pending: false, prepared: null, error: null });
     },
     async prepare(artifact: QRArtifact, revision: number, size: QRExportSize) {
+      const timing = startStudioTiming();
       const request = ++ticket;
       publish({ pending: true, prepared: null, error: null });
       try {
         const blob = await encode(artifact, size);
         if (request !== ticket) return;
+        timing("png-ready");
         const file = new File([blob], "urbanscan-qr.png", { type: "image/png" });
         publish({ pending: false, prepared: { artifact, revision, size, file }, error: null });
       } catch {
+        if (request === ticket) timing("png-error");
         if (request === ticket)
           publish({ pending: false, prepared: null, error: "Could not prepare PNG. Try again." });
       }

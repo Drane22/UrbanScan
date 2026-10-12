@@ -5,6 +5,12 @@ import { fileURLToPath, URL } from "node:url";
 export default defineConfig({
   build: {
     chunkSizeWarningLimit: 560,
+    rolldownOptions: {
+      input: {
+        studio: fileURLToPath(new URL("./index.html", import.meta.url)),
+        go: fileURLToPath(new URL("./go.html", import.meta.url)),
+      },
+    },
   },
   plugins: [react()],
   resolve: {
