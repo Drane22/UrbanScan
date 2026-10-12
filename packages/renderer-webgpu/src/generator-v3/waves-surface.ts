@@ -71,18 +71,10 @@ export function oceanCrestPoint(
     const v = Math.max(0, Math.min(1, value));
     return v * v * (3 - 2 * v);
   };
-  // The near end stays open so the barrel has a readable C-shaped silhouette.
-  // Collapsing both ends to sea level seals that opening with a sloping curtain.
-  const envelope =
-    index === 0
-      ? smooth(u / 0.2) * (1 - smooth((u - 0.72) / 0.28) * 0.18)
-      : smooth(u / 0.16) * (1 - smooth((u - 0.84) / 0.16));
-  const [cross, rise] = index === 0 ? profile(t) : [-1 + t * 2, Math.sin(t * Math.PI)];
+  const envelope = smooth(u / 0.17) * (1 - smooth((u - 0.8) / 0.2));
+  const [cross, rise] = profile(t);
   const along = (u - 0.5) * crest.length;
-  const irregular =
-    0.94 + Math.sin(u * 5 + crest.phase) * 0.12 + Math.sin(u * 15 + crest.phase) * 0.035;
-  const breaking = smooth((t - 0.58) / 0.35) * envelope;
-  const fingers = Math.sin(u * 47 + crest.phase) * 0.008 + Math.sin(u * 83 - crest.phase) * 0.004;
+  const irregular = 1 + Math.sin(u * 7 + crest.phase) * 0.045;
   const across =
     cross * crest.width * (0.4 + envelope * 0.6) * (1 + (crest.curl - 1) * Math.max(0, t - 0.4)) +
     crest.bow * ((u * 2 - 1) ** 2 - 0.35) +

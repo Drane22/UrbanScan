@@ -44,11 +44,14 @@ function copyCells(code: ReturnType<typeof QRCode.create>): Uint8Array {
   return cells;
 }
 
-function validateEncoderResult(code: ReturnType<typeof QRCode.create>): number {
+function validateEncoderResult(
+  code: ReturnType<typeof QRCode.create>,
+  maxSymbolVersion: number = QR_PROFILE_V1.maxSymbolVersion,
+): number {
   if (!Number.isInteger(code.version) || code.version < 1) {
     throw new EveryQRCodeError("generation-failed", "The QR encoder returned an invalid version.");
   }
-  if (code.version > QR_PROFILE_V1.maxSymbolVersion) throw new LinkTooComplexError();
+  if (code.version > maxSymbolVersion) throw new LinkTooComplexError();
   if (code.modules.size !== 17 + 4 * code.version) {
     throw new EveryQRCodeError(
       "generation-failed",
@@ -104,4 +107,16 @@ export function qrCell(matrix: QRMatrix, column: number, row: number): 0 | 1 {
     throw new RangeError("QR coordinate");
   }
   return matrix.cells[row * matrix.size + column] === 1 ? 1 : 0;
+}
+
+/** Flat exports can carry a themed landing URL without enlarging historical world identities. */
+export function createExportQRMatrix(payloadUrl: string): Pick<QRMatrix, "cells" | "size"> {
+  let code: ReturnType<typeof QRCode.create>;
+  try {
+    code = QRCode.create(payloadUrl, { errorCorrectionLevel: "M" });
+  } catch {
+    throw new LinkTooComplexError();
+  }
+  validateEncoderResult(code, 20);
+  return { cells: copyCells(code), size: code.modules.size };
 }

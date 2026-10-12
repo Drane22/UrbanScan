@@ -51,8 +51,6 @@ export type EveryQRCodeProps = {
   readonly interactive?: boolean;
   /** Keep the world loading state clear; genuine rendering errors still expose the QR. */
   readonly loadingFallback?: "qr" | "none";
-  /** Palette swatches for the loading/error QR; never alters its encoded cells. */
-  readonly fallbackColors?: readonly string[];
   readonly model?: EveryQRCodeModel;
   readonly onError?: (error: Error) => void;
   readonly onIdentity?: (identity: EveryQRCodeIdentity, morphSeed: number) => void;
@@ -241,7 +239,6 @@ export function EveryQRCode({
   initialZoom = 1,
   interactive = true,
   loadingFallback = "qr",
-  fallbackColors,
   model = "tree",
   onError,
   onIdentity,

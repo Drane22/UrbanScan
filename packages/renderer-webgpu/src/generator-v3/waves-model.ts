@@ -21,27 +21,27 @@ export const OCEAN_QR_FIRST_INSTANCE = 64;
 export function createOceanLayout(model: SeedModel) {
   if (model.generatorVersion !== 3)
     throw new RangeError("Ocean layout requires generator version 3");
-  const next = worldRandom(model, 0x57415633);
+  const next = randomStream(model);
   // A broad breaker moves toward the near shoreline; a low offshore swell follows it.
   const phase = next() * Math.PI * 2;
-  const angle = Math.PI - 0.48 + (next() - 0.5) * 0.5;
+  const angle = Math.PI + (next() - 0.5) * 0.12;
   const crests: OceanCrest[] = [
     {
-      center: [(next() - 0.5) * 0.07, 0.035 + next() * 0.07],
-      length: 0.66 + next() * 0.18,
-      height: 0.23 + next() * 0.08,
-      width: 0.125 + next() * 0.05,
+      center: [(next() - 0.5) * 0.035, -0.005 + next() * 0.035],
+      length: 0.82 + next() * 0.045,
+      height: 0.2 + next() * 0.025,
+      width: 0.19 + next() * 0.015,
       angle,
-      bow: 0.015 + next() * 0.065,
-      curl: 1.05 + next() * 0.3,
+      bow: 0.04 + next() * 0.025,
+      curl: 1.05 + next() * 0.12,
       phase,
     },
     {
-      center: [(next() - 0.5) * 0.12, 0.29],
-      length: 0.32 + next() * 0.18,
-      height: 0.035 + next() * 0.055,
-      width: 0.06,
-      angle: angle + (next() - 0.5) * 0.2,
+      center: [(next() - 0.5) * 0.075, 0.28],
+      length: 0.68 + next() * 0.08,
+      height: 0.065 + next() * 0.025,
+      width: 0.095,
+      angle: angle + 0.1 + next() * 0.08,
       bow: 0.04,
       curl: 0.55,
       phase: phase + 1,
@@ -69,7 +69,7 @@ export function createOceanLayout(model: SeedModel) {
   const spray = new Float32Array((sprayCount + rockCount) * 8);
   for (let i = 0; i < sprayCount; i++) {
     const index = i < 24 ? 0 : 1;
-    const origin = oceanCrestPoint(crests, index, 0.15 + next() * 0.62, 0.58 + next() * 0.14);
+    const origin = oceanCrestPoint(crests, index, 0.15 + next() * 0.7, 0.82 + next() * 0.08);
     const crest = crests[index]!;
     spray.set(
       [
@@ -89,7 +89,7 @@ export function createOceanLayout(model: SeedModel) {
       [
         side * (0.3 + next() * 0.14),
         0.009 + next() * 0.008,
-        -0.31 - next() * 0.025,
+        -0.34 - next() * 0.11,
         0,
         0.012 + next() * 0.02,
         0.01 + next() * 0.02,
@@ -99,17 +99,6 @@ export function createOceanLayout(model: SeedModel) {
       (sprayCount + i) * 8,
     );
   }
-  const actors = [...createOceanActors(), createCrabMesh()];
-  const crabs = createCrabTracks(next);
-  const crabData = crabs.flatMap((crab) => [
-    ...crab.center,
-    crab.travel,
-    crab.phase,
-    crab.scale,
-    crab.speed,
-    0,
-    0,
-  ]);
   const modelData = new Float32Array(
     OCEAN_HEADER_FLOATS +
       pieces.reduce((sum, data) => sum + data.length, 0) +
@@ -183,9 +172,6 @@ export function createOceanLayout(model: SeedModel) {
         2,
       ),
       batch("ambient", 24, sprayCount + rockCount, 8),
-      ...actors.map((mesh, i) =>
-        batch("ambient", mesh.length / 8, i === 2 ? crabs.length : 1, 50 + i),
-      ),
     ],
     qr: {
       verticesPerInstance: 6,

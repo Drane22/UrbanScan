@@ -14,8 +14,7 @@ import { ThemeControls } from "./studio/theme-controls";
 import { recordStudioEvent } from "./studio-diagnostics";
 import { StudioSettings } from "./studio/studio-settings";
 import { WORLD_CATALOG } from "./world-catalog";
-import { createDesignedQR } from "./qr-design";
-import { createExperienceURL } from "./experience";
+import { useExperienceQR } from "./use-experience-qr";
 
 const DEFAULT_LINK = "https://example.com";
 export function App(): React.JSX.Element {
@@ -67,17 +66,7 @@ export function App(): React.JSX.Element {
         appearance === "midnight" ? "#13201c" : appearance === "lavender" ? "#f3eff8" : "#f5f1e8",
       );
   }, [appearance, preferencesReady]);
-  const exportArtifact = useMemo(
-    () => (qr.artifact ? createDesignedQR(qr.artifact, selected.swatches) : null),
-    [qr.artifact, selected.swatches],
-  );
-  const experienceUrl = qr.artifact
-    ? createExperienceURL({
-        url: qr.artifact.identity.link.payloadUrl,
-        model,
-        paletteId: selected.id,
-      })
-    : null;
+  const experience = useExperienceQR(qr.artifact, model, selected.id, selected.swatches);
   useEffect(() => {
     if (!preferencesReady) return;
     try {
@@ -112,7 +101,7 @@ export function App(): React.JSX.Element {
       </header>
       <div className="studio-intro">
         <h1>Give your QR a world.</h1>
-        <p>Choose a world and a palette. Every scan opens your link.</p>
+        <p>Choose a world and a palette. Every scan opens your creation.</p>
       </div>
       <DestinationForm
         draft={qr.draftUrl}
@@ -132,8 +121,8 @@ export function App(): React.JSX.Element {
       <ResultPreview
         revision={qr.revision}
         artifact={qr.artifact}
-        exportArtifact={exportArtifact}
-        experienceUrl={experienceUrl}
+        exportArtifact={experience.artifact}
+        exportError={experience.error}
         model={model}
         scene={scene}
         onSeed={setSeed}

@@ -82,7 +82,7 @@ function beam(mesh: Mesh, a: Vec3, b: Vec3, width: number, depth: number, materi
   mesh.push(...local);
 }
 
-function tube(mesh: Mesh, a: Vec3, b: Vec3, radius: number, material: number, sides = 8) {
+function tube(mesh: Mesh, a: Vec3, b: Vec3, radius: number, material: number, sides = 10) {
   const delta = b.map((value, i) => value - a[i]!) as unknown as Vec3;
   const length = Math.hypot(...delta);
   const axis = delta.map((value) => value / length) as unknown as Vec3;
@@ -154,8 +154,8 @@ export function createMechanicalLayout(model: SeedModel) {
     parts.push({ mesh, pivot, motion: 1, ratio, phase: offset });
   const spokedGear = (center: Vec3, radius: number, teeth: number, opening: number) => {
     const mesh = gearMesh(center, radius, teeth, opening, 0.04);
-    for (let i = 0; i < spokeCount; i++) {
-      const angle = (i * Math.PI * 2) / spokeCount;
+    for (let i = 0; i < 3; i++) {
+      const angle = (i * Math.PI * 2) / 3;
       beam(
         mesh,
         center,
@@ -288,12 +288,11 @@ export function createMechanicalLayout(model: SeedModel) {
     );
   }
   const plumbing: Mesh = [];
-  const pumpXs = Array.from({ length: pumpCount }, (_, i) => 0.09 + i * 0.12);
-  for (const [i, x] of pumpXs.entries()) {
+  for (const [i, x] of [0.18, 0.34].entries()) {
     const z = 0.045;
-    tube(plumbing, [x, 0.04, z], [x, 0.195, z], 0.046, 2, 8);
-    tube(plumbing, [x, 0.045, z], [x, 0.061, z], 0.055, 1, 8);
-    tube(plumbing, [x, 0.18, z], [x, 0.197, z], 0.055, 1, 8);
+    tube(plumbing, [x, 0.04, z], [x, 0.195, z], 0.046, 2, 12);
+    tube(plumbing, [x, 0.045, z], [x, 0.061, z], 0.055, 1, 12);
+    tube(plumbing, [x, 0.18, z], [x, 0.197, z], 0.055, 1, 12);
     const piston: Mesh = [];
     tube(piston, [x, 0.15, z], [x, 0.31, z], 0.016, 1);
     box(piston, [x, 0.3, z], [0.07, 0.025, 0.055], 3);
@@ -306,19 +305,9 @@ export function createMechanicalLayout(model: SeedModel) {
     tube(plumbing, [x, 0.1, z + 0.045], [x, 0.1, 0.33], 0.014, 3);
     tube(plumbing, [x, 0.1, 0.33], [x, 0.04, 0.33], 0.014, 3);
   }
-  tube(plumbing, [-0.36, 0.025, 0.26], [-0.36, towerHeight, 0.26], 0.026, 3);
-  tube(plumbing, [-0.36, towerHeight, 0.26], [0.13, towerHeight, 0.26], 0.018, 3);
-  tube(plumbing, [0.13, towerHeight, 0.26], [0.13, 0.2, 0.26], 0.018, 3);
-  // Some URLs grow a pressure vessel; others expose the entire gear train.
-  const vessel = next() > 0.48;
-  if (vessel) {
-    const radius = 0.045 + next() * 0.03;
-    const height = 0.16 + next() * 0.19;
-    tube(plumbing, [-0.22, 0.04, 0.26], [-0.22, height, 0.26], radius, 2, 10);
-    for (const y of [0.055, height - 0.02])
-      tube(plumbing, [-0.22, y, 0.26], [-0.22, y + 0.014, 0.26], radius + 0.006, 1, 10);
-    tube(plumbing, [-0.22, height, 0.26], [-0.22, height + 0.05, 0.26], 0.018, 3);
-  }
+  tube(plumbing, [-0.36, 0.025, 0.26], [-0.36, 0.35, 0.26], 0.026, 3);
+  tube(plumbing, [-0.36, 0.35, 0.26], [0.13, 0.35, 0.26], 0.018, 3);
+  tube(plumbing, [0.13, 0.35, 0.26], [0.13, 0.26, 0.26], 0.018, 3);
   const details: Mesh = [];
   for (const x of [-0.41, 0.41])
     for (const z of [-0.33, 0.32]) {

@@ -63,18 +63,16 @@ export function createCrystallineLayout(model: SeedModel) {
   });
   const crystals: Crystal[] = [];
   centers.forEach((center, cluster) => {
-    const count = (cluster === 0 ? 13 : 7) + Math.floor(next() * 7);
-    const spread = 0.075 + next() * 0.05;
-    const stature = cluster === 0 ? 0.33 + next() * 0.17 : 0.17 + next() * 0.19;
+    const count = cluster === 0 ? 16 : 10;
     for (let i = 0; i < count; i++) {
       const angle = next() * Math.PI * 2;
-      const reach = i === 0 ? 0 : 0.025 + Math.sqrt(next()) * spread;
+      const reach = i === 0 ? 0 : 0.045 + Math.sqrt(next()) * 0.12;
       const hero = i === 0;
       crystals.push({
         center: [center[0] + Math.cos(angle) * reach, 0.013, center[1] + Math.sin(angle) * reach],
-        radius: hero ? 0.037 + habit * 0.037 : 0.013 + habit * 0.014 + next() * 0.014,
-        height: hero ? stature : 0.045 + next() * stature * 0.67,
-        sides: habit > 0.65 ? 5 : 6,
+        radius: hero ? 0.054 + next() * 0.023 : 0.022 + next() * 0.018,
+        height: hero ? (cluster === 0 ? 0.4 : 0.26) + next() * 0.07 : 0.055 + next() * 0.19,
+        sides: next() > 0.25 ? 6 : 5,
         angle: next() * Math.PI,
         lean: [Math.cos(angle) * (hero ? 0.12 : 0.36), Math.sin(angle) * (hero ? 0.12 : 0.36)],
         phase: next() * Math.PI * 2,
@@ -97,7 +95,7 @@ export function createCrystallineLayout(model: SeedModel) {
     triangle(base, innerA, [0, 0.005, 0], innerB, 0, i);
     face(base, a, b, [b[0] * 0.88, -0.09, b[2] * 0.88], [a[0] * 0.88, -0.09, a[2] * 0.88], 0, i);
   }
-  // Cluster count, mineral habit and growth directions all belong to the URL's composition.
+  // The fractured stone rim and three interlocking clusters form a single mineral island.
   const hosts = centers.map((center, cluster) =>
     crystalMesh({
       center: [center[0], 0, center[1]],
@@ -115,9 +113,8 @@ export function createCrystallineLayout(model: SeedModel) {
     ...hosts.map((mesh) => ({ mesh })),
     ...crystals.map((c) => ({ mesh: crystalMesh(c) })),
   ];
-  const chipCount = 12 + Math.floor(next() * 13);
-  for (let i = 0; i < chipCount; i++) {
-    const angle = (i * Math.PI * 2) / chipCount + next() * 0.12;
+  for (let i = 0; i < 24; i++) {
+    const angle = (i * Math.PI * 2) / 24 + next() * 0.12;
     const reach = 0.32 + next() * 0.08;
     const chip: Crystal = {
       center: [Math.cos(angle) * reach, 0.02, Math.sin(angle) * reach],
@@ -131,10 +128,9 @@ export function createCrystallineLayout(model: SeedModel) {
     };
     parts.push({ mesh: crystalMesh(chip) });
   }
-  const shardCount = 3 + Math.floor(next() * 7);
-  for (let i = 0; i < shardCount; i++) {
-    const angle = turn + (i * Math.PI * 2) / shardCount;
-    const center: Vec3 = [Math.cos(angle) * 0.32, 0.17 + next() * 0.21, Math.sin(angle) * 0.28];
+  for (let i = 0; i < 8; i++) {
+    const angle = (i * Math.PI * 2) / 8;
+    const center: Vec3 = [Math.cos(angle) * 0.32, 0.24 + (i % 3) * 0.07, Math.sin(angle) * 0.28];
     const shard: Crystal = {
       center,
       radius: 0.018 + next() * 0.013,

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { QRArtifact } from "@every-qrcode/core";
 import {
   EveryQRCode,
@@ -15,7 +15,7 @@ import { StudioIcon } from "../studio-icon";
 export function ResultPreview({
   artifact,
   exportArtifact,
-  experienceUrl,
+  exportError,
   revision,
   model,
   scene,
@@ -23,7 +23,7 @@ export function ResultPreview({
 }: {
   artifact: QRArtifact | null;
   exportArtifact: DesignedQRArtifact | null;
-  experienceUrl: string | null;
+  exportError: string | null;
   revision: number;
   model: EveryQRCodeModel;
   scene: EveryQRCodeSceneConfig;
@@ -35,6 +35,7 @@ export function ResultPreview({
   const [retry, setRetry] = useState(0);
   const [zoom, setZoom] = useState(1);
   const [timing] = useState(startStudioTiming);
+  const gradientId = useId();
   const key = revision + ":" + model + ":" + retry;
   const ready = readyKey === key && !error;
   const world = getWorldOption(model);
@@ -63,7 +64,6 @@ export function ResultPreview({
             scene={scene}
             view={shownView}
             loadingFallback="none"
-            fallbackColors={exportArtifact?.inks ?? []}
             interactive={ready}
             onViewChange={setView}
             zoom={zoom}
@@ -87,6 +87,35 @@ export function ResultPreview({
             <span />
           </div>
         )}
+        <div
+          className="designed-qr"
+          data-visible={Boolean(shownView === "qr" || error)}
+          aria-hidden="true"
+        >
+          {exportArtifact && (
+            <svg
+              viewBox={`0 0 ${exportArtifact.svg.size} ${exportArtifact.svg.size}`}
+              shapeRendering="crispEdges"
+            >
+              <defs>
+                <linearGradient
+                  id={gradientId}
+                  gradientUnits="userSpaceOnUse"
+                  x1="0"
+                  y1="0"
+                  x2={exportArtifact.svg.size}
+                  y2={exportArtifact.svg.size}
+                >
+                  {exportArtifact.inks?.map((ink, i) => (
+                    <stop key={i} offset={i * 50 + "%"} stopColor={ink} />
+                  ))}
+                </linearGradient>
+              </defs>
+              <rect width={exportArtifact.svg.size} height={exportArtifact.svg.size} fill="white" />
+              <path d={exportArtifact.svg.path} fill={`url(#${gradientId})`} />
+            </svg>
+          )}
+        </div>
         {ready && !error && (
           <span className="preview-caption" aria-hidden="true">
             {shownView === "model" ? "Tap to reveal QR" : "Tap to return to world"}
@@ -148,6 +177,34 @@ export function ResultPreview({
             +
           </button>
         </div>
+      </div>
+      <div className="result-meta">
+        <OutputActions
+          artifact={exportArtifact}
+          revision={revision}
+          destination={artifact?.identity.link.payloadUrl}
+        />
+        <div className="scan-destination">
+          <span>Scan → your world → your link</span>
+          <p className="committed-destination" aria-label="Committed destination">
+            {artifact?.identity.link.payloadUrl ?? " "}
+          </p>
+        </div>
+        {exportArtifact && (
+          <a
+            className="preview-arrival"
+            href={exportArtifact.identity.link.payloadUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Preview scan experience <span aria-hidden="true">↗</span>
+          </a>
+        )}
+        {exportError && (
+          <p className="field-error" role="alert">
+            {exportError}
+          </p>
+        )}
       </div>
       <div className="result-meta">
         <OutputActions

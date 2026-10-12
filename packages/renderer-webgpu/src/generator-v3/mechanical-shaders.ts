@@ -31,9 +31,6 @@ fn faceMaterial(o:FacetOutput)->vec3f {
   let tread=0.90+0.10*sin((p.x+p.y)*280.0-uniforms.time*18.0);
   color=mix(uniforms.themePrimary.rgb,vec3f(0.025),0.70)*diffuse*tread;
  }else if(o.material==5u){color=mix(uniforms.themeThird.rgb,uniforms.themeFifth.rgb,0.62);}
- // Darkened contact near the engine bed complements the moving cast shadows.
- let height=o.world.y/(uniforms.gridSize*uniforms.blockSize);
- color*=0.78+0.22*smoothstep(0.0,0.07,height);
  return color;
 }
 `,

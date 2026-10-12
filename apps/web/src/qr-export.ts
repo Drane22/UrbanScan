@@ -1,4 +1,4 @@
-import { createQRGradientStops, getQRRasterLayout } from "@every-qrcode/core";
+import { getQRRasterLayout } from "@every-qrcode/core";
 import { serializeDesignedQR, type DesignedQRArtifact as QRArtifact } from "./qr-design";
 import { startStudioTiming } from "./studio-diagnostics";
 
@@ -19,9 +19,7 @@ export function encodeQRPNG(artifact: QRArtifact, size: QRExportSize): Promise<B
   const inks = artifact.inks;
   if (inks) {
     const gradient = context.createLinearGradient(0, 0, size, size);
-    createQRGradientStops(inks).forEach(({ color, offset }) =>
-      gradient.addColorStop(offset, color),
-    );
+    inks.forEach((color, index) => gradient.addColorStop(index / (inks.length - 1), color));
     context.fillStyle = gradient;
   } else context.fillStyle = "#000";
   for (let row = 0; row < matrix.size; row++)
