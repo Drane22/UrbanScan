@@ -21,7 +21,7 @@ export const OCEAN_QR_FIRST_INSTANCE = 64;
 export function createOceanLayout(model: SeedModel) {
   if (model.generatorVersion !== 3)
     throw new RangeError("Ocean layout requires generator version 3");
-  const next = randomStream(model);
+  const next = worldRandom(model, 0x57415633);
   // A broad breaker moves toward the near shoreline; a low offshore swell follows it.
   const phase = next() * Math.PI * 2;
   const angle = Math.PI + (next() - 0.5) * 0.12;
@@ -99,6 +99,17 @@ export function createOceanLayout(model: SeedModel) {
       (sprayCount + i) * 8,
     );
   }
+  const actors = [...createOceanActors(), createCrabMesh()];
+  const crabs = createCrabTracks(next);
+  const crabData = crabs.flatMap((crab) => [
+    ...crab.center,
+    crab.travel,
+    crab.phase,
+    crab.scale,
+    crab.speed,
+    0,
+    0,
+  ]);
   const modelData = new Float32Array(
     OCEAN_HEADER_FLOATS +
       pieces.reduce((sum, data) => sum + data.length, 0) +
@@ -172,6 +183,9 @@ export function createOceanLayout(model: SeedModel) {
         2,
       ),
       batch("ambient", 24, sprayCount + rockCount, 8),
+      ...actors.map((mesh, i) =>
+        batch("ambient", mesh.length / 8, i === 2 ? crabs.length : 1, 50 + i),
+      ),
     ],
     qr: {
       verticesPerInstance: 6,

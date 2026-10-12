@@ -308,6 +308,15 @@ export function createMechanicalLayout(model: SeedModel) {
   tube(plumbing, [-0.36, 0.025, 0.26], [-0.36, 0.35, 0.26], 0.026, 3);
   tube(plumbing, [-0.36, 0.35, 0.26], [0.13, 0.35, 0.26], 0.018, 3);
   tube(plumbing, [0.13, 0.35, 0.26], [0.13, 0.26, 0.26], 0.018, 3);
+  const vessel = next() > 0.48;
+  if (vessel) {
+    const radius = 0.045 + next() * 0.03;
+    const height = 0.16 + next() * 0.19;
+    tube(plumbing, [-0.22, 0.04, 0.26], [-0.22, height, 0.26], radius, 2, 10);
+    for (const y of [0.055, height - 0.02])
+      tube(plumbing, [-0.22, y, 0.26], [-0.22, y + 0.014, 0.26], radius + 0.006, 1, 10);
+    tube(plumbing, [-0.22, height, 0.26], [-0.22, height + 0.05, 0.26], 0.018, 3);
+  }
   const details: Mesh = [];
   for (const x of [-0.41, 0.41])
     for (const z of [-0.33, 0.32]) {

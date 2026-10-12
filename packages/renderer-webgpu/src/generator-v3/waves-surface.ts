@@ -75,6 +75,8 @@ export function oceanCrestPoint(
   const [cross, rise] = profile(t);
   const along = (u - 0.5) * crest.length;
   const irregular = 1 + Math.sin(u * 7 + crest.phase) * 0.045;
+  const breaking = smooth((t - 0.58) / 0.35) * envelope;
+  const fingers = Math.sin(u * 47 + crest.phase) * 0.008 + Math.sin(u * 83 - crest.phase) * 0.004;
   const across =
     cross * crest.width * (0.4 + envelope * 0.6) * (1 + (crest.curl - 1) * Math.max(0, t - 0.4)) +
     crest.bow * ((u * 2 - 1) ** 2 - 0.35) +
