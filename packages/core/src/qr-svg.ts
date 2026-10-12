@@ -11,7 +11,10 @@ function validateQuietZone(quietZone: number): void {
   }
 }
 
-export function createQRSvgPath(matrix: QRMatrix, quietZone = 4): QRSvgPath {
+export function createQRSvgPath(
+  matrix: Pick<QRMatrix, "cells" | "size">,
+  quietZone = 4,
+): QRSvgPath {
   validateQuietZone(quietZone);
   const commands: string[] = [];
   for (let row = 0; row < matrix.size; row += 1) {

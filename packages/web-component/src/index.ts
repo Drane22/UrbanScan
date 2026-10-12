@@ -165,7 +165,7 @@ function createElementConstructor(): CustomElementConstructor {
     };
     private syncControls(resetView = true): void {
       if (resetView) this.view = readView(this);
-      const visible = this.artifact !== null && (this.view === "qr" || this.failed || !this.ready);
+      const visible = this.artifact !== null && (this.failed || !this.ready);
       this.button.ariaDisabled = String(!isInteractive(this) || this.failed);
       this.button.ariaBusy = String(!this.artifact && !this.failed);
       this.button.ariaLabel =

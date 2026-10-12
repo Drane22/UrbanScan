@@ -1,6 +1,8 @@
 import {
   CURRENT_GENERATOR_VERSION,
   createQRArtifact,
+  createQRInks,
+  createQRGradientStops,
   type EveryQRCodeIdentity,
   type GeneratorVersion,
   type IdentityScope,
@@ -11,6 +13,7 @@ import type { SeedSceneConfig } from "@every-qrcode/renderer-webgpu";
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type CSSProperties,
@@ -46,6 +49,10 @@ export type EveryQRCodeProps = {
   readonly initialView?: EveryQRCodeView;
   readonly initialZoom?: number;
   readonly interactive?: boolean;
+  /** Keep the world loading state clear; genuine rendering errors still expose the QR. */
+  readonly loadingFallback?: "qr" | "none";
+  /** Palette swatches for the loading/error QR; never alters its encoded cells. */
+  readonly fallbackColors?: readonly string[];
   readonly model?: EveryQRCodeModel;
   readonly onError?: (error: Error) => void;
   readonly onIdentity?: (identity: EveryQRCodeIdentity, morphSeed: number) => void;
@@ -233,6 +240,8 @@ export function EveryQRCode({
   initialView = "model",
   initialZoom = 1,
   interactive = true,
+  loadingFallback = "qr",
+  fallbackColors,
   model = "tree",
   onError,
   onIdentity,
@@ -247,6 +256,22 @@ export function EveryQRCode({
   zoom: controlledZoom,
 }: EveryQRCodeProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const inkId = useId();
+  const fallbackInks = createQRInks(
+    fallbackColors ??
+      scene?.palette?.slice(1, 4).map(
+        (color) =>
+          "#" +
+          color
+            .map((channel) =>
+              Math.round(Math.max(0, Math.min(1, channel)) * 255)
+                .toString(16)
+                .padStart(2, "0"),
+            )
+            .join(""),
+      ) ??
+      [],
+  );
   const rendererRef = useRef<SeedRenderer | null>(null);
   const callbacks = useRef({ onError, onIdentity, onReady, onQRReady });
   callbacks.current = { onError, onIdentity, onReady, onQRReady };
@@ -345,7 +370,9 @@ export function EveryQRCode({
     setView(next);
     onViewChange?.(next);
   }, [error, interactive, onViewChange, view]);
-  const qr = artifact && (view === "qr" || error || !ready) ? artifact.svg : null;
+  // A healthy canvas owns the entire morph and its canonical QR endpoint.
+  // Covering it immediately on view changes hides the transition and palette.
+  const qr = artifact && (error || (!ready && loadingFallback === "qr")) ? artifact.svg : null;
 
   return (
     <button
@@ -384,8 +411,15 @@ export function EveryQRCode({
           style={FALLBACK_STYLE}
           viewBox={"0 0 " + qr.size + " " + qr.size}
         >
+          <defs>
+            <linearGradient id={inkId} x1="0" y1="0" x2="1" y2="1">
+              {createQRGradientStops(fallbackInks).map(({ color, offset }, i) => (
+                <stop key={i} offset={`${offset * 100}%`} stopColor={color} />
+              ))}
+            </linearGradient>
+          </defs>
           <rect fill="#fff" height={qr.size} width={qr.size} />
-          <path d={qr.path} fill="#000" />
+          <path d={qr.path} fill={`url(#${inkId})`} />
         </svg>
       )}
       {error && !qr && <span style={ERROR_STYLE}>{error.message}</span>}

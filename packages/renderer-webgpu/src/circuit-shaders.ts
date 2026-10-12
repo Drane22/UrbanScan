@@ -804,13 +804,16 @@ fn fragmentMain(input: Output) -> @location(0) vec4f {
   let platedInset = 1.0 - smoothstep(0.045, 0.13, edgeDistance);
   let contactInk = mix(roleInk, goldPad(), platedInset * 0.075);
   let scanMaterial = select(contactInk * 0.82, contactInk, input.normal.y > 0.5);
-  // Retain the original plated materials and brightness as solder cools.
+  // Retain the plated materials during the morph; settle into readable ink.
   let cooled = scanMaterial * (0.94 + input.tint * 0.09);
   let reliefLight=0.36+max(dot(input.normal,normalize(vec3f(-0.46,0.82,-0.33))),0.0)*0.64;
   let halfVector=normalize(treeViewDirection()+normalize(vec3f(-0.46,0.82,-0.33)));
   let glint=pow(max(dot(input.normal,halfVector),0.0),32.0)*0.12;
   let moltenColor = mix(goldPad(), solderMaterial() * 1.08, input.tint*0.60)
     * reliefLight+mix(goldPad(),uniforms.themeFifth.rgb,0.40)*glint;
-  return vec4f(acesToneMap(mix(cooled, moltenColor, input.molten)), 1.0);
+  let material = acesToneMap(mix(cooled, moltenColor, input.molten));
+  let luminance = dot(material, vec3f(0.2126, 0.7152, 0.0722));
+  let ink = material * min(1.0, 0.23 / max(luminance, 0.001));
+  return vec4f(mix(material, ink, stage(0.72, 0.98)), 1.0);
 }
 `;
