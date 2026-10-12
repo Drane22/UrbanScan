@@ -1,6 +1,7 @@
 import { SEED_UNIFORMS_WGSL } from "../shared-shaders.js";
 import { DIORAMA_MATERIALS_WGSL } from "../diorama-materials.js";
 import { OCEAN_QR_FIRST_INSTANCE } from "./waves-model.js";
+import { PALETTE_QR_INK_WGSL } from "./qr-ink.js";
 
 /** All ocean-specific geometry and materials stay in the candidate subtree. */
 export const WAVES_SHADER = /* wgsl */ `
@@ -11,6 +12,7 @@ ${SEED_UNIFORMS_WGSL}
 @group(0) @binding(3) var<storage,read> blockHeights:array<f32>;
 @group(0) @binding(4) var<storage,read> worldData:array<vec4f>;
 ${DIORAMA_MATERIALS_WGSL}
+${PALETTE_QR_INK_WGSL}
 const PI:f32=3.14159265359;
 struct OceanOutput {
  @builtin(position) position:vec4f,
@@ -22,6 +24,21 @@ struct OceanOutput {
 }
 fn quad(v:u32)->vec2f {
  let q=array<vec2f,6>(vec2f(0,0),vec2f(0,1),vec2f(1,0),vec2f(1,0),vec2f(0,1),vec2f(1,1));return q[v%6u];
+}
+// A lower shore-side camera exposes the barrel instead of looking down onto its roof.
+// It converges to the shared top-down camera at the QR endpoint.
+fn oceanProject(p:vec3f)->vec4f {
+ let t=uniforms.progress;
+ let yaw=mix(0.78,0.0,t)+uniforms.cameraBobX;
+ let tilt=mix(-0.30,-1.5708,t)+uniforms.cameraBobY;
+ let x=p.x*cos(yaw)-p.z*sin(yaw);let z=p.x*sin(yaw)+p.z*cos(yaw);
+ let y=p.y*cos(tilt)-z*sin(tilt);let depth=p.y*sin(tilt)+z*cos(tilt);
+ let denominator=(uniforms.gridSize+10.0)*uniforms.blockSize;
+ let portrait=mix(select(1.0,1.2,uniforms.aspectRatio<0.8),1.0,t);
+ let zoom=mix(uniforms.camera.x,min(uniforms.camera.x,1.0),t);
+ let scale=1.90/denominator*portrait*(1.0+sin(t*PI)*0.035)*zoom;
+ return vec4f(x*scale/max(uniforms.aspectRatio,1.0),
+  (y-uniforms.gridSize*uniforms.blockSize*0.045*(1.0-t))*scale/max(1.0/uniforms.aspectRatio,1.0),depth*0.01+0.5,1.0);
 }
 fn deform(p:vec3f,n:vec3f,index:u32,base:f32)->mat2x3f {
  let center=worldData[4u+index*3u];let parameters=worldData[5u+index*3u];
@@ -56,18 +73,48 @@ fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32
   let low=select(vec2f(0),vec2f(-4),cell==vec2f(0));
   let high=select(vec2f(1),vec2f(5),cell==vec2f(grid-1.0));
   let local=mix(low,high,q);
-  o.world=vec3f(cell.x+local.x-grid*0.5,0,cell.y+local.y-grid*0.5)*size;
+  o.world=vec3f(cell.x+local.x-grid*0.5,0,grid*0.5-cell.y-local.y)*size;
   o.position=worldProject(o.world,1.68,grid*size*0.045);o.uv=local;o.kind=4u;o.owner=owner;return o;
  }
  if(uniforms.progress>=0.92){return o;}
  var p:vec3f;var normal=vec3f(0,1,0);var uv=q;
- if(instance==0u){
+ if(instance>=50u){
+  let descriptor=worldData[select(2u+instance-50u,13u,instance>=52u)];
+  let record=u32(descriptor.x)+v*2u;
+  let point=worldData[record];normal=worldData[record+1u].xyz;
+  p=point.xyz;o.kind=u32(point.w);
+  if(instance>=52u){
+   let track=u32(worldData[14].x)+(instance-52u)*2u;
+   let lane=worldData[track];let gait=worldData[track+1u];
+   let cycle=uniforms.time*gait.y+lane.w;
+   let stride=sin(cycle*8.0+worldData[record+1u].w*PI);
+   let tag=worldData[record+1u].w;
+   let walking=0.35+0.65*abs(cos(cycle));
+   if(tag>=1.0 && tag<=8.0){
+    let weight=smoothstep(0.014,0.039,abs(p.x));
+    p.z+=stride*0.006*weight*walking;p.y+=max(0.0,stride)*0.004*weight*walking;
+   }else if(tag==9.0){p.y+=sin(cycle*2.0)*0.003;}
+   p*=gait.x;
+   p+=vec3f(lane.x+sin(cycle)*lane.z,0.003,lane.y+sin(cycle*2.0)*0.006);
+  }else if(instance==50u){
+   let roll=sin(uniforms.time*1.1)*0.065;
+   p=vec3f(p.x,p.y*cos(roll)-p.z*sin(roll),p.y*sin(roll)+p.z*cos(roll));
+   normal=vec3f(normal.x,normal.y*cos(roll)-normal.z*sin(roll),normal.y*sin(roll)+normal.z*cos(roll));
+   p+=vec3f(-0.23+sin(uniforms.time*0.23)*0.035,0.015+sin(uniforms.time*1.1)*0.006,0.32);
+  }else{
+   let anchor=worldData[12];let ride=deform(anchor.xyz,vec3f(0,1,0),0u,anchor.w);
+   let lean=0.10+sin(uniforms.time*1.15)*0.06;
+   p=vec3f(p.x*cos(lean)-p.y*sin(lean),p.x*sin(lean)+p.y*cos(lean),p.z);
+   normal=vec3f(normal.x*cos(lean)-normal.y*sin(lean),normal.x*sin(lean)+normal.y*cos(lean),normal.z);
+   p+=ride[0]+vec3f(0,0.007,0);
+  }
+ }else if(instance==0u){
   let edge=v/6u;
-  if(edge==0u){p=vec3f(q.x-0.5,-q.y*0.075,0.5);normal=vec3f(0,0,1);}
-  else if(edge==1u){p=vec3f(q.x-0.5,-q.y*0.075,-0.5);normal=vec3f(0,0,-1);}
-  else if(edge==2u){p=vec3f(0.5,-q.y*0.075,q.x-0.5);normal=vec3f(1,0,0);}
-  else if(edge==3u){p=vec3f(-0.5,-q.y*0.075,q.x-0.5);normal=vec3f(-1,0,0);}
-  else {p=vec3f(q.x-0.5,-0.075,q.y-0.5);normal=vec3f(0,-1,0);}
+  if(edge==0u){p=vec3f(q.x-0.5,-q.y*0.026,0.5);normal=vec3f(0,0,1);}
+  else if(edge==1u){p=vec3f(q.x-0.5,-q.y*0.026,-0.5);normal=vec3f(0,0,-1);}
+  else if(edge==2u){p=vec3f(0.5,-q.y*0.026,q.x-0.5);normal=vec3f(1,0,0);}
+  else if(edge==3u){p=vec3f(-0.5,-q.y*0.026,q.x-0.5);normal=vec3f(-1,0,0);}
+  else {p=vec3f(q.x-0.5,-0.026,q.y-0.5);normal=vec3f(0,-1,0);}
  } else if(instance<8u){
   var meshInfo=worldData[0];
   if(instance>=2u){meshInfo=worldData[6u+(instance-2u)*3u];o.kind=2u;o.owner=instance-2u;}
@@ -101,7 +148,7 @@ fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32
  let visibility=1.0-smoothstep(0.08,0.88,uniforms.progress);
  p.y*=build*visibility;
  o.world=p*grid*size;o.normal=normal;o.uv=uv;
- o.position=worldProject(o.world,1.68,grid*size*0.045);return o;
+ o.position=oceanProject(o.world);return o;
 }
 @fragment
 fn fragmentMain(o:OceanOutput)->@location(0) vec4f {
@@ -116,12 +163,12 @@ fn fragmentMain(o:OceanOutput)->@location(0) vec4f {
  if(o.kind==4u){
   let outside=any(o.uv<vec2f(0))||any(o.uv>vec2f(1));
   if(outside || blockTypes[o.owner]==0u){return vec4f(1,1,1,1);}
-  return vec4f(qrModuleMaterial(blockTypes[o.owner],blockPositions[o.owner].xy),1);
+  return vec4f(paletteQrInk(blockPositions[o.owner].xy),1);
  }
  let view=treeViewDirection()*vec3f(-1,1,-1);
  let normal=normalize(o.normal);let n=select(-normal,normal,dot(normal,view)>=0.0);
  let light=normalize(vec3f(-0.4,0.85,-0.6));
- let shade=0.66+0.34*max(0.0,dot(n,light));
+ let shade=0.42+0.58*max(0.0,dot(n,light));
  let height=o.world.y/(uniforms.gridSize*uniforms.blockSize);
  let depth=smoothstep(-0.035,0.025,height);
  let shallows=1.0-smoothstep(0.04,0.60,shore);

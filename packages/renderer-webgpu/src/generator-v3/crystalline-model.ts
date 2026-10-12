@@ -53,12 +53,14 @@ export function crystalMesh(crystal: Crystal): Mesh {
 
 export function createCrystallineLayout(model: SeedModel) {
   const next = worldRandom(model, 0x43525933);
-  const turn = (next() - 0.5) * 0.8;
-  const rotate = (x: number, z: number): readonly [number, number] => [
-    x * Math.cos(turn) - z * Math.sin(turn),
-    x * Math.sin(turn) + z * Math.cos(turn),
-  ];
-  const centers = [rotate(-0.13, 0.12), rotate(0.25, 0.03), rotate(-0.19, -0.25)];
+  const turn = next() * Math.PI * 2;
+  const clusterCount = 2 + Math.floor(next() * 4);
+  const habit = next();
+  const centers = Array.from({ length: clusterCount }, (_, i): readonly [number, number] => {
+    const angle = turn + (i * Math.PI * 2) / clusterCount + (next() - 0.5) * 0.55;
+    const reach = (i === 0 ? 0.08 : 0.18) + next() * 0.075;
+    return [Math.cos(angle) * reach, Math.sin(angle) * reach];
+  });
   const crystals: Crystal[] = [];
   centers.forEach((center, cluster) => {
     const count = cluster === 0 ? 16 : 10;
@@ -72,7 +74,7 @@ export function createCrystallineLayout(model: SeedModel) {
         height: hero ? (cluster === 0 ? 0.4 : 0.26) + next() * 0.07 : 0.055 + next() * 0.19,
         sides: next() > 0.25 ? 6 : 5,
         angle: next() * Math.PI,
-        lean: [(next() - 0.5) * 0.4, (next() - 0.5) * 0.4],
+        lean: [Math.cos(angle) * (hero ? 0.12 : 0.36), Math.sin(angle) * (hero ? 0.12 : 0.36)],
         phase: next() * Math.PI * 2,
         cluster,
       });

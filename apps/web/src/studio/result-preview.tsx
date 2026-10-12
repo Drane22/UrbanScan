@@ -206,6 +206,24 @@ export function ResultPreview({
           </p>
         )}
       </div>
+      <div className="result-meta">
+        <OutputActions
+          artifact={exportArtifact}
+          revision={revision}
+          destination={artifact?.identity.link.payloadUrl}
+        />
+        <div className="scan-destination">
+          <span>Scan → your link</span>
+          <p className="committed-destination" aria-label="Committed destination">
+            {artifact?.identity.link.payloadUrl ?? " "}
+          </p>
+        </div>
+        {experienceUrl && (
+          <a className="preview-arrival" href={experienceUrl} target="_blank" rel="noreferrer">
+            Preview world page <span aria-hidden="true">↗</span>
+          </a>
+        )}
+      </div>
     </section>
   );
 }

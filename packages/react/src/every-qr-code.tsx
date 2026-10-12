@@ -1,6 +1,8 @@
 import {
   CURRENT_GENERATOR_VERSION,
   createQRArtifact,
+  createQRInks,
+  createQRGradientStops,
   type EveryQRCodeIdentity,
   type GeneratorVersion,
   type IdentityScope,
@@ -11,6 +13,7 @@ import type { SeedSceneConfig } from "@every-qrcode/renderer-webgpu";
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type CSSProperties,
@@ -250,6 +253,22 @@ export function EveryQRCode({
   zoom: controlledZoom,
 }: EveryQRCodeProps): React.JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const inkId = useId();
+  const fallbackInks = createQRInks(
+    fallbackColors ??
+      scene?.palette?.slice(1, 4).map(
+        (color) =>
+          "#" +
+          color
+            .map((channel) =>
+              Math.round(Math.max(0, Math.min(1, channel)) * 255)
+                .toString(16)
+                .padStart(2, "0"),
+            )
+            .join(""),
+      ) ??
+      [],
+  );
   const rendererRef = useRef<SeedRenderer | null>(null);
   const callbacks = useRef({ onError, onIdentity, onReady, onQRReady });
   callbacks.current = { onError, onIdentity, onReady, onQRReady };
@@ -389,8 +408,15 @@ export function EveryQRCode({
           style={FALLBACK_STYLE}
           viewBox={"0 0 " + qr.size + " " + qr.size}
         >
+          <defs>
+            <linearGradient id={inkId} x1="0" y1="0" x2="1" y2="1">
+              {createQRGradientStops(fallbackInks).map(({ color, offset }, i) => (
+                <stop key={i} offset={`${offset * 100}%`} stopColor={color} />
+              ))}
+            </linearGradient>
+          </defs>
           <rect fill="#fff" height={qr.size} width={qr.size} />
-          <path d={qr.path} fill="#000" />
+          <path d={qr.path} fill={`url(#${inkId})`} />
         </svg>
       )}
       {error && !qr && <span style={ERROR_STYLE}>{error.message}</span>}

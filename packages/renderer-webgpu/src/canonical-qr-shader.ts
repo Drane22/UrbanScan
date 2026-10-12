@@ -1,20 +1,17 @@
 // Runtime scan endpoint shared by preserved generators. Keep historical world
 // shaders unchanged while rendering the exact QR cell field with a quiet zone.
+import { SEED_UNIFORMS_WGSL } from "./shared-shaders.js";
+import { DIORAMA_MATERIALS_WGSL } from "./diorama-materials.js";
 export const CANONICAL_QR_SHADER = /* wgsl */ `
-struct CanonicalUniforms {
-  aspectRatio: f32,
-  time: f32,
-  itemCount: f32,
-  progress: f32,
-  gridSize: f32,
-}
+${SEED_UNIFORMS_WGSL}
+${DIORAMA_MATERIALS_WGSL}
 
 struct Output {
   @builtin(position) position: vec4f,
   @location(0) color: vec3f,
 }
 
-@group(0) @binding(0) var<uniform> uniforms: CanonicalUniforms;
+@group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var<storage, read> blockTypes: array<u32>;
 @group(0) @binding(2) var<storage, read> blockPositions: array<vec4f>;
 @group(0) @binding(4) var<storage, read> baseY: array<f32>;
@@ -38,7 +35,7 @@ fn vertexMain(@builtin(vertex_index) vertex: u32, @builtin(instance_index) owner
     // cells participate; every other legacy form already has one ground cell.
     if (blockTypes[owner] == 0u || baseY[owner] != 0.0) { return output; }
     point = blockPositions[owner].xy + uv - vec2f(uniforms.gridSize * 0.5);
-    output.color = vec3f(0.015);
+    output.color = qrModuleMaterial(blockTypes[owner],blockPositions[owner].xy);
   }
   let scale = 1.84 / side;
   output.position = vec4f(

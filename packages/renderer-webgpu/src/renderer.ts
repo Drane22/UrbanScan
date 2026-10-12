@@ -55,6 +55,7 @@ export type SeedSceneConfig = {
 };
 
 type PipelineLayouts = {
+  readonly machineShadow: GPUBindGroupLayout;
   readonly blocks: GPUBindGroupLayout;
   readonly circuit: GPUBindGroupLayout;
   readonly items: GPUBindGroupLayout;
@@ -63,6 +64,7 @@ type PipelineLayouts = {
 };
 
 type SharedPipelines = {
+  readonly machineDepth?: GPURenderPipeline;
   readonly canonicalQr: GPURenderPipeline | undefined;
   readonly post: GPURenderPipeline;
   readonly rain: GPURenderPipeline;
@@ -471,6 +473,9 @@ type SeedBindGroups = {
 };
 
 type RenderTargets = {
+  readonly machineShadow?: GPUTexture | undefined;
+  readonly machineShadowView?: GPUTextureView | undefined;
+  readonly machineShadowBindGroup?: GPUBindGroup | undefined;
   readonly depth: GPUTexture;
   readonly depthView: GPUTextureView;
   readonly postBindGroup: GPUBindGroup;
@@ -767,7 +772,14 @@ function createLayouts(device: GPUDevice): PipelineLayouts {
       { binding: 3, texture: { sampleType: "float" }, visibility: SHADER_STAGE.fragment },
     ],
   });
-  const layouts = { blocks, circuit, items, post, reef };
+  const machineShadow = device.createBindGroupLayout({
+    label: "every-qrcode-machine-shadow-layout",
+    entries: [
+      { binding: 0, texture: { sampleType: "depth" }, visibility: SHADER_STAGE.fragment },
+      { binding: 1, sampler: { type: "comparison" }, visibility: SHADER_STAGE.fragment },
+    ],
+  });
+  const layouts = { blocks, circuit, items, post, reef, machineShadow };
   layoutCache.set(device, layouts);
   return layouts;
 }
@@ -1130,6 +1142,34 @@ async function createCustomModelPipelines<T extends SeedPipelines>(
   form: SeedForm,
 ): Promise<T> {
   const module = await createShaderModule(device, `every-qrcode-${form}`, code);
+  if (form === "mechanical" && code.includes("fn shadowVertex(")) {
+    const [pipeline, machineDepth] = await Promise.all([
+      device.createRenderPipelineAsync({
+        label: "every-qrcode-mechanical-lit-pipeline",
+        layout: device.createPipelineLayout({
+          bindGroupLayouts: [layouts.blocks, layouts.machineShadow],
+        }),
+        vertex: { module, entryPoint: "vertexMain" },
+        fragment: { module, entryPoint: "fragmentMain", targets: [{ format, blend: ALPHA_BLEND }] },
+        depthStencil: { format: "depth24plus", depthWriteEnabled: true, depthCompare: "less" },
+        primitive: { topology: "triangle-list", cullMode: "none" },
+      }),
+      device.createRenderPipelineAsync({
+        label: "every-qrcode-mechanical-depth-pipeline",
+        layout: device.createPipelineLayout({ bindGroupLayouts: [layouts.blocks] }),
+        vertex: { module, entryPoint: "shadowVertex" },
+        depthStencil: {
+          format: "depth24plus",
+          depthWriteEnabled: true,
+          depthCompare: "less",
+          depthBias: 1,
+          depthBiasSlopeScale: 1.5,
+        },
+        primitive: { topology: "triangle-list", cullMode: "none" },
+      }),
+    ]);
+    return { ...shared, [form]: pipeline, form, machineDepth } as T;
+  }
   const pipeline = await createScenePipeline(device, format, {
     blend: ALPHA_BLEND,
     label: `every-qrcode-${form}-pipeline`,
@@ -1450,6 +1490,7 @@ function createBindGroups(
 }
 
 function destroyTargets(targets: RenderTargets | undefined): void {
+  targets?.machineShadow?.destroy();
   targets?.depth.destroy();
   targets?.scene.destroy();
   targets?.qr?.destroy();
@@ -1506,7 +1547,44 @@ function createTargets(gpu: SeedGpuResources, width: number, height: number): Re
         { binding: 3, resource: qrView },
       ],
     });
-    return { depth, depthView, postBindGroup, scene, sceneView, qr, qrView };
+    let machineShadow: GPUTexture | undefined;
+    let machineShadowView: GPUTextureView | undefined;
+    let machineShadowBindGroup: GPUBindGroup | undefined;
+    if (gpu.pipelines.machineDepth) {
+      machineShadow = texture({
+        format: "depth24plus",
+        label: "every-qrcode-machine-shadow",
+        size: [1024, 1024],
+        usage: TEXTURE_USAGE.renderAttachment | TEXTURE_USAGE.textureBinding,
+      });
+      machineShadowView = machineShadow.createView();
+      machineShadowBindGroup = gpu.device.createBindGroup({
+        layout: gpu.layouts.machineShadow,
+        entries: [
+          { binding: 0, resource: machineShadowView },
+          {
+            binding: 1,
+            resource: gpu.device.createSampler({
+              compare: "less-equal",
+              magFilter: "linear",
+              minFilter: "linear",
+            }),
+          },
+        ],
+      });
+    }
+    return {
+      depth,
+      depthView,
+      postBindGroup,
+      scene,
+      sceneView,
+      qr,
+      qrView,
+      machineShadow,
+      machineShadowView,
+      machineShadowBindGroup,
+    };
   } catch (error) {
     for (const target of allocated) target.destroy();
     throw error;
@@ -1698,6 +1776,7 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
     }
   } else if (gpu.worldDrawPlan) {
     pass.setPipeline(Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline);
+    if (targets.machineShadowBindGroup) pass.setBindGroup(1, targets.machineShadowBindGroup);
     for (const batch of gpu.worldDrawPlan.batches)
       pass.draw(batch.verticesPerInstance, batch.instanceCount, 0, batch.firstInstance);
   } else if (isStagedWorld(gpu.pipelines.form)) {
@@ -1768,6 +1847,7 @@ function encodeQrPass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): void {
   } else if (gpu.worldDrawPlan) {
     pass.setPipeline(Reflect.get(gpu.pipelines, gpu.pipelines.form) as GPURenderPipeline);
     pass.setBindGroup(0, gpu.bindGroups.blocks);
+    if (targets.machineShadowBindGroup) pass.setBindGroup(1, targets.machineShadowBindGroup);
     const qr = gpu.worldDrawPlan.qr;
     pass.draw(qr.verticesPerInstance, qr.instanceCount, 0, qr.firstInstance);
   } else if (isStagedWorld(gpu.pipelines.form)) {
@@ -1799,6 +1879,28 @@ function encodePostPass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): void
 
 function renderGpuFrame(gpu: SeedGpuResources): void {
   const encoder = gpu.device.createCommandEncoder({ label: "every-qrcode-frame" });
+  if (
+    gpu.pipelines.machineDepth &&
+    gpu.targets?.machineShadowView &&
+    gpu.worldDrawPlan &&
+    gpu.uniformValues[3]! < 0.92
+  ) {
+    const pass = encoder.beginRenderPass({
+      label: "every-qrcode-machine-shadow-pass",
+      colorAttachments: [],
+      depthStencilAttachment: {
+        view: gpu.targets.machineShadowView,
+        depthClearValue: 1,
+        depthLoadOp: "clear",
+        depthStoreOp: "store",
+      },
+    });
+    pass.setPipeline(gpu.pipelines.machineDepth);
+    pass.setBindGroup(0, gpu.bindGroups.blocks);
+    for (const batch of gpu.worldDrawPlan.batches)
+      pass.draw(batch.verticesPerInstance, batch.instanceCount, 0, batch.firstInstance);
+    pass.end();
+  }
   if (gpu.generatorVersion === 1 && gpu.uniformValues[3] === 1) {
     encodeCanonicalQrPass(encoder, gpu);
   } else {

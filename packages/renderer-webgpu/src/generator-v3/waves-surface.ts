@@ -9,19 +9,19 @@ export type OceanCrest = {
   readonly curl: number;
   readonly phase: number;
 };
-// An open breaking sheet: rising back, rounded crown, descending overhang,
-// then an inward-turning lip. This is a curl, not a closed tube or repeated ridge.
+// The concave face rises back from its forward trough, then folds over it.
+// This C-shaped section leaves a visible barrel below the falling lip.
 const PROFILE = [
-  [-1, 0],
-  [-0.78, 0.015],
-  [-0.4, 0.23],
-  [-0.18, 0.66],
-  [0, 0.96],
-  [0.28, 1],
-  [0.62, 0.92],
-  [0.78, 0.73],
-  [0.68, 0.55],
-  [0.38, 0.56],
+  [1.35, 0],
+  [0.53, 0.055],
+  [-0.18, 0.26],
+  [-0.44, 0.57],
+  [-0.25, 0.86],
+  [0.18, 1],
+  [0.72, 0.96],
+  [1.06, 0.79],
+  [0.96, 0.61],
+  [0.56, 0.6],
 ] as const;
 
 function profile(t: number): readonly [number, number] {
@@ -77,11 +77,12 @@ export function oceanCrestPoint(
   const irregular = 1 + Math.sin(u * 7 + crest.phase) * 0.045;
   const across =
     cross * crest.width * (0.4 + envelope * 0.6) * (1 + (crest.curl - 1) * Math.max(0, t - 0.4)) +
-    crest.bow * ((u * 2 - 1) ** 2 - 0.35);
+    crest.bow * ((u * 2 - 1) ** 2 - 0.35) +
+    fingers * breaking;
   const x = crest.center[0] + along * Math.cos(crest.angle) - across * Math.sin(crest.angle);
   const z = crest.center[1] + along * Math.sin(crest.angle) + across * Math.cos(crest.angle);
   const base = oceanFieldPoint(crests, x, z)[1];
-  return [x, base + rise * crest.height * envelope * irregular, z];
+  return [x, base + rise * crest.height * envelope * irregular + fingers * breaking * 0.8, z];
 }
 function unitNormal(a: Point, b: Point): Point {
   const n: Point = [

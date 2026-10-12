@@ -6,6 +6,7 @@ export * from "./qr.js";
 export * from "./qr-artifact.js";
 export * from "./qr-export.js";
 export * from "./qr-svg.js";
+export * from "./qr-palette.js";
 export * from "./qr-fields.js";
 export * from "./qr-roles.js";
 export * from "./qr-topology.js";
