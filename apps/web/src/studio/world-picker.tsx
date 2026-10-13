@@ -1,9 +1,14 @@
 import { useState } from "react";
 import type { EveryQRCodeModel } from "@every-qrcode/react";
-import { WORLD_CATALOG, WORLD_CATEGORIES, getWorldOption } from "../world-catalog";
+import {
+  WORLD_CATALOG,
+  WORLD_CATEGORIES,
+  getWorldOption,
+  getWorldThumbnail,
+} from "../world-catalog";
 
 export const FEATURED_WORLDS: readonly EveryQRCodeModel[] = [
-  "waves",
+  "reef",
   "crystalline",
   "mechanical",
   "tree",
@@ -13,9 +18,11 @@ export const FEATURED_WORLDS: readonly EveryQRCodeModel[] = [
 export function WorldPicker({
   selected,
   onSelect,
+  dark = false,
 }: {
   selected: EveryQRCodeModel;
   onSelect: (model: EveryQRCodeModel) => void;
+  dark?: boolean;
 }): React.JSX.Element {
   const [category, setCategory] = useState("Featured");
   const choices = WORLD_CATALOG.filter((world) =>
@@ -59,7 +66,7 @@ export function WorldPicker({
           >
             <span className={"world-thumbnail world-thumbnail--" + world.category.toLowerCase()}>
               <img
-                src={"/worlds/" + world.id + ".webp"}
+                src={getWorldThumbnail(world.id, dark)}
                 alt=""
                 width={240}
                 height={240}
@@ -74,6 +81,7 @@ export function WorldPicker({
           </button>
         ))}
       </div>
+      <p className="world-sample-note">Sample worlds. Your palette appears in the main preview.</p>
     </div>
   );
 }

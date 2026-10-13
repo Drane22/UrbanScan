@@ -15,10 +15,14 @@ export function OutputActions({
   artifact,
   revision,
   destination,
+  updating = false,
+  invalid = false,
 }: {
   artifact: QRArtifact | null;
   revision: number;
   destination?: string | undefined;
+  updating?: boolean;
+  invalid?: boolean;
 }): React.JSX.Element {
   const [size, setSize] = useState<QRExportSize>(1024);
   const [exports] = useState(createQRExportState);
@@ -121,7 +125,13 @@ export function OutputActions({
           disabled={!prepared}
           onClick={() => download(false)}
         >
-          Download PNG
+          {invalid
+            ? "Enter a valid link"
+            : updating
+              ? "Updating QR…"
+              : !prepared
+                ? "Preparing PNG…"
+                : "Download PNG"}
         </button>
         <label className="export-size">
           <span className="sr-only">PNG size</span>
@@ -146,15 +156,15 @@ export function OutputActions({
           disabled={!artifact}
           onClick={() => download(true)}
         >
-          SVG
+          Download SVG
         </button>
         {prepared && canShareQR(prepared.file) && (
           <button type="button" disabled={sharing} onClick={share}>
-            {sharing ? "Sharing…" : "Share"}
+            {sharing ? "Sharing…" : "Share QR image"}
           </button>
         )}
         <button type="button" disabled={!artifact} onClick={() => void copy()}>
-          Copy link
+          Copy destination
         </button>
       </div>
       <div className="export-feedback" aria-live="polite">

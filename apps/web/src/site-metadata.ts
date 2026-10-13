@@ -2,7 +2,7 @@
 export const PUBLIC_SITE_ORIGIN = "https://urbanscan-omega.vercel.app";
 export const SITE_TITLE = "UrbanScan — QR codes with a world of their own";
 export const SITE_DESCRIPTION =
-  "Create a palette-colored QR that opens an animated world before your destination. Explore 15 themes and download your design as PNG or SVG.";
+  "Create a palette-colored QR that opens your link directly. Explore 15 animated worlds and download your design as PNG or SVG.";
 
 export function createSiteMetadata(origin = PUBLIC_SITE_ORIGIN) {
   const url = new URL(origin);

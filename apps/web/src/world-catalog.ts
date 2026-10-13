@@ -14,15 +14,6 @@ export type WorldOption = {
 /** Lightweight controls metadata; never import shaders here. */
 export const WORLD_CATALOG: readonly WorldOption[] = [
   {
-    id: "waves",
-    name: "Waves",
-    category: "Nature",
-    description: "A smooth ocean breaker curling toward a sandy shoreline.",
-    replay: true,
-    seededPalette: true,
-    mark: "waves",
-  },
-  {
     id: "crystalline",
     name: "Crystalline",
     category: "Nature",
@@ -151,4 +142,8 @@ export const WORLD_CATALOG: readonly WorldOption[] = [
 ];
 export function getWorldOption(id: EveryQRCodeModel): WorldOption {
   return WORLD_CATALOG.find((world) => world.id === id)!;
+}
+
+export function getWorldThumbnail(id: EveryQRCodeModel, dark = false): string {
+  return dark ? `/worlds/night/${id}.png` : `/worlds/day/${id}.png`;
 }

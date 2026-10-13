@@ -4,7 +4,8 @@ import { EveryQRCode } from "@every-qrcode/react";
 import { getPalettesForModel } from "@every-qrcode/renderer-webgpu/world-options";
 import { readExperience } from "./experience";
 import { StudioIcon } from "./studio-icon";
-import { getWorldOption } from "./world-catalog";
+import { getWorldOption, getWorldThumbnail } from "./world-catalog";
+import { createWorldScene } from "./world-appearance";
 import "./styles.css";
 
 function Arrival() {
@@ -29,9 +30,15 @@ function Arrival() {
     ? getPalettesForModel(experience.model).find((item) => item.id === experience.paletteId)!
     : null;
   const scene = useMemo(
-    () => (palette ? { palette: palette.palette, artDirection: palette.artDirection ?? 0 } : {}),
-    [palette],
+    () =>
+      palette && experience
+        ? createWorldScene(experience.model, palette, experience.appearance ?? "paper")
+        : {},
+    [palette, experience],
   );
+  useEffect(() => {
+    document.documentElement.dataset["appearance"] = experience?.appearance ?? "paper";
+  }, [experience?.appearance]);
   return (
     <main className="arrival-shell">
       <header className="arrival-header">
@@ -50,7 +57,7 @@ function Arrival() {
               {failed ? (
                 <img
                   className="arrival-fallback"
-                  src={"/worlds/" + experience.model + ".webp"}
+                  src={getWorldThumbnail(experience.model, experience.appearance === "midnight")}
                   alt={getWorldOption(experience.model).name}
                 />
               ) : (

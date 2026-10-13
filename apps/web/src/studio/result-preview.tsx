@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 import type { QRArtifact } from "@every-qrcode/core";
 import {
   EveryQRCode,
@@ -15,41 +15,45 @@ import { StudioIcon } from "../studio-icon";
 export function ResultPreview({
   artifact,
   exportArtifact,
-  exportError,
+  experienceUrl,
   revision,
   model,
   scene,
   onSeed,
+  updating,
+  invalid,
 }: {
   artifact: QRArtifact | null;
   exportArtifact: DesignedQRArtifact | null;
-  exportError: string | null;
+  experienceUrl: string | null;
   revision: number;
   model: EveryQRCodeModel;
   scene: EveryQRCodeSceneConfig;
   onSeed: (seed: number) => void;
+  updating: boolean;
+  invalid: boolean;
 }): React.JSX.Element {
   const [view, setView] = useState<EveryQRCodeView>("model");
   const [readyKey, setReadyKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
-  const [zoom, setZoom] = useState(1);
+  const defaultZoom = model === "circuit" ? 0.95 : 1.05;
+  const [zoom, setZoom] = useState(defaultZoom);
   const [timing] = useState(startStudioTiming);
-  const gradientId = useId();
   const key = revision + ":" + model + ":" + retry;
   const ready = readyKey === key && !error;
   const world = getWorldOption(model);
   useEffect(() => {
     setView("model");
     setError(null);
-    setZoom(1);
-  }, [model, revision]);
+    setZoom(defaultZoom);
+  }, [model, revision, defaultZoom]);
   const shownView = ready ? view : "model";
   return (
     <section className="result-preview" id="result" aria-label="Result">
       <div className="result-heading">
         <h2>{world.name}</h2>
-        <span className="preview-label">
+        <span className="preview-label" role="status">
           {error ? "QR ready" : ready ? "Live preview" : "Building your world…"}
         </span>
       </div>
@@ -63,7 +67,8 @@ export function ResultPreview({
             generatorVersion={3}
             scene={scene}
             view={shownView}
-            loadingFallback="none"
+            loadingFallback="qr"
+            fallbackColors={exportArtifact?.inks ?? []}
             interactive={ready}
             onViewChange={setView}
             zoom={zoom}
@@ -80,47 +85,12 @@ export function ResultPreview({
             }}
           />
         )}
-        {!ready && !error && (
+        {!artifact && !error && (
           <div className="world-loading" aria-hidden="true">
             <span />
             <span />
             <span />
           </div>
-        )}
-        <div
-          className="designed-qr"
-          data-visible={Boolean(shownView === "qr" || error)}
-          aria-hidden="true"
-        >
-          {exportArtifact && (
-            <svg
-              viewBox={`0 0 ${exportArtifact.svg.size} ${exportArtifact.svg.size}`}
-              shapeRendering="crispEdges"
-            >
-              <defs>
-                <linearGradient
-                  id={gradientId}
-                  gradientUnits="userSpaceOnUse"
-                  x1="0"
-                  y1="0"
-                  x2={exportArtifact.svg.size}
-                  y2={exportArtifact.svg.size}
-                >
-                  {exportArtifact.inks?.map((ink, i) => (
-                    <stop key={i} offset={i * 50 + "%"} stopColor={ink} />
-                  ))}
-                </linearGradient>
-              </defs>
-              <rect width={exportArtifact.svg.size} height={exportArtifact.svg.size} fill="white" />
-              <path d={exportArtifact.svg.path} fill={`url(#${gradientId})`} />
-            </svg>
-          )}
-        </div>
-        {ready && !error && (
-          <span className="preview-caption" aria-hidden="true">
-            {shownView === "model" ? "Tap to reveal QR" : "Tap to return to world"}
-            <span>↗</span>
-          </span>
         )}
         {error && (
           <div className="preview-fallback">
@@ -137,20 +107,30 @@ export function ResultPreview({
           </div>
         )}
       </div>
+      <div className="preview-hint" aria-hidden="true">
+        {ready && !error && (
+          <span className="preview-caption">
+            {shownView === "model" ? "Tap to reveal QR" : "Tap to return to world"}
+            <span>↗</span>
+          </span>
+        )}
+      </div>
       <div className="preview-toolbar">
-        <button
-          className="replay-button"
-          type="button"
-          aria-label="Replay world construction"
-          disabled={!ready || shownView !== "model" || !world.replay}
-          onClick={() => {
-            setView("model");
-            setRetry((value) => value + 1);
-          }}
-        >
-          <StudioIcon name="replay" />
-          Replay
-        </button>
+        {world.replay && (
+          <button
+            className="replay-button"
+            type="button"
+            aria-label="Replay world construction"
+            disabled={!ready || shownView !== "model"}
+            onClick={() => {
+              setView("model");
+              setRetry((value) => value + 1);
+            }}
+          >
+            <StudioIcon name="replay" />
+            Replay
+          </button>
+        )}
         <div className="zoom-controls" aria-label="World zoom">
           <button
             type="button"
@@ -180,31 +160,28 @@ export function ResultPreview({
       </div>
       <div className="result-meta">
         <OutputActions
-          artifact={exportArtifact}
+          artifact={updating || invalid ? null : exportArtifact}
+          updating={updating}
+          invalid={invalid}
           revision={revision}
           destination={artifact?.identity.link.payloadUrl}
         />
         <div className="scan-destination">
-          <span>Scan → your world → your link</span>
+          <span>
+            {updating || invalid ? "Previous QR destination" : "Scanning opens this link directly"}
+          </span>
           <p className="committed-destination" aria-label="Committed destination">
             {artifact?.identity.link.payloadUrl ?? " "}
           </p>
         </div>
-        {exportArtifact && (
-          <a
-            className="preview-arrival"
-            href={exportArtifact.identity.link.payloadUrl}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Preview scan experience <span aria-hidden="true">↗</span>
+        {experienceUrl && (
+          <a className="preview-arrival" href={experienceUrl} target="_blank" rel="noreferrer">
+            Open world experience <span aria-hidden="true">↗</span>
           </a>
         )}
-        {exportError && (
-          <p className="field-error" role="alert">
-            {exportError}
-          </p>
-        )}
+        <p className="experience-note">
+          The world experience is a separate page. Your downloaded QR opens your link directly.
+        </p>
       </div>
     </section>
   );

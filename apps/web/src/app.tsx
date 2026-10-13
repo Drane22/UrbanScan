@@ -14,7 +14,9 @@ import { ThemeControls } from "./studio/theme-controls";
 import { recordStudioEvent } from "./studio-diagnostics";
 import { StudioSettings } from "./studio/studio-settings";
 import { WORLD_CATALOG } from "./world-catalog";
-import { useExperienceQR } from "./use-experience-qr";
+import { createDesignedQR } from "./qr-design";
+import { createExperienceURL } from "./experience";
+import { createWorldScene } from "./world-appearance";
 
 const DEFAULT_LINK = "https://example.com";
 export function App(): React.JSX.Element {
@@ -49,11 +51,8 @@ export function App(): React.JSX.Element {
     palettes.find((palette) => palette.id === paletteId) ??
     (seed === null ? palettes[0]! : selectWorldPalette(model, seed));
   const scene = useMemo(
-    () =>
-      paletteId === "seeded"
-        ? {}
-        : { palette: selected.palette, artDirection: selected.artDirection ?? 0 },
-    [paletteId, selected],
+    () => createWorldScene(model, selected, appearance),
+    [model, selected, appearance],
   );
   useEffect(() => {
     if (!preferencesReady) return;
@@ -63,10 +62,21 @@ export function App(): React.JSX.Element {
       .querySelector('meta[name="theme-color"]')
       ?.setAttribute(
         "content",
-        appearance === "midnight" ? "#13201c" : appearance === "lavender" ? "#f3eff8" : "#f5f1e8",
+        appearance === "midnight" ? "#09090b" : appearance === "lavender" ? "#f3eff8" : "#f5f1e8",
       );
   }, [appearance, preferencesReady]);
-  const experience = useExperienceQR(qr.artifact, model, selected.id, selected.swatches);
+  const exportArtifact = useMemo(
+    () => (qr.artifact ? createDesignedQR(qr.artifact, selected.swatches) : null),
+    [qr.artifact, selected.swatches],
+  );
+  const experienceUrl = qr.artifact
+    ? createExperienceURL({
+        url: qr.artifact.identity.link.payloadUrl,
+        model,
+        paletteId: selected.id,
+        appearance,
+      })
+    : null;
   useEffect(() => {
     if (!preferencesReady) return;
     try {
@@ -101,17 +111,17 @@ export function App(): React.JSX.Element {
       </header>
       <div className="studio-intro">
         <h1>Give your QR a world.</h1>
-        <p>Choose a world and a palette. Every scan opens your creation.</p>
+        <p>Choose a world and a palette. Every scan opens your link.</p>
       </div>
       <DestinationForm
         draft={qr.draftUrl}
         pending={qr.pending}
         error={qr.error}
-        hasArtifact={Boolean(qr.artifact)}
         onChange={qr.setDraftUrl}
         onSubmit={qr.submit}
       />
       <ThemeControls
+        dark={appearance === "midnight"}
         model={model}
         paletteId={paletteId}
         selectedPaletteId={selected.id}
@@ -119,10 +129,12 @@ export function App(): React.JSX.Element {
         onPalette={setPaletteId}
       />
       <ResultPreview
+        updating={qr.pending}
+        invalid={Boolean(qr.error)}
         revision={qr.revision}
         artifact={qr.artifact}
-        exportArtifact={experience.artifact}
-        exportError={experience.error}
+        exportArtifact={exportArtifact}
+        experienceUrl={experienceUrl}
         model={model}
         scene={scene}
         onSeed={setSeed}

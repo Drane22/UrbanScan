@@ -5,8 +5,14 @@ import {
 } from "@every-qrcode/renderer-webgpu/world-options";
 import { WORLD_CATALOG } from "./world-catalog";
 import { PUBLIC_SITE_ORIGIN } from "./site-metadata";
+import { APPEARANCES, type Appearance } from "./studio-preferences";
 
-export type Experience = { url: string; model: EveryQRCodeModel; paletteId: string };
+export type Experience = {
+  url: string;
+  model: EveryQRCodeModel;
+  paletteId: string;
+  appearance?: Appearance;
+};
 
 function destination(value: string): string {
   const url = new URL(value);
@@ -22,6 +28,7 @@ export function createExperienceURL(experience: Experience): string {
     w: experience.model,
     p: experience.paletteId,
     v: "3",
+    a: experience.appearance ?? "paper",
   });
   return PUBLIC_SITE_ORIGIN + "/go.html#" + parameters.toString();
 }
@@ -35,5 +42,6 @@ export function readExperience(hash: string): Experience {
     url: destination(parameters.get("u") ?? ""),
     model: world.id,
     paletteId: (palette ?? getDefaultPaletteForModel(world.id)).id,
+    appearance: APPEARANCES.find((value) => value === parameters.get("a")) ?? "paper",
   };
 }

@@ -1,4 +1,4 @@
-import { createQRArtifact, type QRArtifact } from "@every-qrcode/core";
+import { createQRArtifact, parseLink, type QRArtifact } from "@every-qrcode/core";
 import { startStudioTiming } from "./studio-diagnostics";
 
 export type QRArtifactState = {
@@ -21,12 +21,13 @@ export function createQRArtifactState(
     error: null,
   };
   let request = 0;
+  let debounce: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<() => void>();
   const publish = (next: QRArtifactState) => {
     state = next;
     for (const listener of listeners) listener();
   };
-  return {
+  const store = {
     getSnapshot: () => state,
     subscribe(listener: () => void) {
       listeners.add(listener);
@@ -35,13 +36,24 @@ export function createQRArtifactState(
       };
     },
     setDraftUrl(draftUrl: string) {
-      publish({ ...state, draftUrl, error: null });
+      clearTimeout(debounce);
+      request++;
+      let unchanged = false;
+      try {
+        unchanged = parseLink(draftUrl).payloadUrl === state.artifact?.identity.link.payloadUrl;
+      } catch {
+        // Validate after the typing pause, not on every keystroke.
+      }
+      publish({ ...state, draftUrl, pending: !unchanged, error: null });
+      if (!unchanged) debounce = setTimeout(() => void store.submit(draftUrl, true), 350);
     },
     cancel() {
+      clearTimeout(debounce);
       request++;
       publish({ ...state, pending: false });
     },
-    async submit(value = state.draftUrl): Promise<boolean> {
+    async submit(value = state.draftUrl, preserveDraft = false): Promise<boolean> {
+      clearTimeout(debounce);
       const timing = startStudioTiming();
       const ticket = ++request;
       const draftAtSubmit = state.draftUrl;
@@ -57,7 +69,9 @@ export function createQRArtifactState(
           pending: false,
           error: null,
           draftUrl:
-            state.draftUrl === draftAtSubmit ? artifact.identity.link.payloadUrl : state.draftUrl,
+            !preserveDraft && state.draftUrl === draftAtSubmit
+              ? artifact.identity.link.payloadUrl
+              : state.draftUrl,
         });
         return true;
       } catch (reason) {
@@ -73,4 +87,5 @@ export function createQRArtifactState(
       }
     },
   };
+  return store;
 }
