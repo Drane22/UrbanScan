@@ -29,6 +29,7 @@ struct Uniforms {
   terrainRidge: vec4f,
   terrainSummit: vec4f,
   camera: vec4f,
+  appearance: vec4f,
 }
 
 fn hsvToRgb(hsv: vec3f) -> vec3f {
@@ -247,14 +248,49 @@ fn vertexMain(@builtin(vertex_index) vertexIndex: u32) -> PostOutput {
   return output;
 }
 
+fn nightBackground()->vec3f {return vec3f(11.0,12.0,14.0)/255.0;}
+fn nightInk(sample:vec4f)->vec4f {
+  let source=sample.rgb/max(sample.a,0.001);
+  let luma=dot(source,vec3f(0.2126,0.7152,0.0722));
+  let coverage=sample.a*(1.0-smoothstep(0.5,0.8,luma));
+  let peak=max(max(source.r,source.g),max(source.b,0.001));
+  let ink=mix(vec3f(0.82),source/peak,0.18);
+  return vec4f(mix(nightBackground(),ink,coverage),1.0);
+}
+fn nightWorld(sample:vec4f,uv:vec2f)->vec4f {
+  let brightness=max(max(sample.r,sample.g),sample.b);
+  var color=sample.rgb*mix(1.0,0.82,smoothstep(0.08,0.3,brightness));
+  let texel=1.0/vec2f(textureDimensions(sceneTexture));
+  var bloom=vec3f(0);
+  let offsets=array<vec2f,8>(vec2f(2,0),vec2f(-2,0),vec2f(0,2),vec2f(0,-2),
+    vec2f(5,3),vec2f(-5,3),vec2f(5,-3),vec2f(-5,-3));
+  for(var i=0u;i<8u;i++){
+    let neighbor=textureSampleLevel(sceneTexture,sceneSampler,clamp(uv+offsets[i]*texel,vec2f(0),vec2f(1)),0);
+    let bright=max(max(neighbor.r,neighbor.g),neighbor.b);
+    bloom+=neighbor.rgb*smoothstep(0.38,0.85,bright)*neighbor.a;
+  }
+  color+=bloom*uniforms.appearance.y*0.025*(1.0-smoothstep(0.45,0.85,uniforms.progress));
+  return vec4f(color+nightBackground()*(1.0-sample.a),1.0);
+}
 @fragment
 fn fragmentMain(input: PostOutput) -> @location(0) vec4f {
+  let night=uniforms.appearance.x>0.5;
   if(uniforms.camera.y>0.5){
-    let blend=smoothstep(0.18,0.92,uniforms.progress);
-    if(blend>=1.0){return textureSampleLevel(qrTexture,sceneSampler,input.uv,0);}
-    let world=textureSampleLevel(sceneTexture,sceneSampler,input.uv,0);
+    // Keep the camera rotation and collapsing world visible. Ink only takes
+    // over once the geometry is approaching the same plane.
+    let blend=smoothstep(0.58,0.98,uniforms.progress);
+    var ink=textureSampleLevel(qrTexture,sceneSampler,input.uv,0);
+    if(night){ink=nightInk(ink);}
+    if(blend>=1.0){return ink;}
+    var world=textureSampleLevel(sceneTexture,sceneSampler,input.uv,0);
+    if(night){world=nightWorld(world,input.uv);}
     if(blend<=0.0){return world;}
-    return mix(world,textureSampleLevel(qrTexture,sceneSampler,input.uv,0),blend);
+    return mix(world,ink,blend);
+  }
+  if(night){
+    let scene=textureSampleLevel(sceneTexture,sceneSampler,input.uv,0);
+    if(uniforms.progress==1.0){return nightInk(scene);}
+    return mix(nightWorld(scene,input.uv),nightInk(scene),smoothstep(0.58,1.0,uniforms.progress));
   }
   if(uniforms.progress==0.0 || uniforms.progress==1.0){return textureSampleLevel(sceneTexture,sceneSampler,input.uv,0);}
   let center = vec2f(0.5);

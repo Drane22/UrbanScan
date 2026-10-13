@@ -237,6 +237,8 @@ fn fragmentMain(input: BlockOutput) -> @location(0) vec4f {
   var treeColor = pow(mapped, vec3f(1.0 / 2.2));
   let gray = dot(treeColor, vec3f(0.299, 0.587, 0.114));
   treeColor = mix(vec3f(gray), treeColor, 1.25);
+  // Moonlit soil and bark stay subdued beneath the luminous canopy.
+  treeColor *= mix(1.0, 0.45, uniforms.appearance.x);
   let qrPaper = mix(uniforms.themeFifth.rgb, vec3f(1.0), 0.52);
   let qrReveal = smoothstep(0.64, 0.96, uniforms.progress);
   if (

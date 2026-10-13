@@ -82,7 +82,7 @@ function beam(mesh: Mesh, a: Vec3, b: Vec3, width: number, depth: number, materi
   mesh.push(...local);
 }
 
-function tube(mesh: Mesh, a: Vec3, b: Vec3, radius: number, material: number, sides = 10) {
+function tube(mesh: Mesh, a: Vec3, b: Vec3, radius: number, material: number, sides = 8) {
   const delta = b.map((value, i) => value - a[i]!) as unknown as Vec3;
   const length = Math.hypot(...delta);
   const axis = delta.map((value) => value / length) as unknown as Vec3;
@@ -116,6 +116,9 @@ function tube(mesh: Mesh, a: Vec3, b: Vec3, radius: number, material: number, si
 
 export function createMechanicalLayout(model: SeedModel) {
   const next = worldRandom(model, 0x4d454333);
+  // Site identity selects the machine architecture as well as its working parts.
+  const architecture = ["boiler", "gantry", "turbine", "open-drive"][Math.floor(next() * 4)]!;
+  const attachments = 2 + Math.floor(next() * 3);
   const pair = createGearPair(
     [16, 20, 24][Math.floor(next() * 3)]!,
     [12, 16, 20][Math.floor(next() * 3)]!,
@@ -154,8 +157,8 @@ export function createMechanicalLayout(model: SeedModel) {
     parts.push({ mesh, pivot, motion: 1, ratio, phase: offset });
   const spokedGear = (center: Vec3, radius: number, teeth: number, opening: number) => {
     const mesh = gearMesh(center, radius, teeth, opening, 0.04);
-    for (let i = 0; i < 3; i++) {
-      const angle = (i * Math.PI * 2) / 3;
+    for (let i = 0; i < spokeCount; i++) {
+      const angle = (i * Math.PI * 2) / spokeCount;
       beam(
         mesh,
         center,
@@ -278,7 +281,7 @@ export function createMechanicalLayout(model: SeedModel) {
   box(rearShaft, [follower[0], follower[1], 0.07], [0.024, 0.024, 0.24], 1);
   parts.push({ mesh: rearShaft });
   // A lower reduction train fills the engine bed and drives the auxiliary pumps.
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < (architecture === "open-drive" ? 0 : 2); i++) {
     const center: Vec3 = [-0.34 + i * 0.168, 0.11, -0.19];
     rotating(
       spokedGear(center, 0.084, 12, 0.033),
@@ -288,11 +291,12 @@ export function createMechanicalLayout(model: SeedModel) {
     );
   }
   const plumbing: Mesh = [];
-  for (const [i, x] of [0.18, 0.34].entries()) {
+  const pumpXs = Array.from({ length: pumpCount }, (_, i) => 0.09 + i * 0.12);
+  for (const [i, x] of pumpXs.entries()) {
     const z = 0.045;
-    tube(plumbing, [x, 0.04, z], [x, 0.195, z], 0.046, 2, 12);
-    tube(plumbing, [x, 0.045, z], [x, 0.061, z], 0.055, 1, 12);
-    tube(plumbing, [x, 0.18, z], [x, 0.197, z], 0.055, 1, 12);
+    tube(plumbing, [x, 0.04, z], [x, 0.195, z], 0.046, 2, 8);
+    tube(plumbing, [x, 0.045, z], [x, 0.061, z], 0.055, 1, 8);
+    tube(plumbing, [x, 0.18, z], [x, 0.197, z], 0.055, 1, 8);
     const piston: Mesh = [];
     tube(piston, [x, 0.15, z], [x, 0.31, z], 0.016, 1);
     box(piston, [x, 0.3, z], [0.07, 0.025, 0.055], 3);
@@ -305,18 +309,40 @@ export function createMechanicalLayout(model: SeedModel) {
     tube(plumbing, [x, 0.1, z + 0.045], [x, 0.1, 0.33], 0.014, 3);
     tube(plumbing, [x, 0.1, 0.33], [x, 0.04, 0.33], 0.014, 3);
   }
-  tube(plumbing, [-0.36, 0.025, 0.26], [-0.36, 0.35, 0.26], 0.026, 3);
-  tube(plumbing, [-0.36, 0.35, 0.26], [0.13, 0.35, 0.26], 0.018, 3);
-  tube(plumbing, [0.13, 0.35, 0.26], [0.13, 0.26, 0.26], 0.018, 3);
-  const vessel = next() > 0.48;
-  if (vessel) {
-    const radius = 0.045 + next() * 0.03;
-    const height = 0.16 + next() * 0.19;
-    tube(plumbing, [-0.22, 0.04, 0.26], [-0.22, height, 0.26], radius, 2, 10);
-    for (const y of [0.055, height - 0.02])
-      tube(plumbing, [-0.22, y, 0.26], [-0.22, y + 0.014, 0.26], radius + 0.006, 1, 10);
-    tube(plumbing, [-0.22, height, 0.26], [-0.22, height + 0.05, 0.26], 0.018, 3);
+  if (architecture === "gantry") {
+    for (const x of [-0.38, 0.13]) {
+      box(plumbing, [x, towerHeight / 2, 0.29], [0.045, towerHeight, 0.075], 1);
+      beam(plumbing, [x, 0.06, 0.29], [x + 0.07, towerHeight * 0.78, 0.29], 0.018, 0.03, 3);
+    }
+    box(plumbing, [-0.125, towerHeight, 0.29], [0.62, 0.06, 0.08], 2);
+    for (let i = 0; i < attachments; i++)
+      box(plumbing, [-0.32 + i * 0.12, towerHeight - 0.055, 0.24], [0.04, 0.045, 0.03], 5);
+  } else if (architecture === "boiler") {
+    for (let i = 0; i < attachments; i++) {
+      const x = -0.36 + i * 0.115;
+      const height = 0.24 + next() * 0.19;
+      tube(plumbing, [x, 0.025, 0.28], [x, height, 0.28], 0.045, 2, 6);
+      tube(plumbing, [x, height - 0.025, 0.28], [x, height, 0.28], 0.056, 1, 6);
+      box(plumbing, [x, height * 0.6, 0.233], [0.025, 0.065, 0.012], 5);
+    }
+  } else if (architecture === "turbine") {
+    // A row of independently sized generator drums makes a low, broad silhouette.
+    for (let i = 0; i < attachments; i++) {
+      const x = -0.34 + i * 0.115;
+      const radius = 0.058 + next() * 0.023;
+      tube(plumbing, [x, radius + 0.04, 0.18], [x, radius + 0.04, 0.36], radius, 1, 10);
+      box(plumbing, [x, 0.035, 0.27], [0.095, 0.05, 0.22], 2);
+      box(plumbing, [x, radius + 0.04, 0.169], [0.04, 0.025, 0.012], 5);
+    }
+  } else {
+    // Open drive leaves the rear frame empty and exposes a tall auxiliary flywheel.
+    const center: Vec3 = [-0.27, 0.23, 0.29];
+    rotating(spokedGear(center, 0.145, 20, 0.095), center, -0.5);
+    box(plumbing, [center[0], 0.115, 0.32], [0.04, 0.23, 0.04], 2);
+    tube(plumbing, [-0.4, 0.04, 0.33], [-0.4, towerHeight, 0.33], 0.024, 3);
   }
+  // The boiler architecture owns the pressure vessels; other layouts stay open.
+  const vessel = architecture === "boiler";
   const details: Mesh = [];
   for (const x of [-0.41, 0.41])
     for (const z of [-0.33, 0.32]) {
@@ -341,6 +367,14 @@ export function createMechanicalLayout(model: SeedModel) {
     beltEndpoints,
     pulleys: [pulleyA, motor],
     parts,
-    composition: { spokeCount, flySpokes, pumpCount, towerHeight, vessel },
+    composition: {
+      architecture,
+      attachments,
+      spokeCount,
+      flySpokes,
+      pumpCount,
+      towerHeight,
+      vessel,
+    },
   };
 }

@@ -31,6 +31,17 @@ fn faceMaterial(o:FacetOutput)->vec3f {
   let tread=0.90+0.10*sin((p.x+p.y)*280.0-uniforms.time*18.0);
   color=mix(uniforms.themePrimary.rgb,vec3f(0.025),0.70)*diffuse*tread;
  }else if(o.material==5u){color=mix(uniforms.themeThird.rgb,uniforms.themeFifth.rgb,0.62);}
+ // Darkened contact near the engine bed complements the moving cast shadows.
+ let height=o.world.y/(uniforms.gridSize*uniforms.blockSize);
+ color*=0.78+0.22*smoothstep(0.0,0.07,height);
+ if(uniforms.appearance.x>0.5){
+  // Blackened steel with copper edge light and luminous instrument glass.
+  color=mix(vec3f(0.025,0.031,0.042),color,0.65);
+  if(o.material==1u){color+=vec3f(0.48,0.65,0.85)*(0.12+spec*0.60+fresnel*0.34);}
+  if(o.material==3u){color+=vec3f(0.95,0.43,0.13)*(0.16+fresnel*0.35);}
+  if(o.material==5u){color=vec3f(0.35,0.90,1.0);}
+  if(o.material==0u){color=vec3f(0.025,0.028,0.035)*diffuse;}
+ }
  return color;
 }
 `,

@@ -272,6 +272,23 @@ export function EveryQRCode({
       ) ??
       [],
   );
+  const previewInks =
+    scene?.appearance === "dark"
+      ? fallbackInks.map((color) => {
+          const channels = [1, 3, 5].map((offset) => parseInt(color.slice(offset, offset + 2), 16));
+          const peak = Math.max(1, ...channels);
+          return (
+            "#" +
+            channels
+              .map((channel) =>
+                Math.round(209 * 0.82 + (channel / peak) * 255 * 0.18)
+                  .toString(16)
+                  .padStart(2, "0"),
+              )
+              .join("")
+          );
+        })
+      : fallbackInks;
   const rendererRef = useRef<SeedRenderer | null>(null);
   const callbacks = useRef({ onError, onIdentity, onReady, onQRReady });
   callbacks.current = { onError, onIdentity, onReady, onQRReady };
@@ -413,12 +430,16 @@ export function EveryQRCode({
         >
           <defs>
             <linearGradient id={inkId} x1="0" y1="0" x2="1" y2="1">
-              {createQRGradientStops(fallbackInks).map(({ color, offset }, i) => (
+              {createQRGradientStops(previewInks).map(({ color, offset }, i) => (
                 <stop key={i} offset={`${offset * 100}%`} stopColor={color} />
               ))}
             </linearGradient>
           </defs>
-          <rect fill="#fff" height={qr.size} width={qr.size} />
+          <rect
+            fill={scene?.appearance === "dark" ? "#0b0c0e" : "#fff"}
+            height={qr.size}
+            width={qr.size}
+          />
           <path d={qr.path} fill={`url(#${inkId})`} />
         </svg>
       )}

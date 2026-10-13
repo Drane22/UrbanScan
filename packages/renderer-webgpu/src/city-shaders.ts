@@ -29,6 +29,7 @@ struct Uniforms {
   terrainRidge: vec4f,
   terrainSummit: vec4f,
   camera: vec4f,
+  appearance: vec4f,
 }
 
 const CITY_PARTS: u32 = 4u;
@@ -53,7 +54,7 @@ fn cityPaper() -> vec3f {
 }
 
 fn cityNight() -> f32 {
-  return 1.0 - step(0.51, abs(uniforms.sceneEffect - 1.0));
+  return max(uniforms.appearance.x, 1.0 - step(0.51, abs(uniforms.sceneEffect - 1.0)));
 }
 
 fn citySnow() -> f32 {

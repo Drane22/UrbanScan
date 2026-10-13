@@ -48,6 +48,9 @@ export type SeedScenePalette = readonly [
 ];
 
 export type SeedSceneConfig = {
+  /** Night lighting and a dark scan surface; independent of the palette's identity. */
+  readonly appearance?: "light" | "dark";
+  readonly glow?: number;
   readonly artDirection?: number;
   readonly background?: readonly [number, number, number];
   readonly effect?: SeedSceneEffect;
@@ -516,6 +519,8 @@ type SeedGpuResources = {
   terrainPalette: TerrainScenePalette;
   targets: RenderTargets | undefined;
   sceneEffect: number;
+  night: boolean;
+  glow: number;
   zoom: number;
 };
 
@@ -534,6 +539,7 @@ function createFormClearColor(
   scene: SeedSceneConfig,
   form: SeedForm,
 ): { r: number; g: number; b: number; a: number } {
+  if (scene.background) return createClearColor(scene);
   if (form === "stained-glass" && scene.palette) {
     const [r, g, b] = scene.palette[4].map((c) => c * 0.45 + 0.98 * 0.55);
     return { r: r!, g: g!, b: b!, a: 1 };
@@ -592,7 +598,8 @@ type RendererState = {
   resizePending: boolean;
   target: number;
   transitionDuration: number;
-  transitionStart: number;
+  transitionElapsed: number;
+  transitionFrameTime: number | null;
   toggleTime: number;
   zoom: number;
 };
@@ -605,9 +612,9 @@ type PipelineSpec = {
   readonly module: GPUShaderModule;
 };
 
-export const MORPH_DURATION_MS = 950;
+export const MORPH_DURATION_MS = 900;
 const TERRAIN_SPRING_RESPONSE_SECONDS = 0.38;
-const UNIFORM_FLOATS = 60;
+const UNIFORM_FLOATS = 64;
 const BUFFER_USAGE = {
   copyDestination: 0x0008,
   storage: 0x0080,
@@ -658,12 +665,12 @@ export function evaluateMorphCurve(progress: number): number {
   if (progress >= 1) return 1;
   let parameter = progress;
   for (let iteration = 0; iteration < 7; iteration++) {
-    const error = bezierCoordinate(parameter, 0.2, 0.2) - progress;
-    const derivative = bezierDerivative(parameter, 0.2, 0.2);
+    const error = bezierCoordinate(parameter, 0.35, 0.25) - progress;
+    const derivative = bezierDerivative(parameter, 0.35, 0.25);
     if (Math.abs(derivative) < 0.000_001) break;
     parameter = Math.max(0, Math.min(1, parameter - error / derivative));
   }
-  return bezierCoordinate(parameter, 0.7, 1);
+  return bezierCoordinate(parameter, 0.0, 1);
 }
 
 export function stepTerrainSpring(
@@ -867,18 +874,27 @@ async function buildSharedPipelines(
     vertex: { entryPoint: "vertexMain", module: postModule },
   });
   let canonicalQr: GPURenderPipeline | undefined;
-  if (generatorVersion === 1) {
+  if (generatorVersion === 1 || generatorVersion === 3) {
     const { CANONICAL_QR_SHADER } = await import("./canonical-qr-shader.js");
-    const module = await createShaderModule(
-      device,
-      "every-qrcode-canonical-qr",
-      CANONICAL_QR_SHADER,
-    );
+    const code =
+      generatorVersion === 3
+        ? (await import("./rounded-qr-shader.js")).ROUNDED_QR_SHADER
+        : CANONICAL_QR_SHADER;
+    const module = await createShaderModule(device, "every-qrcode-canonical-qr", code);
     canonicalQr = await device.createRenderPipelineAsync({
       fragment: { entryPoint: "fragmentMain", module, targets: [{ format }] },
       label: "every-qrcode-canonical-qr-pipeline",
       layout: device.createPipelineLayout({ bindGroupLayouts: [layouts.blocks] }),
       primitive: { topology: "triangle-list" },
+      ...(generatorVersion === 3
+        ? {
+            depthStencil: {
+              format: "depth24plus" as const,
+              depthWriteEnabled: false,
+              depthCompare: "always" as const,
+            },
+          }
+        : {}),
       vertex: { entryPoint: "vertexMain", module },
     });
   }
@@ -1461,7 +1477,7 @@ function createBindGroups(
         })
       : undefined;
   const canonicalQr =
-    generatorVersion === 1
+    generatorVersion === 1 || generatorVersion === 3
       ? device.createBindGroup({
           label: "every-qrcode-canonical-qr-bind-group",
           layout: layouts.blocks,
@@ -1501,6 +1517,7 @@ function usesDirectMorph(
   version: GeneratorVersion = CURRENT_GENERATOR_VERSION,
 ): boolean {
   if (version === 1) return false;
+  if (version === 3) return true;
   return isStagedWorld(form) || form === "terrain" || form === "reef" || form === "circuit";
 }
 function premultiplied(color: GPUColorDict): GPUColorDict {
@@ -1663,6 +1680,8 @@ function writeUniforms(
     values[offset + 2] = color[2];
     values[offset + 3] = 1;
   }
+  values[60] = gpu.night ? 1 : 0;
+  values[61] = gpu.glow;
   values[56] = gpu.zoom;
   // camera.y selects independent world/ink compositing; it is not motion direction.
   values[57] = usesDirectMorph(gpu.form, gpu.generatorVersion) ? 1 : 0;
@@ -1682,7 +1701,7 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
   const targets = gpu.targets;
   if (
     !targets ||
-    (usesDirectMorph(gpu.form, gpu.generatorVersion) && gpu.uniformValues[3]! >= 0.92)
+    (usesDirectMorph(gpu.form, gpu.generatorVersion) && gpu.uniformValues[3]! >= 0.98)
   )
     return;
   const pass = encoder.beginRenderPass({
@@ -1690,7 +1709,9 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
       {
         clearValue: usesDirectMorph(gpu.form, gpu.generatorVersion)
           ? premultiplied(gpu.worldClearColor)
-          : gpu.clearColor,
+          : gpu.night
+            ? { r: 0, g: 0, b: 0, a: 0 }
+            : gpu.clearColor,
         loadOp: "clear",
         storeOp: "store",
         view: targets.sceneView,
@@ -1813,12 +1834,12 @@ function encodeScenePass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): voi
 
 function encodeQrPass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): void {
   const targets = gpu.targets;
-  if (!targets?.qr || gpu.uniformValues[3]! <= 0.18) return;
+  if (!targets?.qr || gpu.uniformValues[3]! <= 0.58) return;
   const pass = encoder.beginRenderPass({
     label: "every-qrcode-ink-pass",
     colorAttachments: [
       {
-        clearValue: premultiplied(gpu.scanClearColor),
+        clearValue: gpu.night ? { r: 0, g: 0, b: 0, a: 0 } : premultiplied(gpu.scanClearColor),
         loadOp: "clear",
         storeOp: "store",
         view: targets.qrView,
@@ -1832,7 +1853,11 @@ function encodeQrPass(encoder: GPUCommandEncoder, gpu: SeedGpuResources): void {
     },
   });
   const owners = gpu.blockField.blocks.length;
-  if (gpu.pipelines.form === "circuit" && "circuitBoard" in gpu.pipelines) {
+  if (gpu.generatorVersion === 3) {
+    pass.setPipeline(gpu.pipelines.canonicalQr!);
+    pass.setBindGroup(0, gpu.bindGroups.canonicalQr!);
+    pass.draw(6, owners);
+  } else if (gpu.pipelines.form === "circuit" && "circuitBoard" in gpu.pipelines) {
     pass.setPipeline(gpu.pipelines.circuitQr);
     pass.setBindGroup(0, gpu.bindGroups.circuit!);
     pass.draw(36, owners);
@@ -1883,7 +1908,7 @@ function renderGpuFrame(gpu: SeedGpuResources): void {
     gpu.pipelines.machineDepth &&
     gpu.targets?.machineShadowView &&
     gpu.worldDrawPlan &&
-    gpu.uniformValues[3]! < 0.92
+    gpu.uniformValues[3]! < 0.98
   ) {
     const pass = encoder.beginRenderPass({
       label: "every-qrcode-machine-shadow-pass",
@@ -2053,6 +2078,8 @@ async function initializeGpu(
       sampler,
       scene,
       sceneEffect: createSceneEffect(sceneConfig),
+      night: sceneConfig.appearance === "dark",
+      glow: sceneConfig.glow ?? 0.5,
       targets: undefined,
       terrainPalette: createTerrainPalette(palette),
       zoom: 1,
@@ -2075,6 +2102,8 @@ function updateGpuScene(gpu: SeedGpuResources, scene: SeedSceneConfig): void {
   gpu.scanClearColor = createClearColor(scene);
   gpu.palette = palette;
   gpu.sceneEffect = createSceneEffect(scene);
+  gpu.night = scene.appearance === "dark";
+  gpu.glow = Math.max(0, Math.min(1, scene.glow ?? 0.5));
   gpu.terrainPalette = createTerrainPalette(palette);
 }
 
@@ -2090,8 +2119,15 @@ function animate(canvas: HTMLCanvasElement, state: RendererState, now: number): 
   if (!state.visible || document.hidden) {
     return;
   }
-  // Use Tree's interruptible timing for every world; geometry stages the growth.
-  const elapsed = now - state.transitionStart;
+  // Use the same interruptible timeline for every world's geometry and camera.
+  // Advance only through frames the GPU can actually present. A delayed first
+  // frame or a GPU stall must never consume the entire morph off-screen.
+  if (state.progress !== state.target) {
+    const previous = state.transitionFrameTime;
+    state.transitionElapsed += previous === null ? 0 : Math.max(0, Math.min(50, now - previous));
+    state.transitionFrameTime = now;
+  }
+  const elapsed = state.transitionElapsed;
   const linear =
     state.transitionDuration === 0 ? 1 : Math.min(1, elapsed / state.transitionDuration);
   state.progress = state.from + (state.target - state.from) * evaluateMorphCurve(linear);
@@ -2157,7 +2193,8 @@ function createInitialState(): RendererState {
     resizePending: true,
     target: 0,
     transitionDuration: 0,
-    transitionStart: now,
+    transitionElapsed: 0,
+    transitionFrameTime: null,
     toggleTime: now,
     zoom: 1,
   };
@@ -2267,7 +2304,8 @@ export function mountSeed(
       if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false) {
         state.transitionDuration = 0;
       }
-      state.transitionStart = now;
+      state.transitionElapsed = 0;
+      state.transitionFrameTime = null;
       state.toggleTime = now;
       requestFrame(canvas, state);
     },

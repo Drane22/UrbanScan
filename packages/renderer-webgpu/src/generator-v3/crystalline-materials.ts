@@ -34,6 +34,13 @@ fn faceMaterial(o:FacetOutput)->vec3f {
   let current=0.65+0.35*sin(length(position)*45.0-time*3.0);
   color=mix(uniforms.themePrimary.rgb,uniforms.themeThird.rgb,0.10)*plane+uniforms.themeFourth.rgb*crack*current*0.36;
  }
+ if(uniforms.appearance.x>0.5){
+  // Light originates inside the crystal; the host rock stays near black.
+  let glow=mix(vec3f(0.24,0.65,1),vec3f(0.78,0.42,1),fract(o.phase*0.29));
+  color=color*0.43+glow*(0.27+fresnel*0.58+refraction*0.23);
+  color+=vec3f(0.72,0.87,1)*(reflection*0.7+glint);
+  if(o.material==0u || o.material==3u){color=color*0.12+glow*refraction*0.10;}
+ }
  return color;
 }
 `;

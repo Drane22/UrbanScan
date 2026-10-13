@@ -135,6 +135,37 @@ fn fragmentMain(o:WorldOutput)->@location(0) vec4f {
   let lit=dioramaLighting(material,coord,n,o.part,key)*texture;
   var color=mix(lit,material*1.10,clamp(o.emission,0.0,1.0));
   color+=vec3f(pow(max(abs(n.y),0.0),12.0)*o.emission*0.06);
+  if(uniforms.appearance.x>0.5){
+    let peak=max(max(material.r,material.g),max(material.b,0.001));
+    let luminous=mix(material/peak,vec3f(0.85,0.91,1),0.22);
+    let rim=pow(1.0-abs(dot(n,treeViewDirection())),3.0);
+    if(MATERIAL_KIND==1u){
+      // Cold stone, warm torch pools and bright enchanted crystals.
+      color=mix(vec3f(0.045,0.052,0.075),lit,0.45);
+      let torch=pow(max(0.0,sin(coord.x*0.49)*cos(coord.z*0.49)),8.0);
+      color+=vec3f(0.40,0.17,0.045)*torch*max(n.y,0.0);
+      color=mix(color,luminous*1.15,smoothstep(0.3,0.85,o.emission));
+    }else if(MATERIAL_KIND==2u){
+      // Folded lantern paper; the garden bed remains charcoal.
+      let raised=smoothstep(0.3,2.0,coord.y);
+      color=lit*0.38+luminous*(raised*0.40+rim*raised*0.48);
+      color+=vec3f(0.65,0.55,1.0)*smoothstep(0.2,0.32,o.emission)*0.30;
+    }else if(MATERIAL_KIND==3u){
+      // Colored panes emit light; lead and masonry stay dark.
+      let pane=smoothstep(0.10,0.22,o.emission)*mix(0.18,1.0,smoothstep(0.2,1.0,coord.y));
+      color=lit*0.38+luminous*pane*(0.68+rim*0.22);
+    }else if(MATERIAL_KIND==5u){
+      // A black observatory with self-lit stars, sun and orbital tracks.
+      color=lit*0.48+luminous*(0.12+pow(o.emission,2.0)*0.95+rim*0.28);
+      if(o.part==9u){color=vec3f(0.018,0.022,0.035);}
+    }else if(MATERIAL_KIND==6u){
+      // Translucent glow bricks: colored bodies and luminous raised studs.
+      let raised=smoothstep(0.25,1.2,coord.y);
+      let stud=select(0.0,0.68,o.part==1u || o.part==2u);
+      color=lit*0.48+luminous*raised*(0.24+stud+rim*0.38);
+    }
+    if(o.part==9u && MATERIAL_KIND!=5u){color=mix(vec3f(0.035,0.038,0.052),color,0.35);}
+  }
   return vec4f(clamp(color,vec3f(0),vec3f(1)),1);
 
   }

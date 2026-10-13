@@ -42,15 +42,13 @@ fn oceanProject(p:vec3f)->vec4f {
 }
 fn deform(p:vec3f,n:vec3f,index:u32,base:f32)->mat2x3f {
  let center=worldData[4u+index*3u];let parameters=worldData[5u+index*3u];
- let cycle=fract(uniforms.time*0.23+parameters.w*0.15915494+f32(index)*0.34);
- let gather=smoothstep(0.0,0.30,cycle);
- let collapse=1.0-smoothstep(0.58,0.94,cycle);
- let stretch=0.055+gather*collapse*1.10;
- let shear=(smoothstep(0.25,0.76,cycle)*0.12-0.025)/parameters.x;
+ // A rolling breaker stays visible throughout the cycle; motion travels along its lip.
+ let cycle=uniforms.time*1.15+parameters.w+p.x*4.0;
+ let stretch=0.86+0.16*sin(cycle);
+ let shear=(0.018+sin(cycle-0.8)*0.026)/parameters.x;
  let direction=vec2f(-sin(center.w),cos(center.w));
  let rise=max(0.0,p.y-base);
- let travel=(cycle-0.30)*0.23;
- let q=vec3f(p.x+direction.x*(rise*shear+travel),base+rise*stretch,p.z+direction.y*(rise*shear+travel));
+ let q=vec3f(p.x+direction.x*rise*shear,base+rise*stretch,p.z+direction.y*rise*shear);
  let normal=normalize(vec3f(n.x,(n.y-dot(n.xz,direction)*shear)/stretch,n.z));
  return mat2x3f(q,normal);
 }
@@ -153,7 +151,7 @@ fn vertexMain(@builtin(vertex_index) v:u32,@builtin(instance_index) instance:u32
 @fragment
 fn fragmentMain(o:OceanOutput)->@location(0) vec4f {
  let phase=worldData[5u+min(o.owner,2u)*3u].w;
- let foamCoord=vec2f(o.uv.x*65.0-uniforms.time*2.2+phase,o.uv.y*36.0+uniforms.time*1.5);
+ let foamCoord=vec2f(o.uv.x*72.0+sin(o.uv.y*9.0+phase)*1.2-uniforms.time*0.6+phase,o.uv.y*48.0+uniforms.time*1.5);
  let foamPattern=noise(foamCoord)*0.65+noise(foamCoord*2.1)*0.35;
  let foamAA=max(fwidth(foamPattern),0.025);
  let coordinate=o.world/(uniforms.gridSize*uniforms.blockSize);
@@ -195,10 +193,19 @@ fn fragmentMain(o:OceanOutput)->@location(0) vec4f {
   let trailing=exp(-pow((boundary-0.075)/0.030,2.0))*smoothstep(0.55-foamAA,0.55+foamAA,foamPattern);
   color=mix(color,uniforms.themeFifth.rgb,trailing*0.24);
  } else if(o.kind==2u){
-  let lip=0.73+sin(o.uv.x*15.0+phase)*0.012;
-  let cap=smoothstep(lip-0.055,lip,o.uv.y)*(1.0-smoothstep(lip+0.10,lip+0.15,o.uv.y));
+  // The underside of the overhang is darker than the illuminated back of the wave.
+  color*=0.67+0.33*smoothstep(-0.25,0.65,normal.y);
+  let lip=0.56+sin(o.uv.x*15.0+phase)*0.012;
+  let cap=smoothstep(lip-0.02,lip,o.uv.y)*(1.0-smoothstep(lip+0.035,lip+0.065,o.uv.y));
   let edge=smoothstep(0.94,0.99,o.uv.y);
-  let skin=max(cap*0.72,edge*0.82);
+  let lace=smoothstep(0.54-foamAA,0.54+foamAA,foamPattern)*smoothstep(0.40,0.75,o.uv.y);
+  let skin=max(max(cap*0.95,edge*0.95),lace*0.22);
+  let barrel=smoothstep(0.08,0.28,o.uv.y)*(1.0-smoothstep(0.4,0.53,o.uv.y));
+  color=mix(color,uniforms.themeThird.rgb*0.75+uniforms.themeFifth.rgb*0.08,barrel*0.6);
+  // Long faint flow lines reveal the face; a dark barrel separates the lip from the sea.
+  let flow=sin(o.uv.x*175.0+sin(o.uv.y*10.0+phase)*1.8);
+  color+=uniforms.themeFifth.rgb*smoothstep(0.9,1.0,flow)*0.026*smoothstep(0.12,0.6,o.uv.y);
+  color=mix(color,uniforms.themePrimary.rgb*0.48,smoothstep(0.72,0.90,o.uv.y)*0.28);
   let density=0.72+0.28*smoothstep(0.45-foamAA,0.45+foamAA,foamPattern);
   let taper=smoothstep(0.02,0.16,o.uv.x)*(1.0-smoothstep(0.84,0.98,o.uv.x));
   let foam=skin*density*taper;
@@ -206,12 +213,14 @@ fn fragmentMain(o:OceanOutput)->@location(0) vec4f {
   color=mix(color,seafoam,foam*0.96);
  } else if(o.kind==3u){color=uniforms.themeFifth.rgb*shade;}
  else if(o.kind==5u){color=mix(vec3f(0.40,0.38,0.32),vec3f(0.67,0.61,0.49),o.normal.y*0.4+0.4)*shade;}
- var opacity=1.0;
- if(o.kind==2u){
-  let cycle=fract(uniforms.time*0.23+phase*0.15915494+f32(o.owner)*0.34);
-  opacity=smoothstep(0.01,0.15,cycle)*(1.0-smoothstep(0.75,0.96,cycle));
- }
- return vec4f(color,opacity*(1.0-smoothstep(0.60,0.88,uniforms.progress)));
+ else if(o.kind==6u){color=uniforms.themeFifth.rgb*shade;}
+ else if(o.kind==7u){color=mix(uniforms.themeSecondary.rgb,uniforms.themePrimary.rgb,0.25)*shade;}
+ else if(o.kind==8u){color=uniforms.themePrimary.rgb*shade;}
+ else if(o.kind==9u){color=mix(uniforms.themeSecondary.rgb,vec3f(1,0.28,0.12),0.32)*shade;}
+ else if(o.kind==10u){color=vec3f(0.78,0.43,0.24)*shade;}
+ else if(o.kind==11u){color=mix(vec3f(0.76,0.12,0.045),vec3f(1.0,0.39,0.13),max(0.0,n.y))*shade;}
+ else if(o.kind==12u){color=vec3f(0.025,0.019,0.016);}
+ return vec4f(color,1.0-smoothstep(0.60,0.88,uniforms.progress));
 }
 fn hash(p:vec2f)->f32 {return fract(sin(dot(p,vec2f(127.1,311.7)))*43758.5453);}
 fn noise(p:vec2f)->f32 {
