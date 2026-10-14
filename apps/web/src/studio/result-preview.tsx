@@ -137,7 +137,7 @@ export function ResultPreview({
                 }}
               >
                 <StudioIcon name="replay" />
-                Replay
+                <span className="replay-label">Replay</span>
               </button>
             )}
             <div className="zoom-controls" aria-label="World zoom">

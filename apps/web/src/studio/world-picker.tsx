@@ -24,10 +24,19 @@ export function WorldPicker({
     <div className="world-controls">
       <div className="world-picker-label">
         <strong>Worlds</strong>
-        <span>
-          {WORLD_CATALOG.length} styles · {page + 1} / {pages}
+        <span aria-live="polite">
+          {page + 1} / {pages} · {WORLD_CATALOG.length} styles
         </span>
       </div>
+      <button
+        className="world-page-button world-page-prev"
+        type="button"
+        aria-label="Previous worlds"
+        disabled={page === 0}
+        onClick={() => setPage((current) => Math.max(0, current - 1))}
+      >
+        <span aria-hidden="true">←</span>
+      </button>
       <div className="world-picker" aria-label="Choose a world">
         {worlds.map((world) => (
           <button
@@ -56,27 +65,15 @@ export function WorldPicker({
           </button>
         ))}
       </div>
-      <div className="world-pager" role="group" aria-label="World pages">
-        <button
-          type="button"
-          aria-label="Previous worlds"
-          disabled={page === 0}
-          onClick={() => setPage((current) => Math.max(0, current - 1))}
-        >
-          ← Previous
-        </button>
-        <span aria-live="polite">
-          {page + 1} of {pages}
-        </span>
-        <button
-          type="button"
-          aria-label="Next worlds"
-          disabled={page + 1 >= pages}
-          onClick={() => setPage((current) => Math.min(pages - 1, current + 1))}
-        >
-          Next →
-        </button>
-      </div>
+      <button
+        className="world-page-button world-page-next"
+        type="button"
+        aria-label="Next worlds"
+        disabled={page + 1 >= pages}
+        onClick={() => setPage((current) => Math.min(pages - 1, current + 1))}
+      >
+        <span aria-hidden="true">→</span>
+      </button>
     </div>
   );
 }
