@@ -1,20 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { EveryQRCodeModel } from "@every-qrcode/react";
-import {
-  WORLD_CATALOG,
-  WORLD_CATEGORIES,
-  getWorldOption,
-  getWorldThumbnail,
-} from "../world-catalog";
+import { WORLD_CATALOG, getWorldThumbnail } from "../world-catalog";
 
-export const FEATURED_WORLDS: readonly EveryQRCodeModel[] = [
-  "reef",
-  "crystalline",
-  "mechanical",
-  "tree",
-  "city",
-  "circuit",
-];
+/** Paginated, always-visible choices replace the category dropdown and scrollable gallery. */
+const PAGE_SIZE = 4;
+const pageForWorld = (world: EveryQRCodeModel): number =>
+  Math.max(0, Math.floor(WORLD_CATALOG.findIndex((choice) => choice.id === world) / PAGE_SIZE));
+
 export function WorldPicker({
   selected,
   onSelect,
@@ -24,64 +16,67 @@ export function WorldPicker({
   onSelect: (model: EveryQRCodeModel) => void;
   dark?: boolean;
 }): React.JSX.Element {
-  const [category, setCategory] = useState("Featured");
-  const choices = WORLD_CATALOG.filter((world) =>
-    category === "Featured"
-      ? FEATURED_WORLDS.includes(world.id)
-      : category === "All" || world.category === category,
-  );
-  const selectedWorld = getWorldOption(selected);
+  const [page, setPage] = useState(() => pageForWorld(selected));
+  const pages = Math.ceil(WORLD_CATALOG.length / PAGE_SIZE);
+  useEffect(() => setPage(pageForWorld(selected)), [selected]);
+  const worlds = WORLD_CATALOG.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   return (
     <div className="world-controls">
-      <label className="filter-label">
-        Browse
-        <select
-          aria-label="World category"
-          value={category}
-          onChange={(event) => setCategory(event.target.value)}
-        >
-          {["Featured", ...WORLD_CATEGORIES].map((value) => (
-            <option key={value}>{value}</option>
-          ))}
-        </select>
-      </label>
-      {!choices.some((world) => world.id === selected) && (
-        <button
-          className="selected-world"
-          type="button"
-          aria-pressed="true"
-          onClick={() => setCategory("All")}
-        >
-          <span aria-hidden="true">✓</span> {selectedWorld.name}
-        </button>
-      )}
-      <div className="world-picker" aria-label="World choices">
-        {choices.map((world) => (
+      <div className="world-picker-label">
+        <strong>Worlds</strong>
+        <span>
+          {WORLD_CATALOG.length} styles · {page + 1} / {pages}
+        </span>
+      </div>
+      <div className="world-picker" aria-label="Choose a world">
+        {worlds.map((world) => (
           <button
             type="button"
             className="world-card"
             key={world.id}
             aria-pressed={selected === world.id}
+            aria-label={`Use ${world.name} world`}
+            title={world.description}
             onClick={() => onSelect(world.id)}
           >
-            <span className={"world-thumbnail world-thumbnail--" + world.category.toLowerCase()}>
+            <span className="world-thumbnail">
               <img
                 src={getWorldThumbnail(world.id, dark)}
                 alt=""
                 width={240}
                 height={240}
-                loading="lazy"
                 decoding="async"
+                loading="lazy"
               />
             </span>
             <span className="choice-label">
-              {world.name}
+              <span>{world.name}</span>
               <span aria-hidden="true">{selected === world.id ? "✓" : ""}</span>
             </span>
           </button>
         ))}
       </div>
-      <p className="world-sample-note">Sample worlds. Your palette appears in the main preview.</p>
+      <div className="world-pager" role="group" aria-label="World pages">
+        <button
+          type="button"
+          aria-label="Previous worlds"
+          disabled={page === 0}
+          onClick={() => setPage((current) => Math.max(0, current - 1))}
+        >
+          ← Previous
+        </button>
+        <span aria-live="polite">
+          {page + 1} of {pages}
+        </span>
+        <button
+          type="button"
+          aria-label="Next worlds"
+          disabled={page + 1 >= pages}
+          onClick={() => setPage((current) => Math.min(pages - 1, current + 1))}
+        >
+          Next →
+        </button>
+      </div>
     </div>
   );
 }

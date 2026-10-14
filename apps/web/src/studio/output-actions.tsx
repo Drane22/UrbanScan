@@ -133,20 +133,19 @@ export function OutputActions({
                 ? "Preparing PNG…"
                 : "Download PNG"}
         </button>
-        <label className="export-size">
-          <span className="sr-only">PNG size</span>
-          <select
-            aria-label="PNG size"
-            value={size}
-            onChange={(event) => setSize(Number(event.target.value) as QRExportSize)}
-          >
-            {QR_EXPORT_SIZES.map((value) => (
-              <option key={value} value={value}>
-                {value} px
-              </option>
-            ))}
-          </select>
-        </label>
+        <div className="export-size" role="group" aria-label="PNG size">
+          {QR_EXPORT_SIZES.map((value) => (
+            <button
+              key={value}
+              type="button"
+              aria-label={`${value} pixel PNG`}
+              aria-pressed={size === value}
+              onClick={() => setSize(value)}
+            >
+              {value === 512 ? "512" : value === 1024 ? "1K" : "2K"}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="secondary-actions">
         <button
