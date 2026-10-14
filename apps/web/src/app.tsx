@@ -113,6 +113,17 @@ export function App(): React.JSX.Element {
         <h1>Give your QR a world.</h1>
         <p>Choose a world and a palette. Every scan opens your link.</p>
       </div>
+      <ResultPreview
+        updating={qr.pending}
+        invalid={Boolean(qr.error)}
+        revision={qr.revision}
+        artifact={qr.artifact}
+        exportArtifact={exportArtifact}
+        experienceUrl={experienceUrl}
+        model={model}
+        scene={scene}
+        onSeed={setSeed}
+      />
       <DestinationForm
         draft={qr.draftUrl}
         pending={qr.pending}
@@ -127,17 +138,6 @@ export function App(): React.JSX.Element {
         selectedPaletteId={selected.id}
         onWorld={selectWorld}
         onPalette={setPaletteId}
-      />
-      <ResultPreview
-        updating={qr.pending}
-        invalid={Boolean(qr.error)}
-        revision={qr.revision}
-        artifact={qr.artifact}
-        exportArtifact={exportArtifact}
-        experienceUrl={experienceUrl}
-        model={model}
-        scene={scene}
-        onSeed={setSeed}
       />
       <span className="sr-only" role="status">
         {qr.artifact ? "QR ready for " + qr.artifact.identity.link.payloadUrl : ""}
