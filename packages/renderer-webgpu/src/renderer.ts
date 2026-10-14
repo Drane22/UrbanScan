@@ -12,6 +12,7 @@ import {
 } from "./diorama-population.js";
 import type { SeedGpuScene } from "./gpu-scene.js";
 import { prepareScene } from "./prepared-scene.js";
+import { frameVersionThreeShader, QR_FRAME_SCALE, worldFraming } from "./generator-v3/framing.js";
 import {
   isCandidateWorld,
   validateWorldDrawPlan,
@@ -880,7 +881,11 @@ async function buildSharedPipelines(
       generatorVersion === 3
         ? (await import("./rounded-qr-shader.js")).ROUNDED_QR_SHADER
         : CANONICAL_QR_SHADER;
-    const module = await createShaderModule(device, "every-qrcode-canonical-qr", code);
+    const module = await createShaderModule(
+      device,
+      "every-qrcode-canonical-qr",
+      generatorVersion === 3 ? frameVersionThreeShader(code) : code,
+    );
     canonicalQr = await device.createRenderPipelineAsync({
       fragment: { entryPoint: "fragmentMain", module, targets: [{ format }] },
       label: "every-qrcode-canonical-qr-pipeline",
@@ -1244,6 +1249,11 @@ async function buildPipelines(
 ): Promise<SeedPipelines> {
   const rawSources = await loadSeedShaderSources(form, generatorVersion);
   let sources = rawSources;
+  if (generatorVersion === 3) {
+    sources = Object.fromEntries(
+      Object.entries(rawSources).map(([name, code]) => [name, frameVersionThreeShader(code)]),
+    ) as SeedShaderSources;
+  }
   if (generatorVersion === 1) {
     const { prepareVersionOneShaderCompilation } = await import("./legacy-wgsl-compat.js");
     sources = Object.fromEntries(
@@ -1682,7 +1692,11 @@ function writeUniforms(
   }
   values[60] = gpu.night ? 1 : 0;
   values[61] = gpu.glow;
-  values[56] = gpu.zoom;
+  const [automaticScale, centerY] =
+    gpu.generatorVersion === 3 ? worldFraming(gpu.form, gpu.blockField.qrSize) : ([1, 0] as const);
+  values[62] = gpu.generatorVersion === 3 ? QR_FRAME_SCALE : 1.84;
+  values[63] = centerY * gpu.zoom;
+  values[56] = gpu.zoom * automaticScale;
   // camera.y selects independent world/ink compositing; it is not motion direction.
   values[57] = usesDirectMorph(gpu.form, gpu.generatorVersion) ? 1 : 0;
   values[59] = gpu.artDirection;

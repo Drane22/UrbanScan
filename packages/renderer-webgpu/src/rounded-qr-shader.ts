@@ -22,7 +22,7 @@ struct Output {
  o.uv=corners[v];o.cell=blockPositions[owner].xy;o.neighbors=u32(blockPositions[owner].w);
  let point=o.cell+o.uv-vec2f(uniforms.gridSize*0.5);
  let flat=vec4f(point.x/max(uniforms.aspectRatio,1.0),-point.y/max(1.0/uniforms.aspectRatio,1.0),0,1);
- let scale=1.84/(uniforms.gridSize+8.0);
+ let scale=uniforms.appearance.z/(uniforms.gridSize+8.0);
  let posed=worldProject(vec3f(point.x,0,-point.y)*uniforms.blockSize,1.68,0.0);
  o.position=mix(posed,vec4f(flat.xy*scale,0,1),smoothstep(0.58,1.0,uniforms.progress));
  return o;
