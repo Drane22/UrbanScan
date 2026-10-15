@@ -56,15 +56,20 @@ export function createCrystallineLayout(model: SeedModel) {
   const turn = next() * Math.PI * 2;
   const clusterCount = 2 + Math.floor(next() * 4);
   const habit = next();
+  const growth = habit < 1 / 3 ? "ridge" : habit < 2 / 3 ? "crown" : "spires";
   const centers = Array.from({ length: clusterCount }, (_, i): readonly [number, number] => {
     const angle = turn + (i * Math.PI * 2) / clusterCount + (next() - 0.5) * 0.55;
     const reach = (i === 0 ? 0.08 : 0.18) + next() * 0.075;
+    if (growth === "ridge") {
+      const along = (i / (clusterCount - 1) - 0.5) * 0.42;
+      return [Math.cos(turn) * along, Math.sin(turn) * along];
+    }
     return [Math.cos(angle) * reach, Math.sin(angle) * reach];
   });
   const crystals: Crystal[] = [];
   centers.forEach((center, cluster) => {
     const count = (cluster === 0 ? 13 : 7) + Math.floor(next() * 7);
-    const spread = 0.075 + next() * 0.05;
+    const spread = (growth === "spires" ? 0.045 : 0.075) + next() * 0.05;
     const stature = cluster === 0 ? 0.33 + next() * 0.17 : 0.17 + next() * 0.19;
     for (let i = 0; i < count; i++) {
       const angle = next() * Math.PI * 2;
@@ -72,7 +77,9 @@ export function createCrystallineLayout(model: SeedModel) {
       const hero = i === 0;
       crystals.push({
         center: [center[0] + Math.cos(angle) * reach, 0.013, center[1] + Math.sin(angle) * reach],
-        radius: hero ? 0.037 + habit * 0.037 : 0.013 + habit * 0.014 + next() * 0.014,
+        radius: hero
+          ? 0.032 + (growth === "spires" ? 0.012 : habit * 0.065)
+          : 0.013 + habit * 0.014 + next() * 0.014,
         height: hero ? stature : 0.045 + next() * stature * 0.67,
         sides: habit > 0.65 ? 5 : 6,
         angle: next() * Math.PI,
@@ -157,5 +164,6 @@ export function createCrystallineLayout(model: SeedModel) {
     ...packFacetedWorld(model, "crystalline", parts),
     crystals,
     centers,
+    growth,
   };
 }

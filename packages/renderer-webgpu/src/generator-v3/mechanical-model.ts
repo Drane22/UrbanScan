@@ -119,12 +119,15 @@ export function createMechanicalLayout(model: SeedModel) {
   // Site identity selects the machine architecture as well as its working parts.
   const architecture = ["boiler", "gantry", "turbine", "open-drive"][Math.floor(next() * 4)]!;
   const attachments = 2 + Math.floor(next() * 3);
+  const driverTeeth = architecture === "open-drive" ? [12, 16, 20] : [16, 20, 24];
+  const followerTeeth = architecture === "turbine" ? [12, 12, 16] : [12, 16, 20];
   const pair = createGearPair(
-    [16, 20, 24][Math.floor(next() * 3)]!,
-    [12, 16, 20][Math.floor(next() * 3)]!,
+    driverTeeth[Math.floor(next() * 3)]!,
+    followerTeeth[Math.floor(next() * 3)]!,
   );
-  const shift = (next() - 0.5) * 0.09;
-  const driver: Vec3 = [-0.2 + shift, 0.23 + next() * (0.235 - pair.driverRadius), -0.075];
+  const shift = (next() - 0.5) * 0.12;
+  const bedHeight = architecture === "open-drive" ? 0.18 : 0.23;
+  const driver: Vec3 = [-0.2 + shift, bedHeight + next() * (0.235 - pair.driverRadius), -0.075];
   const follower: Vec3 = [driver[0] + pair.centerDistance, driver[1], driver[2]];
   const crank: Vec3 = [driver[0], driver[1], -0.285];
   const linkage = createSliderLinkage(0.034 + next() * 0.027, 0.3 + next() * 0.09);
