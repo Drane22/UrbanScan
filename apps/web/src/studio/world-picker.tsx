@@ -37,7 +37,7 @@ export function WorldPicker({
       >
         <span aria-hidden="true">←</span>
       </button>
-      <div className="world-picker" aria-label="Choose a world">
+      <div className="world-picker" role="group" aria-label="Choose a world">
         {worlds.map((world) => (
           <button
             type="button"

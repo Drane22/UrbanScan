@@ -40,21 +40,31 @@ export function ResultPreview({
   const defaultZoom = 1;
   const [zoom, setZoom] = useState(defaultZoom);
   const [timing] = useState(startStudioTiming);
-  const key = revision + ":" + model + ":" + retry;
+  const url = artifact?.identity.link.payloadUrl;
+  const key = JSON.stringify([url, model, retry]);
   const ready = readyKey === key && !error;
   const world = getWorldOption(model);
   useEffect(() => {
+    setReadyKey("");
     setView("model");
     setError(null);
     setZoom(defaultZoom);
-  }, [model, revision, defaultZoom]);
+  }, [model, url, defaultZoom]);
   const shownView = ready ? view : "model";
   return (
     <section className="result-preview" id="result" aria-label="Result">
       <div className="result-heading">
         <h2>{world.name}</h2>
         <span className="preview-label" role="status">
-          {error ? "QR ready" : ready ? "Live preview" : "Building your world…"}
+          {invalid
+            ? "Previous QR · check your link"
+            : updating
+              ? "Updating QR…"
+              : error
+                ? "QR ready"
+                : ready
+                  ? "Live preview"
+                  : "Building your world…"}
         </span>
       </div>
       <div className="scene-stage">

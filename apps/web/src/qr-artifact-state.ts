@@ -54,6 +54,22 @@ export function createQRArtifactState(
     },
     async submit(value = state.draftUrl, preserveDraft = false): Promise<boolean> {
       clearTimeout(debounce);
+      // Enter on the committed destination should neither rebuild the world nor
+      // invalidate its readiness. Still invalidate any superseded async request.
+      try {
+        if (parseLink(value).payloadUrl === state.artifact?.identity.link.payloadUrl) {
+          request++;
+          publish({
+            ...state,
+            pending: false,
+            error: null,
+            draftUrl: preserveDraft ? state.draftUrl : state.artifact.identity.link.payloadUrl,
+          });
+          return true;
+        }
+      } catch {
+        // The normal creation path provides validation feedback.
+      }
       const timing = startStudioTiming();
       const ticket = ++request;
       const draftAtSubmit = state.draftUrl;

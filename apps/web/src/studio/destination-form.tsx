@@ -43,7 +43,7 @@ export function DestinationForm({
         </p>
       ) : (
         <p id="input-status" className="input-status" role="status">
-          {pending ? "Updating your QR…" : "QR updates automatically as you type."}
+          {pending ? "Updating your QR…" : "Updates automatically"}
         </p>
       )}
     </form>

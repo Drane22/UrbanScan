@@ -1,5 +1,5 @@
 import type { DesignedQRArtifact as QRArtifact } from "../qr-design";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 import { recordStudioEvent } from "../studio-diagnostics";
 import {
   canShareQR,
@@ -25,6 +25,9 @@ export function OutputActions({
   invalid?: boolean;
 }): React.JSX.Element {
   const [size, setSize] = useState<QRExportSize>(1024);
+  const [expanded, setExpanded] = useState(false);
+  const optionsId = useId();
+  const moreButton = useRef<HTMLButtonElement>(null);
   const [exports] = useState(createQRExportState);
   const [downloads] = useState(createQRDownloads);
   const state = useSyncExternalStore(exports.subscribe, exports.getSnapshot, exports.getSnapshot);
@@ -122,49 +125,78 @@ export function OutputActions({
         <button
           type="button"
           className="primary-button"
-          disabled={!prepared}
+          disabled={!prepared || updating || invalid}
           onClick={() => download(false)}
         >
           {invalid
             ? "Enter a valid link"
             : updating
               ? "Updating QR…"
-              : !prepared
-                ? "Preparing PNG…"
-                : "Download PNG"}
+              : state.error
+                ? "PNG unavailable"
+                : !prepared
+                  ? "Preparing PNG…"
+                  : "Download PNG"}
         </button>
-        <div className="export-size" role="group" aria-label="PNG size">
-          {QR_EXPORT_SIZES.map((value) => (
-            <button
-              key={value}
-              type="button"
-              aria-label={`${value} pixel PNG`}
-              aria-pressed={size === value}
-              onClick={() => setSize(value)}
-            >
-              {value === 512 ? "512" : value === 1024 ? "1K" : "2K"}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div className="secondary-actions">
         <button
-          className="secondary-download"
-          aria-label="Download SVG"
+          className="export-more"
+          ref={moreButton}
           type="button"
-          disabled={!artifact}
-          onClick={() => download(true)}
+          aria-expanded={expanded}
+          aria-controls={optionsId}
+          onClick={() => setExpanded((value) => !value)}
         >
-          Download SVG
+          More <span aria-hidden="true">{expanded ? "−" : "+"}</span>
+          <span className="sr-only"> export options</span>
         </button>
-        {prepared && canShareQR(prepared.file) && (
-          <button type="button" disabled={sharing} onClick={share}>
-            {sharing ? "Sharing…" : "Share QR image"}
+      </div>
+      <div
+        id={optionsId}
+        className="export-options"
+        hidden={!expanded}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            setExpanded(false);
+            moreButton.current?.focus();
+          }
+        }}
+      >
+        <div className="export-size-row">
+          <span>PNG size</span>
+          <div className="export-size" role="group" aria-label="PNG size">
+            {QR_EXPORT_SIZES.map((value) => (
+              <button
+                key={value}
+                type="button"
+                aria-label={`${value} pixel PNG`}
+                aria-pressed={size === value}
+                onClick={() => setSize(value)}
+              >
+                {value} px
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="secondary-actions">
+          <button
+            className="secondary-download"
+            aria-label="Download SVG"
+            type="button"
+            disabled={!artifact}
+            onClick={() => download(true)}
+          >
+            Download SVG
           </button>
-        )}
-        <button type="button" disabled={!artifact} onClick={() => void copy()}>
-          Copy destination
-        </button>
+          {prepared && canShareQR(prepared.file) && (
+            <button type="button" disabled={sharing} onClick={share}>
+              {sharing ? "Sharing…" : "Share QR image"}
+            </button>
+          )}
+          <button type="button" disabled={!artifact} onClick={() => void copy()}>
+            Copy destination
+          </button>
+        </div>
       </div>
       <div className="export-feedback" aria-live="polite">
         {state.pending && <span role="status">Preparing PNG…</span>}

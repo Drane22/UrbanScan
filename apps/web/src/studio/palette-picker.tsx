@@ -22,7 +22,7 @@ export function PalettePicker({
           {seeded ? "Match link" : palettes.find((palette) => palette.id === selected)?.name}
         </span>
       </div>
-      <div className="palette-picker" aria-label="Color choices">
+      <div className="palette-picker" role="group" aria-label="Color choices">
         {palettes.map((palette) => (
           <button
             className="palette-card"
