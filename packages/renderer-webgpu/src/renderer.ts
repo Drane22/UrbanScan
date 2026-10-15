@@ -613,7 +613,7 @@ type PipelineSpec = {
   readonly module: GPUShaderModule;
 };
 
-export const MORPH_DURATION_MS = 900;
+export const MORPH_DURATION_MS = 520;
 const TERRAIN_SPRING_RESPONSE_SECONDS = 0.38;
 const UNIFORM_FLOATS = 64;
 const BUFFER_USAGE = {
@@ -666,12 +666,12 @@ export function evaluateMorphCurve(progress: number): number {
   if (progress >= 1) return 1;
   let parameter = progress;
   for (let iteration = 0; iteration < 7; iteration++) {
-    const error = bezierCoordinate(parameter, 0.35, 0.25) - progress;
-    const derivative = bezierDerivative(parameter, 0.35, 0.25);
+    const error = bezierCoordinate(parameter, 0.22, 0.36) - progress;
+    const derivative = bezierDerivative(parameter, 0.22, 0.36);
     if (Math.abs(derivative) < 0.000_001) break;
     parameter = Math.max(0, Math.min(1, parameter - error / derivative));
   }
-  return bezierCoordinate(parameter, 0.0, 1);
+  return bezierCoordinate(parameter, 0.45, 1);
 }
 
 export function stepTerrainSpring(
@@ -2138,7 +2138,9 @@ function animate(canvas: HTMLCanvasElement, state: RendererState, now: number): 
   // frame or a GPU stall must never consume the entire morph off-screen.
   if (state.progress !== state.target) {
     const previous = state.transitionFrameTime;
-    state.transitionElapsed += previous === null ? 0 : Math.max(0, Math.min(50, now - previous));
+    // Allow ordinary slow frames to catch up, while a long stall still leaves
+    // intermediate poses visible instead of jumping straight to the endpoint.
+    state.transitionElapsed += previous === null ? 0 : Math.max(0, Math.min(100, now - previous));
     state.transitionFrameTime = now;
   }
   const elapsed = state.transitionElapsed;
@@ -2146,8 +2148,10 @@ function animate(canvas: HTMLCanvasElement, state: RendererState, now: number): 
     state.transitionDuration === 0 ? 1 : Math.min(1, elapsed / state.transitionDuration);
   state.progress = state.from + (state.target - state.from) * evaluateMorphCurve(linear);
   canvas.dataset["morphProgress"] = state.progress.toFixed(3);
-  if (state.resizePending) state.resizePending = false;
-  resizeGpuCanvas(canvas, gpu);
+  if (state.resizePending) {
+    state.resizePending = false;
+    resizeGpuCanvas(canvas, gpu);
+  }
   const time = now / 1000;
   const toggleAge = Math.max(0, (now - state.toggleTime) / 1000);
   writeUniforms(

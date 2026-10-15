@@ -58,11 +58,18 @@ export function packFacetedWorld(model: SeedModel, form: CandidateWorld, parts: 
     throw new RangeError("Faceted worlds require generator version 3");
   if (parts.length < 2 || parts.length >= FACET_QR_FIRST_INSTANCE)
     throw new RangeError("Invalid part count");
+  // Small crystals, bolts and rods must not pay the largest mesh's vertex cost.
+  // Keep the foundation first and use at most seven size buckets for the rest.
+  const largest = Math.max(...parts.slice(1).map((part) => part.mesh.length / 8));
+  const minimumBucket = Math.ceil(Math.log2(largest)) - 6;
+  const bucket = (part: FacetedPart) =>
+    Math.max(minimumBucket, Math.ceil(Math.log2(part.mesh.length / 8)));
+  const ordered = [parts[0]!, ...parts.slice(1).sort((a, b) => bucket(a) - bucket(b))];
   const modelData = new Float32Array(
     FACET_HEADER_FLOATS + parts.reduce((n, p) => n + p.mesh.length, 0),
   );
   let offset = FACET_HEADER_FLOATS;
-  parts.forEach((part, i) => {
+  ordered.forEach((part, i) => {
     modelData.set(
       [
         offset / 4,
@@ -78,6 +85,19 @@ export function packFacetedWorld(model: SeedModel, form: CandidateWorld, parts: 
     modelData.set(part.mesh, offset);
     offset += part.mesh.length;
   });
+  const surfaceBatches: WorldDrawPlan["batches"][number][] = [];
+  for (let first = 1; first < ordered.length;) {
+    let end = first + 1;
+    while (end < ordered.length && bucket(ordered[end]!) === bucket(ordered[first]!)) end++;
+    surfaceBatches.push({
+      role: "surface",
+      verticesPerInstance: Math.max(...ordered.slice(first, end).map((p) => p.mesh.length / 8)),
+      instanceCount: end - first,
+      firstInstance: first,
+      requiredDataLength: modelData.length,
+    });
+    first = end;
+  }
   const drawPlan: WorldDrawPlan = {
     form,
     requiredDataLength: modelData.length,
@@ -89,13 +109,7 @@ export function packFacetedWorld(model: SeedModel, form: CandidateWorld, parts: 
         firstInstance: 0,
         requiredDataLength: modelData.length,
       },
-      {
-        role: "surface",
-        verticesPerInstance: Math.max(...parts.slice(1).map((p) => p.mesh.length / 8)),
-        instanceCount: parts.length - 1,
-        firstInstance: 1,
-        requiredDataLength: modelData.length,
-      },
+      ...surfaceBatches,
     ],
     qr: {
       verticesPerInstance: 6,
@@ -103,5 +117,5 @@ export function packFacetedWorld(model: SeedModel, form: CandidateWorld, parts: 
       firstInstance: FACET_QR_FIRST_INSTANCE,
     },
   };
-  return { modelData, drawPlan };
+  return { modelData, drawPlan, partInstances: parts.map((part) => ordered.indexOf(part)) };
 }
