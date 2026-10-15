@@ -13,6 +13,7 @@ import {
 import type { SeedGpuScene } from "./gpu-scene.js";
 import { prepareScene } from "./prepared-scene.js";
 import { frameVersionThreeShader, QR_FRAME_SCALE, worldFraming } from "./generator-v3/framing.js";
+import { lightVersionThreeMaterials } from "./generator-v3/night-materials.js";
 import {
   isCandidateWorld,
   validateWorldDrawPlan,
@@ -1251,7 +1252,10 @@ async function buildPipelines(
   let sources = rawSources;
   if (generatorVersion === 3) {
     sources = Object.fromEntries(
-      Object.entries(rawSources).map(([name, code]) => [name, frameVersionThreeShader(code)]),
+      Object.entries(rawSources).map(([name, code]) => [
+        name,
+        name === "form" ? code : frameVersionThreeShader(lightVersionThreeMaterials(code, form)),
+      ]),
     ) as SeedShaderSources;
   }
   if (generatorVersion === 1) {

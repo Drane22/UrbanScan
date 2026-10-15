@@ -3,29 +3,28 @@ import type { WorldPalettePreset } from "@every-qrcode/renderer-webgpu/world-opt
 import type { Appearance } from "./studio-preferences";
 
 type NightDesign = {
-  readonly tint: readonly [number, number, number];
   readonly glow: number;
-  readonly levels: readonly [number, number, number, number, number];
+  readonly brightness: readonly [number, number, number, number, number];
 };
 
 // Surface, accent and foundation slots differ between worlds. Keep their
 // selected hue family while giving each material a deliberate night treatment.
 const NIGHT_DESIGNS: Record<EveryQRCodeModel, NightDesign> = {
-  tree: { tint: [0.48, 0.85, 0.98], glow: 0.55, levels: [1.1, 0.6, 0.45, 0.65, 0.15] },
-  terrain: { tint: [0.4, 0.72, 1], glow: 0.4, levels: [0.5, 0.65, 0.65, 1.1, 0.35] },
-  city: { tint: [1, 0.78, 0.48], glow: 0.6, levels: [0.55, 0.8, 1.15, 0.55, 0.18] },
-  circuit: { tint: [0.4, 0.86, 1], glow: 0.65, levels: [0.35, 1.1, 0.6, 1.1, 0.3] },
-  reef: { tint: [0.48, 0.95, 0.92], glow: 0.75, levels: [0.6, 1.05, 1.05, 0.8, 0.18] },
-  colony: { tint: [1, 0.7, 0.4], glow: 0.35, levels: [0.5, 0.65, 0.9, 0.6, 0.2] },
-  dungeon: { tint: [1, 0.62, 0.3], glow: 0.65, levels: [0.4, 0.55, 1.1, 1.15, 0.16] },
-  origami: { tint: [0.75, 0.65, 1], glow: 0.35, levels: [0.7, 0.9, 0.85, 0.65, 0.16] },
-  "stained-glass": { tint: [0.8, 0.6, 1], glow: 0.75, levels: [1.05, 1.1, 1.1, 0.85, 0.12] },
-  mycelium: { tint: [0.35, 1, 0.82], glow: 0.85, levels: [0.55, 1.1, 1.1, 0.65, 0.15] },
-  constellation: { tint: [0.55, 0.7, 1], glow: 0.75, levels: [0.65, 1.1, 1, 0.8, 0.12] },
-  "toy-block": { tint: [0.65, 0.78, 1], glow: 0.4, levels: [0.65, 0.85, 1, 0.75, 0.18] },
-  crystalline: { tint: [0.6, 0.75, 1], glow: 0.8, levels: [0.35, 1.05, 1.1, 1.05, 0.15] },
-  mechanical: { tint: [1, 0.7, 0.4], glow: 0.45, levels: [0.35, 0.75, 0.85, 1.05, 0.22] },
-  waves: { tint: [0.4, 0.72, 1], glow: 0.4, levels: [0.35, 0.8, 0.8, 0.6, 0.2] },
+  tree: { glow: 0.45, brightness: [0.42, 0.9, 0.88, 0.82, 0.6] },
+  terrain: { glow: 0.4, brightness: [0.4, 0.9, 0.82, 0.88, 0.7] },
+  city: { glow: 0.55, brightness: [0.5, 0.96, 0.88, 0.9, 0.7] },
+  circuit: { glow: 0.55, brightness: [0.3, 1.0, 0.92, 0.98, 0.6] },
+  reef: { glow: 0.6, brightness: [0.38, 0.98, 0.9, 0.86, 0.7] },
+  colony: { glow: 0.45, brightness: [0.46, 0.96, 0.88, 0.86, 0.75] },
+  dungeon: { glow: 0.6, brightness: [0.46, 1.0, 0.85, 0.88, 0.76] },
+  origami: { glow: 0.4, brightness: [0.36, 0.92, 0.88, 0.9, 0.8] },
+  "stained-glass": { glow: 0.6, brightness: [0.32, 0.98, 0.94, 0.9, 0.72] },
+  mycelium: { glow: 0.65, brightness: [0.34, 0.96, 0.9, 0.88, 0.72] },
+  constellation: { glow: 0.55, brightness: [0.24, 0.96, 0.9, 0.82, 0.78] },
+  "toy-block": { glow: 0.45, brightness: [0.36, 0.96, 0.86, 0.88, 0.84] },
+  crystalline: { glow: 0.65, brightness: [0.32, 0.95, 0.9, 0.9, 0.82] },
+  mechanical: { glow: 0.5, brightness: [0.4, 0.96, 0.85, 0.94, 0.8] },
+  waves: { glow: 0.4, brightness: [0.3, 0.9, 0.9, 0.85, 0.72] },
 };
 
 export function createWorldScene(
@@ -40,11 +39,14 @@ export function createWorldScene(
   };
   if (appearance !== "midnight") return base;
   const design = NIGHT_DESIGNS[model];
-  const palette = preset.palette.map((color, slot) =>
-    color.map((channel, axis) =>
-      Math.min(1, (channel * 0.88 + design.tint[axis]! * 0.12) * design.levels[slot]!),
-    ),
-  ) as unknown as NonNullable<EveryQRCodeSceneConfig["palette"]>;
+  // Illuminate each material in its own hue. A fixed blue/orange tint made
+  // different palettes converge; multiplying dark pigments hid their detail.
+  const palette = preset.palette.map((color, slot) => {
+    const peak = Math.max(...color, 0.001);
+    const light = design.brightness[slot]!;
+    const fill = slot === 0 ? 0.025 : 0.055;
+    return color.map((channel) => ((channel / peak) * (1 - fill) + fill) * light);
+  }) as unknown as NonNullable<EveryQRCodeSceneConfig["palette"]>;
   return {
     ...base,
     palette,

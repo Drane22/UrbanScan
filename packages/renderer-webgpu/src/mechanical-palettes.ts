@@ -9,8 +9,8 @@ export const MECHANICAL_PALETTES = families([
   [
     "polar-workshop",
     "Polar Workshop",
-    ["#182d3c", "#ef9f66", "#689ecc", "#91bf85", "#f5fbff"],
-    "Cold blue alloy, copper pistons and green control lamps",
+    ["#182d3c", "#c7e4f2", "#588fbd", "#86cfcf", "#f5fbff"],
+    "Silver gears, blue alloy housings and ice-cyan control lamps",
   ],
   [
     "violet-reactor",
@@ -21,7 +21,7 @@ export const MECHANICAL_PALETTES = families([
   [
     "vermilion-engine",
     "Vermilion Engine",
-    ["#342128", "#d8c267", "#c96e67", "#6fabc1", "#fff8ec"],
-    "Red enamel, gold fittings and turquoise cable jackets",
+    ["#342128", "#d6b6ac", "#d44d50", "#ec9369", "#fff8ec"],
+    "Vermilion enamel, rose-steel fittings and copper cable jackets",
   ],
 ]);

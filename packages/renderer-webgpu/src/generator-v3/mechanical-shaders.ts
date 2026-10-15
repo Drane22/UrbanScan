@@ -35,12 +35,12 @@ fn faceMaterial(o:FacetOutput)->vec3f {
  let height=o.world.y/(uniforms.gridSize*uniforms.blockSize);
  color*=0.78+0.22*smoothstep(0.0,0.07,height);
  if(uniforms.appearance.x>0.5){
-  // Blackened steel with copper edge light and luminous instrument glass.
-  color=mix(vec3f(0.025,0.031,0.042),color,0.65);
-  if(o.material==1u){color+=vec3f(0.48,0.65,0.85)*(0.12+spec*0.60+fresnel*0.34);}
-  if(o.material==3u){color+=vec3f(0.95,0.43,0.13)*(0.16+fresnel*0.35);}
-  if(o.material==5u){color=vec3f(0.35,0.90,1.0);}
-  if(o.material==0u){color=vec3f(0.025,0.028,0.035)*diffuse;}
+  // Night illumination follows the selected alloy, enamel and lamp colors.
+  color=color*1.05+uniforms.themeThird.rgb*0.08;
+  if(o.material==1u){color+=uniforms.themeSecondary.rgb*(0.12+spec*0.60+fresnel*0.34);}
+  if(o.material==3u){color+=uniforms.themeFourth.rgb*(0.16+fresnel*0.35);}
+  if(o.material==5u){color=mix(uniforms.themeFourth.rgb,uniforms.themeFifth.rgb,0.25);}
+  if(o.material==0u){color=uniforms.themePrimary.rgb*(0.32+diffuse*0.36);}
  }
  return color;
 }

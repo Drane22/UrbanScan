@@ -35,25 +35,25 @@ export const SUPPLEMENTAL_PALETTES: Partial<Record<SeedForm, readonly WorldPalet
     [
       "rosewood-moss",
       "Rosewood & Moss",
-      ["#3b2029", "#d79a83", "#d4c791", "#7caa92", "#fff7eb"],
+      ["#3b2029", "#9ac977", "#e2cf94", "#4f8875", "#fff7eb"],
       0,
-      "Rosewood branches, sage leaves and soft peach blossoms",
+      "Rosewood branches, chartreuse leaves and ivory blossoms",
     ],
   ]),
   terrain: presets([
     [
       "amber-dunes",
-      "Amber Dunes",
-      ["#30231c", "#ec9c59", "#ceb173", "#59a49d", "#fff9ec"],
+      "Terracotta Canyon",
+      ["#30231c", "#e7c297", "#ba684c", "#5fb4b5", "#fff9ec"],
       1,
-      "Ochre dunes, copper ridges and turquoise river valleys",
+      "Terracotta ridges, sand-colored blossoms and turquoise valleys",
     ],
     [
       "arctic-bloom",
       "Arctic Bloom",
-      ["#182a3d", "#a68cdd", "#6aa9bb", "#e7b885", "#f4fbff"],
+      ["#182a3d", "#9daed8", "#b3d7c8", "#82bcd5", "#f4fbff"],
       3,
-      "Glacier-blue ridges with lavender slopes and amber shores",
+      "Pale mint slopes, periwinkle flowers and glacier-blue water",
     ],
   ]),
   city: presets([
@@ -92,9 +92,9 @@ export const SUPPLEMENTAL_PALETTES: Partial<Record<SeedForm, readonly WorldPalet
     [
       "pearl-lagoon",
       "Pearl Lagoon",
-      ["#173b3d", "#e9a0b0", "#65b5ab", "#e4bd69", "#f7fbef"],
+      ["#302536", "#b6d9e0", "#d7afc2", "#a7d7be", "#f7fbef"],
       0,
-      "Pearl sand, rose coral and jade shallows",
+      "Ice-blue coral, rose shallows and pale jade seagrass",
     ],
     [
       "midnight-tide",
@@ -108,14 +108,14 @@ export const SUPPLEMENTAL_PALETTES: Partial<Record<SeedForm, readonly WorldPalet
     [
       "cobalt-burrow",
       "Cobalt Burrow",
-      ["#1b2b40", "#e8a557", "#709cba", "#90ba78", "#f9f7ed"],
+      ["#1b2b40", "#9bd5e5", "#456fd1", "#b6b4e4", "#f9f7ed"],
       2,
-      "Blue mineral chambers, amber stores and fresh green roots",
+      "Cobalt mineral chambers, cyan stores and periwinkle roots",
     ],
     [
       "berry-garden",
       "Berry Garden",
-      ["#35202e", "#d785d0", "#b97185", "#75b3a0", "#fff6ef"],
+      ["#35202e", "#e8b1d1", "#bc5488", "#8abcb4", "#fff6ef"],
       3,
       "Berry earth, orchid resources and mint-colored roots",
     ],
@@ -131,18 +131,18 @@ export const SUPPLEMENTAL_PALETTES: Partial<Record<SeedForm, readonly WorldPalet
     [
       "jade-citadel",
       "Jade Citadel",
-      ["#17332c", "#8cabdd", "#69a98b", "#e7b977", "#f5fbef"],
+      ["#17332c", "#8cabdd", "#43b4a1", "#d5e9de", "#f5fbef"],
       1,
-      "Jade walls, cool blue crystals and brass archways",
+      "Polished jade walls, blue crystals and pale celadon archways",
     ],
   ]),
   origami: presets([
     [
       "peach-atelier",
       "Peach Atelier",
-      ["#3a2926", "#ecad88", "#d8858a", "#75aa95", "#fff8ee"],
+      ["#3a2926", "#f3d49c", "#eea66f", "#cf7456", "#fff8ee"],
       0,
-      "Peach paper, rose folds and sage leaves",
+      "Apricot paper, cream folds and burnt-sienna edges",
     ],
     [
       "midnight-washi",
@@ -163,18 +163,18 @@ export const SUPPLEMENTAL_PALETTES: Partial<Record<SeedForm, readonly WorldPalet
     [
       "amber-chapel",
       "Amber Chapel",
-      ["#302236", "#e9b461", "#a48bc8", "#79b497", "#fff9ec"],
+      ["#30251b", "#f2d48b", "#dca03b", "#b95d3c", "#fff9ec"],
       1,
-      "Honey glass, violet jewels and emerald reflections",
+      "Honey glass, amber jewels and copper reflections",
     ],
   ]),
   mycelium: presets([
     [
       "bluebell-grove",
       "Bluebell Grove",
-      ["#202b3e", "#aa88d7", "#729dbd", "#d4b86c", "#f7f9f0"],
+      ["#202b3e", "#c6a7eb", "#6752c9", "#97bce5", "#f7f9f0"],
       2,
-      "Bluebell caps, lilac spores and ochre roots",
+      "Indigo bluebell caps, lilac spores and powder-blue roots",
     ],
     [
       "apricot-spores",
@@ -194,26 +194,26 @@ export const SUPPLEMENTAL_PALETTES: Partial<Record<SeedForm, readonly WorldPalet
     ],
     [
       "violet-nebula",
-      "Violet Nebula",
-      ["#2e213e", "#8dcbb0", "#b184c7", "#e7bd76", "#faf5ff"],
+      "Orchid Aurora",
+      ["#2e213e", "#f2a4d1", "#bc4cad", "#747bdb", "#faf5ff"],
       2,
-      "Violet worlds, mint trails and amber stars",
+      "Orchid worlds, rose trails and periwinkle stars",
     ],
   ]),
   "toy-block": presets([
     [
       "retro-arcade",
       "Retro Arcade",
-      ["#20263d", "#e876a7", "#5ebac6", "#e8c15f", "#fcf8f2"],
+      ["#20263d", "#ee53b4", "#8452d5", "#43dccf", "#fcf8f2"],
       2,
-      "Rose bricks, turquoise tracks and golden arcade details",
+      "Violet bricks, hot-pink studs and electric turquoise tracks",
     ],
     [
       "pistachio-play",
       "Pistachio Play",
-      ["#2b3327", "#d38caa", "#92b977", "#72a9bc", "#fbfaee"],
+      ["#2b3327", "#ecd6a0", "#a4c76d", "#508965", "#fbfaee"],
       1,
-      "Pistachio bricks, rose flags and sky-blue bridges",
+      "Pistachio bricks, vanilla flags and forest-green bridges",
     ],
   ]),
 };

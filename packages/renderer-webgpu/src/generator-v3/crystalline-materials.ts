@@ -36,10 +36,11 @@ fn faceMaterial(o:FacetOutput)->vec3f {
  }
  if(uniforms.appearance.x>0.5){
   // Light originates inside the crystal; the host rock stays near black.
-  let glow=mix(vec3f(0.24,0.65,1),vec3f(0.78,0.42,1),fract(o.phase*0.29));
-  color=color*0.43+glow*(0.27+fresnel*0.58+refraction*0.23);
-  color+=vec3f(0.72,0.87,1)*(reflection*0.7+glint);
-  if(o.material==0u || o.material==3u){color=color*0.12+glow*refraction*0.10;}
+  let mineral=mix(uniforms.themeThird.rgb,uniforms.themeFourth.rgb,fract(o.phase*0.29)*0.45);
+  let glow=mineral/max(0.25,max(mineral.r,max(mineral.g,mineral.b)));
+  color=color*0.60+glow*(0.27+fresnel*0.58+refraction*0.23);
+  color+=uniforms.themeFifth.rgb*(reflection*0.7+glint);
+  if(o.material==0u || o.material==3u){color=color*0.30+uniforms.themePrimary.rgb*0.16+glow*refraction*0.10;}
  }
  return color;
 }

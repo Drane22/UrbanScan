@@ -32,13 +32,13 @@ export const DIORAMA_PALETTES: Readonly<Record<DioramaForm, readonly WorldPalett
     [
       "pale-nest",
       "Chalk & Nectar",
-      ["#172934", "#f2af38", "#8cb7c8", "#d76a59", "#f8fbef"],
+      ["#252f32", "#e8af53", "#c6c7b3", "#83b8b5", "#f8fbef"],
       "Porous chalk, honey deposits and terracotta nests",
     ],
     [
       "red-clay",
       "Red Clay Bloom",
-      ["#30201b", "#efcb61", "#d26b55", "#739fd0", "#fff6e9"],
+      ["#30201b", "#efcb61", "#ce6847", "#739fd0", "#fff6e9"],
       "Layered red earth with cool mineral pockets",
     ],
     [
@@ -58,8 +58,8 @@ export const DIORAMA_PALETTES: Readonly<Record<DioramaForm, readonly WorldPalett
     [
       "obsidian-abyss",
       "Mossbound Ruins",
-      ["#122c27", "#d5d879", "#55948a", "#76ae69", "#f3fae9"],
-      "Weathered teal stone with luminous moss in the joints",
+      ["#222c19", "#d5d879", "#80934a", "#a4b97a", "#f3fae9"],
+      "Olive stone with chartreuse moss and pale lichen in the joints",
     ],
     [
       "bloodstone-keep",
@@ -70,8 +70,8 @@ export const DIORAMA_PALETTES: Readonly<Record<DioramaForm, readonly WorldPalett
     [
       "catacomb-sandstone",
       "Frozen Crypt",
-      ["#182b39", "#ffc585", "#61accc", "#bfd972", "#f2fbff"],
-      "Ice-glazed masonry and amber lights in frozen chambers",
+      ["#182b39", "#b7e4f3", "#6eafcd", "#b1c4e8", "#f2fbff"],
+      "Ice-glazed masonry, silver-blue crystals and lavender frost",
     ],
   ]),
   origami: families([
@@ -110,8 +110,8 @@ export const DIORAMA_PALETTES: Readonly<Record<DioramaForm, readonly WorldPalett
     [
       "tiffany-emerald",
       "Tiffany Garden",
-      ["#19372d", "#f1bd62", "#46a88c", "#ac78b9", "#f4faec"],
-      "Hammered emerald glass, violet jewels and honey light",
+      ["#19372d", "#d7de9a", "#46a88c", "#88c7a1", "#f4faec"],
+      "Hammered emerald glass, jade jewels and pale citron light",
     ],
     [
       "sea-mosaic",
@@ -174,8 +174,8 @@ export const DIORAMA_PALETTES: Readonly<Record<DioramaForm, readonly WorldPalett
     [
       "aurora-borealis",
       "Ringed Copper",
-      ["#241b24", "#e6ce77", "#b96543", "#69bdb8", "#fff7e9"],
-      "Copper crusts, icy rings and gold meteor trails",
+      ["#241b24", "#edbc99", "#b96543", "#b58977", "#fff7e9"],
+      "Copper crusts, rose-gold rings and peach meteor trails",
     ],
   ]),
   "toy-block": families([
@@ -188,20 +188,20 @@ export const DIORAMA_PALETTES: Readonly<Record<DioramaForm, readonly WorldPalett
     [
       "retro-toyshop",
       "Retro Toyshop",
-      ["#1d3336", "#f49c42", "#42aea8", "#bb6cc3", "#fff8e9"],
-      "Satin turquoise bricks with tangerine and plum fittings",
+      ["#35281f", "#f4bf91", "#c56b4e", "#8fa797", "#fff8e9"],
+      "Terracotta bricks, apricot fittings and soft sage tracks",
     ],
     [
       "space-explorer",
       "Space Bricks",
-      ["#20223c", "#dd823c", "#8088cc", "#93cf53", "#f6f9ef"],
-      "Metallic space toys, lime signal studs and copper vehicles",
+      ["#172638", "#b9e3f5", "#3f76aa", "#8ab7cc", "#f6f9ef"],
+      "Cobalt space toys, silver-blue studs and icy tracks",
     ],
     [
       "candy-workshop",
       "Candy Workshop",
-      ["#352337", "#ddaf44", "#d279a0", "#74b5cb", "#fff8ee"],
-      "Sugar-colored molded bricks with blue trim and honey gears",
+      ["#352337", "#b9a0e8", "#e6a1bc", "#9ad8c1", "#fff8ee"],
+      "Rose candy bricks with lavender gears and mint tracks",
     ],
   ]),
   reef: families([
@@ -234,25 +234,25 @@ export const DIORAMA_PALETTES: Readonly<Record<DioramaForm, readonly WorldPalett
     [
       "alpine-glacier",
       "Jade Wildflower Valley",
-      ["#273039", "#b6a0e4", "#c58064", "#65b6ae", "#fff8eb"],
+      ["#273039", "#b6a0e4", "#56a878", "#4cbfbe", "#fff8eb"],
       "Fern-green hills, lavender wildflowers and jade streams",
     ],
     [
       "volcanic-rift",
       "Amber Autumn Meadow",
-      ["#291b27", "#ffc35a", "#cd5f40", "#745eae", "#fff7e9"],
+      ["#291b27", "#ffc35a", "#bf852b", "#8c5cb4", "#fff7e9"],
       "Golden grasses, copper soil and lilac creeks",
     ],
     [
       "desert-dunes",
       "Rosewater Gardens",
-      ["#342333", "#79ccbc", "#d68fa2", "#d9b454", "#fff8e9"],
+      ["#342333", "#79ccbc", "#bd6a92", "#e2c06a", "#fff8e9"],
       "Rose meadows, mint water and honey-colored flowers",
     ],
     [
       "lush-highlands",
       "Moonlit Alpine Garden",
-      ["#17253a", "#d9dc79", "#5e9ecd", "#b977c9", "#f6faff"],
+      ["#17253a", "#d9dc79", "#598fb6", "#a785d6", "#f6faff"],
       "Teal foliage, blue streams and violet alpine blossoms",
     ],
   ]),
